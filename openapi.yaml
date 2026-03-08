@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: ORION KORI Backend API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /api/deposits/scan:
+    post:
+      summary: Process detected deposit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositScanRequest'
+      responses:
+        '201':
+          description: Created
+        '200':
+          description: Duplicate request
+        '202':
+          description: Ignored because destination wallet is not tracked
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/wallets/{userId}/balance:
+    get:
+      summary: Get wallet balance
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+  /api/wallets/transfer:
+    post:
+      summary: Internal transfer
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InternalTransferRequest'
+      responses:
+        '201':
+          description: Created
+        '200':
+          description: Duplicate request
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals:
+    post:
+      summary: Create withdrawal request
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '201':
+          description: Created
+        '200':
+          description: Duplicate request
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}:
+    get:
+      summary: Get withdrawal status
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal response
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}/approve:
+    post:
+      summary: Approve withdrawal
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Approved
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}/broadcast:
+    post:
+      summary: Broadcast approved withdrawal to TRON
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Broadcasted
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}/confirm:
+    post:
+      summary: Confirm broadcasted withdrawal
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Confirmed
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/scheduler/retry-pending:
+    post:
+      summary: Retry or reconcile pending withdrawals
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timeoutSec:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Scheduler result
+components:
+  responses:
+    ErrorResponse:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    DepositScanRequest:
+      type: object
+      required: [userId, txHash, toAddress, amount, blockNumber]
+      properties:
+        userId:
+          type: string
+        txHash:
+          type: string
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        amount:
+          type: number
+          minimum: 0
+        blockNumber:
+          type: integer
+          minimum: 0
+    InternalTransferRequest:
+      type: object
+      required: [fromUserId, toUserId, amount]
+      properties:
+        fromUserId:
+          type: string
+        toUserId:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+    WithdrawRequest:
+      type: object
+      required: [userId, amount, toAddress]
+      properties:
+        userId:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+    BalanceResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+        balance:
+          type: string
+        lockedBalance:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              nullable: true

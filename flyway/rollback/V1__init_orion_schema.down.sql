@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS tx_jobs;
+DROP TABLE IF EXISTS withdrawals;
+DROP TABLE IF EXISTS deposits;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS accounts;

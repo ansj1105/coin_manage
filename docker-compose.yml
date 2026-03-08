@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: orion-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-orion}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-orion}
+      POSTGRES_DB: ${DB_NAME:-orion}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-orion} -d ${DB_NAME:-orion}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  flyway:
+    image: flyway/flyway:10.20.1
+    container_name: orion-flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-orion}
+      FLYWAY_USER: ${DB_USER:-orion}
+      FLYWAY_PASSWORD: ${DB_PASSWORD:-orion}
+      FLYWAY_SCHEMAS: ${DB_SCHEMA:-public}
+      FLYWAY_CONNECT_RETRIES: 10
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    volumes:
+      - ./flyway/sql:/flyway/sql:ro
+
+volumes:
+  postgres_data:

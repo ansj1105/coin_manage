@@ -1,0 +1,15 @@
+export class DomainError extends Error {
+  readonly statusCode: number;
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(statusCode: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'DomainError';
+    this.statusCode = statusCode;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export const isDomainError = (error: unknown): error is DomainError => error instanceof DomainError;
