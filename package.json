@@ -13,12 +13,17 @@
     "db:down": "docker compose down -v",
     "db:migrate": "docker compose run --rm flyway migrate",
     "db:validate": "docker compose run --rm flyway validate",
-    "db:info": "docker compose run --rm flyway info"
+    "db:info": "docker compose run --rm flyway info",
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f app"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "kysely": "^0.28.11",
     "pg": "^8.13.3",
+    "tronweb": "^6.2.2",
     "uuid": "^11.0.5",
     "zod": "^3.24.2"
   },

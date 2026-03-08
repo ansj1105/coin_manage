@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-korion}
       POSTGRES_DB: ${DB_NAME:-korion}
     ports:
-      - '${DB_PORT:-5432}:5432'
+      - '${DB_BIND_ADDRESS:-127.0.0.1}:${DB_HOST_PORT:-15432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -29,8 +29,51 @@ services:
       FLYWAY_SCHEMAS: ${DB_SCHEMA:-public}
       FLYWAY_CONNECT_RETRIES: 10
       FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    command: ["migrate"]
+    restart: "no"
     volumes:
       - ./flyway/sql:/flyway/sql:ro
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: korion-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      LEDGER_PROVIDER: ${APP_LEDGER_PROVIDER:-postgres}
+      TRON_GATEWAY_MODE: ${APP_TRON_GATEWAY_MODE:-mock}
+      JWT_SECRET: ${JWT_SECRET:-replace-with-strong-secret}
+      TRON_API_URL: ${TRON_API_URL:-https://api.trongrid.io}
+      KORI_TOKEN_CONTRACT_ADDRESS: ${KORI_TOKEN_CONTRACT_ADDRESS:-}
+      TRON_FEE_LIMIT_SUN: ${TRON_FEE_LIMIT_SUN:-100000000}
+      TREASURY_WALLET_ADDRESS: ${TREASURY_WALLET_ADDRESS:-TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa}
+      DEPOSIT_WALLET_ADDRESSES: ${DEPOSIT_WALLET_ADDRESSES:-TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s}
+      HOT_WALLET_ADDRESS: ${HOT_WALLET_ADDRESS:-TYKL8DPoR99bccujHXxcyBewCV1NimdRc8}
+      HOT_WALLET_PRIVATE_KEY: ${HOT_WALLET_PRIVATE_KEY:-replace-with-private-key}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-korion}
+      DB_USER: ${DB_USER:-korion}
+      DB_PASSWORD: ${DB_PASSWORD:-korion}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      WITHDRAW_SINGLE_LIMIT_KORI: ${WITHDRAW_SINGLE_LIMIT_KORI:-10000}
+      WITHDRAW_DAILY_LIMIT_KORI: ${WITHDRAW_DAILY_LIMIT_KORI:-50000}
+      SCHEDULER_PENDING_TIMEOUT_SEC: ${SCHEDULER_PENDING_TIMEOUT_SEC:-60}
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
 volumes:
   postgres_data:

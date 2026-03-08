@@ -25,4 +25,17 @@ export const formatKoriAmount = (units: bigint): string => {
   return `${sign}${intPart.toString()}.${fracPart}`;
 };
 
+export const parseStoredKoriAmount = (amount: string | number): bigint => {
+  const normalized = String(amount).trim();
+  if (!/^-?\d+(\.\d{1,6})?$/.test(normalized)) {
+    throw new DomainError(500, 'STATE_CORRUPTED', `invalid stored KORI amount: ${normalized}`);
+  }
+
+  const sign = normalized.startsWith('-') ? -1n : 1n;
+  const unsigned = normalized.replace(/^-/, '');
+  const [intPart, fracPart = ''] = unsigned.split('.');
+  const units = BigInt(intPart) * KORI_SCALE + BigInt(fracPart.padEnd(KORI_DECIMALS, '0'));
+  return units * sign;
+};
+
 export const sumBigInt = (values: bigint[]): bigint => values.reduce((acc, value) => acc + value, 0n);

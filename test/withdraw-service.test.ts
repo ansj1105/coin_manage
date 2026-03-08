@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { buildDependencies } from '../src/app.js';
+import { createAppDependencies } from '../src/container/create-app-dependencies.js';
 import { isValidTronAddress } from '../src/domain/value-objects/tron-address.js';
 
 const VALID_TRON_ADDRESS = 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const TRACKED_DEPOSIT_ADDRESS = 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa';
 
 describe('withdraw flow (service-level)', () => {
-  let deps: ReturnType<typeof buildDependencies>;
+  let deps: ReturnType<typeof createAppDependencies>;
 
   beforeEach(async () => {
-    deps = buildDependencies();
+    deps = createAppDependencies();
     await deps.depositService.processDeposit({
       userId: 'user-1',
       txHash: `mock-deposit-${Date.now()}`,

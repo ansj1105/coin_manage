@@ -3,12 +3,22 @@ import { z } from 'zod';
 
 dotenv.config();
 
+const PLACEHOLDER_SECRETS = new Set([
+  'replace-with-strong-secret',
+  'replace-with-private-key',
+  'dev-only-secret-change-me',
+  'dev-only-private-key-change-me'
+]);
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   LEDGER_PROVIDER: z.enum(['memory', 'postgres']).default('memory'),
+  TRON_GATEWAY_MODE: z.enum(['mock', 'trc20']).default('mock'),
   JWT_SECRET: z.string().optional(),
   TRON_API_URL: z.string().url().default('https://api.trongrid.io'),
+  KORI_TOKEN_CONTRACT_ADDRESS: z.string().optional(),
+  TRON_FEE_LIMIT_SUN: z.coerce.number().int().positive().default(100000000),
   TREASURY_WALLET_ADDRESS: z.string().default('TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa'),
   DEPOSIT_WALLET_ADDRESSES: z
     .string()
@@ -29,20 +39,27 @@ const schema = z.object({
 const parsed = schema.parse(process.env);
 
 if (parsed.NODE_ENV === 'production') {
-  if (!parsed.JWT_SECRET) {
+  if (!parsed.JWT_SECRET || PLACEHOLDER_SECRETS.has(parsed.JWT_SECRET)) {
     throw new Error('JWT_SECRET is required in production');
   }
-  if (!parsed.HOT_WALLET_PRIVATE_KEY) {
+  if (!parsed.HOT_WALLET_PRIVATE_KEY || PLACEHOLDER_SECRETS.has(parsed.HOT_WALLET_PRIVATE_KEY)) {
     throw new Error('HOT_WALLET_PRIVATE_KEY is required in production');
   }
+}
+
+if (parsed.TRON_GATEWAY_MODE === 'trc20' && !parsed.KORI_TOKEN_CONTRACT_ADDRESS) {
+  throw new Error('KORI_TOKEN_CONTRACT_ADDRESS is required when TRON_GATEWAY_MODE=trc20');
 }
 
 export const env = Object.freeze({
   nodeEnv: parsed.NODE_ENV,
   port: parsed.PORT,
   ledgerProvider: parsed.LEDGER_PROVIDER,
+  tronGatewayMode: parsed.TRON_GATEWAY_MODE,
   jwtSecret: parsed.JWT_SECRET ?? 'dev-only-secret-change-me',
   tronApiUrl: parsed.TRON_API_URL,
+  koriTokenContractAddress: parsed.KORI_TOKEN_CONTRACT_ADDRESS,
+  tronFeeLimitSun: parsed.TRON_FEE_LIMIT_SUN,
   treasuryWalletAddress: parsed.TREASURY_WALLET_ADDRESS,
   depositWalletAddresses: parsed.DEPOSIT_WALLET_ADDRESSES.split(',')
     .map((item) => item.trim())
