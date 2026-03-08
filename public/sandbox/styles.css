@@ -321,6 +321,14 @@ select:focus {
   font-size: 0.9rem;
 }
 
+.wallet-monitor {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--accent-strong);
+}
+
 .wallet-meta {
   display: block;
   margin-top: 6px;

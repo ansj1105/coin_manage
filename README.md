@@ -121,6 +121,7 @@ http://localhost:3000/sandbox/
 포함 항목:
 - runtime / wallet config 확인
 - treasury / cold / liquidity / reward / marketing / hot wallet 메타데이터 확인
+- 각 system wallet의 KORI / TRX on-chain 모니터링 확인
 - TRON API key / contract preset 상태 확인
 - mainnet / testnet / custom contract profile 전환
 - wallet address binding / lookup

@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { BlockchainMonitorService } from '../../../application/services/blockchain-monitor-service.js';
+import type { WalletMonitoringSnapshot } from '../../../application/ports/blockchain-reader.js';
 import { env } from '../../../config/env.js';
 import { getRuntimeContractProfile, setRuntimeContractProfile } from '../../../config/runtime-settings.js';
 import { getConfiguredSystemWallets } from '../../../config/system-wallets.js';
@@ -18,8 +20,12 @@ const runtimeProfileSchema = z.object({
   customContractAddress: z.string().regex(tronAddressPattern).optional()
 });
 
-export const buildSystemStatusResponse = () => {
-  const walletCatalog = getConfiguredSystemWallets();
+export const buildSystemStatusResponse = (walletMonitoring: WalletMonitoringSnapshot[] = []) => {
+  const walletMonitoringByAddress = new Map(walletMonitoring.map((snapshot) => [snapshot.address, snapshot]));
+  const walletCatalog = getConfiguredSystemWallets().map((wallet) => ({
+    ...wallet,
+    monitoring: walletMonitoringByAddress.get(wallet.address) ?? null
+  }));
   const trackedWallets = walletCatalog.map((wallet) => wallet.address);
   const contractRuntime = getRuntimeContractProfile();
 
@@ -63,29 +69,45 @@ export const buildSystemStatusResponse = () => {
   };
 };
 
-export const createSystemRoutes = (): Router => {
+export const createSystemRoutes = (blockchainMonitorService: BlockchainMonitorService): Router => {
   const router = Router();
+  const getTrackedWalletAddresses = () => {
+    const configured = getConfiguredSystemWallets();
+    const hotWallet = configured.find((wallet) => wallet.code === 'hot');
+    const others = configured.filter((wallet) => wallet.code !== 'hot');
+    return hotWallet ? [hotWallet.address, ...others.map((wallet) => wallet.address)] : configured.map((wallet) => wallet.address);
+  };
 
-  router.get('/status', (_req, res) => {
-    res.json(buildSystemStatusResponse());
+  router.get('/status', async (_req, res, next) => {
+    try {
+      const monitoring = await blockchainMonitorService.getWalletMonitoring(getTrackedWalletAddresses());
+      res.json(buildSystemStatusResponse(monitoring));
+    } catch (error) {
+      next(error);
+    }
   });
 
-  router.post('/runtime-profile', (req, res) => {
-    if (!env.runtimeProfileEditable) {
-      throw new DomainError(403, 'FORBIDDEN', 'runtime profile switching is disabled for this runtime');
-    }
+  router.post('/runtime-profile', async (req, res, next) => {
+    try {
+      if (!env.runtimeProfileEditable) {
+        throw new DomainError(403, 'FORBIDDEN', 'runtime profile switching is disabled for this runtime');
+      }
 
-    const parsed = runtimeProfileSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new DomainError(400, 'INVALID_REQUEST', 'invalid runtime profile payload', parsed.error.flatten());
-    }
+      const parsed = runtimeProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid runtime profile payload', parsed.error.flatten());
+      }
 
-    if (parsed.data.profile === 'custom' && !parsed.data.customContractAddress) {
-      throw new DomainError(400, 'INVALID_REQUEST', 'customContractAddress is required for custom profile');
-    }
+      if (parsed.data.profile === 'custom' && !parsed.data.customContractAddress) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'customContractAddress is required for custom profile');
+      }
 
-    setRuntimeContractProfile(parsed.data.profile, parsed.data.customContractAddress);
-    res.json(buildSystemStatusResponse());
+      setRuntimeContractProfile(parsed.data.profile, parsed.data.customContractAddress);
+      const monitoring = await blockchainMonitorService.getWalletMonitoring(getTrackedWalletAddresses());
+      res.json(buildSystemStatusResponse(monitoring));
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;

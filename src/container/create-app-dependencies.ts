@@ -1,3 +1,4 @@
+import { BlockchainMonitorService } from '../application/services/blockchain-monitor-service.js';
 import { env } from '../config/env.js';
 import { parseKoriAmount } from '../domain/value-objects/money.js';
 import { DepositService } from '../application/services/deposit-service.js';
@@ -5,6 +6,7 @@ import { SchedulerService } from '../application/services/scheduler-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
+import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
@@ -35,6 +37,7 @@ export const createAppDependencies = (): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
   const ledger = createLedgerRepository();
   const tronGateway = createTronGateway();
+  const blockchainMonitorService = new BlockchainMonitorService(new TronWalletReader());
   const trackedDepositWallets = [
     env.treasuryWalletAddress,
     ...env.depositWalletAddresses,
@@ -49,6 +52,7 @@ export const createAppDependencies = (): AppDependencies => {
   return {
     ledger,
     eventPublisher,
+    blockchainMonitorService,
     depositService,
     walletService,
     withdrawService,

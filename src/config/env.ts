@@ -10,12 +10,17 @@ const PLACEHOLDER_SECRETS = new Set([
   'dev-only-private-key-change-me'
 ]);
 
+const optionalBooleanString = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.enum(['true', 'false']).optional()
+);
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   LEDGER_PROVIDER: z.enum(['memory', 'postgres']).default('memory'),
   TRON_GATEWAY_MODE: z.enum(['mock', 'trc20']).default('mock'),
-  ALLOW_RUNTIME_PROFILE_SWITCHING: z.enum(['true', 'false']).optional(),
+  ALLOW_RUNTIME_PROFILE_SWITCHING: optionalBooleanString,
   JWT_SECRET: z.string().optional(),
   TRON_API_URL: z.string().url().default('https://api.trongrid.io'),
   TRON_API_KEY: z.string().optional(),

@@ -402,6 +402,45 @@ components:
           type: array
           items:
             type: string
+        monitoring:
+          oneOf:
+            - $ref: '#/components/schemas/WalletMonitoringSnapshot'
+            - type: 'null'
+    WalletMonitoringSnapshot:
+      type: object
+      properties:
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        tokenSymbol:
+          type: string
+        tokenContractAddress:
+          type: string
+          nullable: true
+        tokenBalance:
+          type: string
+          nullable: true
+        tokenRawBalance:
+          type: string
+          nullable: true
+        tokenDecimals:
+          type: integer
+          nullable: true
+        trxBalance:
+          type: string
+          nullable: true
+        trxRawBalance:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ok, error]
+        error:
+          type: string
+          nullable: true
     BalanceResponse:
       type: object
       properties:

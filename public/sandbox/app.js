@@ -139,15 +139,22 @@ const renderWallets = (wallets) => {
     const allocation = wallet.allocationLabel
       ? `${wallet.allocationLabel}${wallet.allocationUnits ? ` · ${wallet.allocationUnits}` : ''}`
       : 'n/a';
+    const monitoring = wallet.monitoring;
+    const monitoringToken = monitoring?.tokenBalance ?? 'unavailable';
+    const monitoringTrx = monitoring?.trxBalance ?? 'unavailable';
+    const monitoringStatus = monitoring?.status ?? 'unknown';
     item.innerHTML = `
       <div class="wallet-row-head">
         <span class="wallet-kind">${escapeHtml(wallet.label ?? wallet.code)}</span>
         <span class="wallet-chip">${escapeHtml(wallet.custody ?? 'unknown')}</span>
       </div>
       <span class="wallet-value">${escapeHtml(wallet.address)}</span>
+      <span class="wallet-monitor">KORI: ${escapeHtml(monitoringToken)} | TRX: ${escapeHtml(monitoringTrx)}</span>
+      <span class="wallet-meta">monitoring: ${escapeHtml(monitoringStatus)}</span>
       <span class="wallet-meta">code: ${escapeHtml(wallet.code ?? 'unknown')}</span>
       <span class="wallet-meta">allocation: ${escapeHtml(allocation)}</span>
       ${flowTags ? `<span class="wallet-meta">flows: ${escapeHtml(flowTags)}</span>` : ''}
+      ${monitoring?.error ? `<span class="wallet-meta">monitor error: ${escapeHtml(monitoring.error)}</span>` : ''}
       ${wallet.notes ? `<span class="wallet-meta">${escapeHtml(wallet.notes)}</span>` : ''}
     `;
     els.walletList.append(item);

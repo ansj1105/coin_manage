@@ -21,7 +21,7 @@
 | Key | Required (dev) | Required (prod) | Default | Description |
 |---|---|---|---|---|
 | `TRON_API_URL` | No | Yes | `https://api.trongrid.io` | TRON 노드/게이트웨이 URL |
-| `TRON_API_KEY` | No | Recommended | empty | Trongrid/Tronscan 계열 API key. 설정 시 `TRON-PRO-API-KEY` 헤더로 전송 |
+| `TRON_API_KEY` | No | Recommended | empty | Trongrid/Tronscan 계열 API key. 설정 시 `TRON-PRO-API-KEY` 헤더로 전송. 지갑 모니터링과 TRC20 호출 모두에 사용 |
 | `KORI_TOKEN_CONTRACT_ADDRESS` | No | Yes when `*_TRON_GATEWAY_MODE=trc20` | `TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W` | KORI TRC20 컨트랙트 주소 (현재 예제는 테스트넷) |
 | `MAINNET_KORI_TOKEN_CONTRACT_ADDRESS` | No | Recommended | `TBJZD8RwQ1JcQvEP9BTbPbgBCGxUjxSXnn` | 메인넷 KORI 컨트랙트 preset |
 | `TESTNET_KORI_TOKEN_CONTRACT_ADDRESS` | No | Recommended | `TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W` | 테스트넷 KORI 컨트랙트 preset |
