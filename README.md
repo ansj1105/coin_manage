@@ -10,6 +10,8 @@
 - `src/interfaces`: HTTP 라우트/미들웨어
 - `src/app.ts`: Express 앱 조립
 
+프로젝트 기능 정의서는 [DEVELOPMENT_FUNCTION_SPEC.md](/Users/an/work/coin_manage/DEVELOPMENT_FUNCTION_SPEC.md) 참고.
+
 ## 포함된 코어 기능
 - Deposit Core: 입금 감지 반영 + `txHash` idempotency
 - Wallet Core: 잔액 조회, 내부 이체
@@ -61,8 +63,10 @@ APP_LEDGER_PROVIDER=postgres
 실제 TRC20 송금을 사용하려면:
 ```env
 APP_TRON_GATEWAY_MODE=trc20
-KORI_TOKEN_CONTRACT_ADDRESS=TRC20_CONTRACT_ADDRESS
+KORI_TOKEN_CONTRACT_ADDRESS=TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W
 ```
+
+위 값은 현재 전달받은 `테스트넷` 컨트랙트 주소 기준입니다. 메인넷 운영값은 별도로 분리해야 합니다.
 
 상태/로그:
 ```bash
@@ -98,4 +102,5 @@ npm run build
 - Docker 기준으로 앱까지 원커맨드 기동됨.
 - DB 마이그레이션은 Flyway로 적용됨.
 - `APP_LEDGER_PROVIDER=postgres`를 사용하면 앱이 PostgreSQL 기반 Ledger를 사용합니다.
-- `APP_TRON_GATEWAY_MODE=trc20`는 구현되어 있지만 `KORI_TOKEN_CONTRACT_ADDRESS`가 있어야 실제 온체인 송금이 가능합니다.
+- `APP_TRON_GATEWAY_MODE=trc20`는 구현되어 있고 테스트넷 컨트랙트 주소는 반영됐습니다.
+- 메인넷 운영 송금 검증은 별도 컨트랙트 주소와 실환경 검증이 필요합니다.

@@ -130,9 +130,13 @@ DB_PASSWORD=strong-db-password
 
 ```env
 APP_TRON_GATEWAY_MODE=trc20
-KORI_TOKEN_CONTRACT_ADDRESS=...
+KORI_TOKEN_CONTRACT_ADDRESS=TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W
 TRON_FEE_LIMIT_SUN=100000000
 ```
+
+주의:
+- 위 컨트랙트 주소는 현재 테스트넷 기준이다.
+- 운영 메인넷 배포 시에는 메인넷 컨트랙트 주소로 분리해야 한다.
 
 실행:
 
@@ -157,7 +161,7 @@ docker compose logs -f app
 - `.env`는 절대 git에 커밋하지 않기
 - PostgreSQL 볼륨 백업 정책 만들기
 - `CloudWatch Agent` 또는 별도 로그 수집 구성
-- 운영 전 `KORI_TOKEN_CONTRACT_ADDRESS` 확보 후 실출금 검증
+- 운영 전 메인넷 `KORI_TOKEN_CONTRACT_ADDRESS` 확보 후 실출금 검증
 
 ## 주의
 

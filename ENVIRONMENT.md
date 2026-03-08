@@ -19,7 +19,7 @@
 | Key | Required (dev) | Required (prod) | Default | Description |
 |---|---|---|---|---|
 | `TRON_API_URL` | No | Yes | `https://api.trongrid.io` | TRON 노드/게이트웨이 URL |
-| `KORI_TOKEN_CONTRACT_ADDRESS` | No | Yes when `*_TRON_GATEWAY_MODE=trc20` | empty | KORI TRC20 컨트랙트 주소 |
+| `KORI_TOKEN_CONTRACT_ADDRESS` | No | Yes when `*_TRON_GATEWAY_MODE=trc20` | `TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W` | KORI TRC20 컨트랙트 주소 (현재 예제는 테스트넷) |
 | `TRON_FEE_LIMIT_SUN` | No | Yes | `100000000` | TRON 스마트컨트랙트 호출 feeLimit |
 | `TREASURY_WALLET_ADDRESS` | No | Yes | `TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa` | 재단(트레저리) 지갑 주소 |
 | `DEPOSIT_WALLET_ADDRESSES` | No | Yes | `TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s` | 입금 감지 대상 지갑 목록(콤마 구분) |
@@ -29,6 +29,7 @@
 주의:
 프로덕션에서는 placeholder 값(`replace-with-*`, `dev-only-*`)으로 기동되지 않도록 검증합니다.
 `TRON_GATEWAY_MODE=trc20` 또는 `APP_TRON_GATEWAY_MODE=trc20`이면 `KORI_TOKEN_CONTRACT_ADDRESS`가 반드시 필요합니다.
+현재 예제값은 테스트넷 기준이며, 운영 메인넷 주소는 별도로 관리해야 합니다.
 
 ## PostgreSQL / Flyway
 | Key | Required (dev) | Required (prod) | Default | Description |

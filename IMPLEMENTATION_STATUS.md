@@ -27,8 +27,9 @@
 - `Hot Wallet` [Sign & Send]
   - 상태: 부분 구현
   - 구현됨: private key 주소 일치 검증, TronWeb 기반 TRC20 `transfer()` 브로드캐스트 코드
-  - 미구현: 실제 송금 검증 완료
-  - 이유: `KORI_TOKEN_CONTRACT_ADDRESS` 미제공
+  - 구현됨: 테스트넷 `KORI_TOKEN_CONTRACT_ADDRESS` 반영
+  - 미구현: 실제 운영 송금 검증 완료
+  - 이유: 메인넷 컨트랙트 주소 및 실환경 검증 미완료
 
 - `Internal Ledger DB` [앱 내부 잔액 장부]
   - 상태: 구현
@@ -39,7 +40,8 @@
 - `TRON Blockchain` [KORI Token]
   - 상태: 부분 연동
   - 구현됨: TRON 네트워크 호출 구조, 출금 receipt 조회, TRC20 전송 경로
-  - 미구현: KORI 컨트랙트 주소 기준 실송금 검증, 입금 이벤트 모니터
+  - 구현됨: 테스트넷 컨트랙트 주소 기준 설정 가능
+  - 미구현: 메인넷 실송금 검증, 입금 이벤트 모니터
 
 - `KORION Pay Server` [결제 정산 서버]
   - 상태: 미구현
@@ -72,7 +74,7 @@
   - 이유: Foxyya Platform 같은 외부 온라인 서비스가 API를 통해 잔액 조회, 입금 반영, 내부 이체, 출금 요청을 붙일 수 있음
 
 - `운영 전 필수 보강`
-  - `KORI_TOKEN_CONTRACT_ADDRESS` 반영 후 실출금 검증
+  - 메인넷 `KORI_TOKEN_CONTRACT_ADDRESS` 반영 후 실출금 검증
   - 블록체인 입금 모니터 자동화
   - 인증/인가
   - 관리자 승인/멀티시그
