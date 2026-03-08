@@ -186,6 +186,12 @@ select:focus {
   transform: translateY(0);
 }
 
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .button-secondary {
   background: #17323f;
 }
@@ -294,6 +300,13 @@ select:focus {
   border: 1px solid var(--line);
 }
 
+.wallet-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .wallet-kind {
   display: block;
   margin-bottom: 4px;
@@ -306,6 +319,24 @@ select:focus {
 .wallet-value {
   font-family: var(--mono);
   font-size: 0.9rem;
+}
+
+.wallet-meta {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.wallet-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(23, 50, 63, 0.08);
+  color: #17323f;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
 }
 
 .log-entry {

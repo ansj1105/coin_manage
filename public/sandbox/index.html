@@ -39,14 +39,41 @@
             <span class="pill pill-neutral">config</span>
           </div>
           <p class="panel-copy">
-            Shows treasury, deposit, and hot wallets currently configured by the backend. Deposit scan uses these
-            addresses to decide whether an inbound transfer should be accepted into the internal ledger.
+            Shows the configured treasury, cold, liquidity, reward, marketing, and hot wallets with custody type and
+            allocation notes. Deposit scan only accepts inbound transfers whose destination matches this tracked set.
           </p>
           <ul id="wallet-list" class="wallet-list"></ul>
         </article>
       </section>
 
       <section class="grid two-up">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Wallet Binding</h2>
+            <span class="pill pill-positive">POST / GET</span>
+          </div>
+          <p class="panel-copy">
+            Register or query the internal mapping between <code>userId</code> and a TRON <code>walletAddress</code>.
+            Address-based balance lookup, transfer, deposit attribution, and withdrawal source resolution all depend on
+            this binding.
+          </p>
+          <form id="binding-form" class="stack">
+            <label>
+              <span>User ID</span>
+              <input name="userId" value="user-1" required />
+            </label>
+            <label>
+              <span>Wallet Address</span>
+              <input name="walletAddress" value="TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" required />
+            </label>
+            <div class="hero-actions">
+              <button class="button" type="submit">Bind Address</button>
+              <button class="button button-secondary" id="lookup-binding" type="button">Lookup Binding</button>
+            </div>
+          </form>
+          <pre id="binding-result" class="code-block"></pre>
+        </article>
+
         <article class="panel">
           <div class="panel-head">
             <h2>Contract Profiles</h2>
@@ -56,6 +83,9 @@
             This section controls the active contract preset used by the sandbox runtime in <code>development</code> and
             <code>test</code>. It does not hot-swap a production server. The current presets are mainnet, testnet, runtime
             default, and a custom TRON address.
+          </p>
+          <p class="panel-copy" id="contract-profile-note">
+            Runtime profile switching is only enabled outside production.
           </p>
           <form id="contract-profile-form" class="stack">
             <label>
@@ -100,11 +130,11 @@
             </section>
             <section>
               <h3>Wallet APIs</h3>
-              <p><code>GET /api/wallets/:userId/balance</code> returns ledger balance. <code>POST /api/wallets/transfer</code> moves balance internally between users without on-chain signing.</p>
+              <p><code>POST /api/wallets/address-binding</code> binds a TRON address to a user. Then <code>GET /api/wallets/balance</code> and <code>POST /api/wallets/transfer</code> can resolve either <code>userId</code> or <code>walletAddress</code>. This transfer path is internal ledger movement only, not an on-chain TRON send.</p>
             </section>
             <section>
               <h3>Withdrawal APIs</h3>
-              <p><code>POST /api/withdrawals</code> creates a withdrawal request and locks funds. Then <code>approve</code>, <code>broadcast</code>, and <code>confirm</code> advance the state machine.</p>
+              <p><code>POST /api/withdrawals</code> creates a withdrawal request and locks funds. Then <code>approve</code>, <code>broadcast</code>, and <code>confirm</code> advance the state machine. Only the broadcast step touches the TRON gateway, and that becomes real on-chain signing only when <code>TRON_GATEWAY_MODE=trc20</code>.</p>
             </section>
             <section>
               <h3>Scheduler API</h3>
@@ -127,7 +157,11 @@
           <form id="balance-form" class="stack">
             <label>
               <span>User ID</span>
-              <input name="userId" value="user-1" required />
+              <input name="userId" value="user-1" />
+            </label>
+            <label>
+              <span>Wallet Address</span>
+              <input name="walletAddress" value="" placeholder="optional address lookup" />
             </label>
             <button class="button" type="submit">Fetch Balance</button>
           </form>
@@ -141,12 +175,17 @@
           </div>
           <p class="panel-copy">
             Simulates a blockchain monitor feeding one detected deposit into the server. If the destination wallet is
-            tracked, the amount is credited to the selected <code>userId</code>.
+            tracked, the amount is credited to the selected <code>userId</code> or the user bound to the beneficiary
+            wallet address.
           </p>
           <form id="deposit-form" class="stack">
             <label>
               <span>User ID</span>
-              <input name="userId" value="user-1" required />
+              <input name="userId" value="user-1" />
+            </label>
+            <label>
+              <span>Beneficiary Wallet Address</span>
+              <input name="walletAddress" value="" placeholder="optional bound wallet address" />
             </label>
             <label>
               <span>TX Hash</span>
@@ -176,16 +215,25 @@
           </div>
           <p class="panel-copy">
             Internal user-to-user ledger transfer. This does not need a wallet address or private key because it does
-            not touch TRON. It simply moves balance between two internal accounts.
+            not touch TRON. It simply moves balance between two internal accounts identified by <code>userId</code> or
+            their bound wallet addresses.
           </p>
           <form id="transfer-form" class="stack">
             <label>
               <span>From User</span>
-              <input name="fromUserId" value="user-1" required />
+              <input name="fromUserId" value="user-1" />
+            </label>
+            <label>
+              <span>From Wallet Address</span>
+              <input name="fromWalletAddress" value="" placeholder="optional bound wallet address" />
             </label>
             <label>
               <span>To User</span>
-              <input name="toUserId" value="user-2" required />
+              <input name="toUserId" value="user-2" />
+            </label>
+            <label>
+              <span>To Wallet Address</span>
+              <input name="toWalletAddress" value="" placeholder="optional bound wallet address" />
             </label>
             <label>
               <span>Amount KORI</span>
@@ -209,12 +257,18 @@
           </div>
           <p class="panel-copy">
             This is the full withdrawal state machine. Request locks funds, approve moves it to operator-ready state,
-            broadcast hands it to the TRON gateway, and confirm finalizes the ledger.
+            broadcast hands it to the TRON gateway, and confirm finalizes the ledger. If the gateway mode is
+            <code>mock</code>, broadcast is simulated. If it is <code>trc20</code>, the hot wallet private key signs
+            the TRON transaction.
           </p>
           <form id="withdraw-request-form" class="stack">
             <label>
               <span>User ID</span>
-              <input name="userId" value="user-1" required />
+              <input name="userId" value="user-1" />
+            </label>
+            <label>
+              <span>Source Wallet Address</span>
+              <input name="walletAddress" value="" placeholder="optional bound wallet address" />
             </label>
             <label>
               <span>To Address</span>

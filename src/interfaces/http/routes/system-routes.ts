@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../../../config/env.js';
 import { getRuntimeContractProfile, setRuntimeContractProfile } from '../../../config/runtime-settings.js';
+import { getConfiguredSystemWallets } from '../../../config/system-wallets.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 
@@ -18,7 +19,8 @@ const runtimeProfileSchema = z.object({
 });
 
 export const buildSystemStatusResponse = () => {
-  const trackedWallets = [env.treasuryWalletAddress, ...env.depositWalletAddresses, env.hotWalletAddress];
+  const walletCatalog = getConfiguredSystemWallets();
+  const trackedWallets = walletCatalog.map((wallet) => wallet.address);
   const contractRuntime = getRuntimeContractProfile();
 
   return {
@@ -44,7 +46,8 @@ export const buildSystemStatusResponse = () => {
       treasury: env.treasuryWalletAddress,
       deposits: env.depositWalletAddresses,
       hot: env.hotWalletAddress,
-      tracked: trackedWallets
+      tracked: trackedWallets,
+      catalog: walletCatalog
     },
     contracts: contractRuntime,
     database: {

@@ -9,6 +9,7 @@ import type {
   LedgerTransaction,
   TransferResult,
   TxJob,
+  WalletBinding,
   Withdrawal,
   WithdrawalRequestResult,
   WithdrawalStatus
@@ -31,7 +32,89 @@ export class PostgresLedgerRepository implements LedgerRepository {
     if (!row) {
       throw new DomainError(500, 'STATE_CORRUPTED', 'account not found');
     }
-    return this.mapAccount(row);
+    return this.mapAccount(row, await this.findWalletBindingByUserId(this.db, userId));
+  }
+
+  async getAccountByWalletAddress(walletAddress: string): Promise<Account> {
+    const binding = await this.findWalletBindingByWalletAddress(this.db, walletAddress);
+    if (!binding) {
+      throw new DomainError(404, 'WALLET_ADDRESS_NOT_FOUND', 'wallet address is not bound to any user');
+    }
+    return this.getAccount(binding.user_id);
+  }
+
+  async bindWalletAddress(input: { userId: string; walletAddress: string; nowIso?: string }): Promise<WalletBinding> {
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.lockUsers(trx, [input.userId]);
+      await this.lockKey(trx, `wallet-address:${input.walletAddress}`);
+
+      const existingBinding = await this.findWalletBindingByWalletAddress(trx, input.walletAddress);
+      if (existingBinding && existingBinding.user_id !== input.userId) {
+        throw new DomainError(409, 'WALLET_ADDRESS_IN_USE', 'wallet address is already bound to another user');
+      }
+
+      await trx
+        .insertInto('wallet_address_bindings')
+        .values({
+          user_id: input.userId,
+          wallet_address: input.walletAddress,
+          created_at: nowIso
+        })
+        .onConflict((oc) =>
+          oc.column('user_id').doUpdateSet({
+            wallet_address: input.walletAddress
+          })
+        )
+        .execute();
+
+      const bound = await this.findWalletBindingByUserId(trx, input.userId);
+      if (!bound) {
+        throw new DomainError(500, 'STATE_CORRUPTED', 'wallet binding not found after upsert');
+      }
+
+      return this.mapWalletBinding(bound);
+    });
+  }
+
+  async getWalletBinding(input: { userId?: string; walletAddress?: string }): Promise<WalletBinding | undefined> {
+    if (input.userId) {
+      const row = await this.findWalletBindingByUserId(this.db, input.userId);
+      return row ? this.mapWalletBinding(row) : undefined;
+    }
+
+    if (input.walletAddress) {
+      const row = await this.findWalletBindingByWalletAddress(this.db, input.walletAddress);
+      return row ? this.mapWalletBinding(row) : undefined;
+    }
+
+    throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
+  }
+
+  async resolveUserId(input: { userId?: string; walletAddress?: string }): Promise<string> {
+    if (input.userId && input.walletAddress) {
+      const binding = await this.findWalletBindingByWalletAddress(this.db, input.walletAddress);
+      if (binding && binding.user_id !== input.userId) {
+        throw new DomainError(409, 'ACCOUNT_REFERENCE_CONFLICT', 'userId and walletAddress point to different accounts');
+      }
+      return input.userId;
+    }
+
+    if (input.userId) {
+      return input.userId;
+    }
+
+    if (input.walletAddress) {
+      const binding = await this.findWalletBindingByWalletAddress(this.db, input.walletAddress);
+      if (!binding) {
+        throw new DomainError(404, 'WALLET_ADDRESS_NOT_FOUND', 'wallet address is not bound to any user');
+      }
+      return binding.user_id;
+    }
+
+    throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
   }
 
   async applyDeposit(input: {
@@ -618,12 +701,46 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return sumBigInt([parseStoredKoriAmount(row?.amount ?? '0')]);
   }
 
-  private mapAccount(row: KorionDatabase['accounts']): Account {
+  private async findWalletBindingByUserId(
+    db: Kysely<KorionDatabase> | Transaction<KorionDatabase>,
+    userId: string
+  ): Promise<KorionDatabase['wallet_address_bindings'] | undefined> {
+    return db
+      .selectFrom('wallet_address_bindings')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+  }
+
+  private async findWalletBindingByWalletAddress(
+    db: Kysely<KorionDatabase> | Transaction<KorionDatabase>,
+    walletAddress: string
+  ): Promise<KorionDatabase['wallet_address_bindings'] | undefined> {
+    return db
+      .selectFrom('wallet_address_bindings')
+      .selectAll()
+      .where('wallet_address', '=', walletAddress)
+      .executeTakeFirst();
+  }
+
+  private mapAccount(
+    row: KorionDatabase['accounts'],
+    binding?: KorionDatabase['wallet_address_bindings']
+  ): Account {
     return {
       userId: row.user_id,
+      walletAddress: binding?.wallet_address,
       balance: parseStoredKoriAmount(row.balance),
       lockedBalance: parseStoredKoriAmount(row.locked_balance),
       updatedAt: row.updated_at
+    };
+  }
+
+  private mapWalletBinding(row: KorionDatabase['wallet_address_bindings']): WalletBinding {
+    return {
+      userId: row.user_id,
+      walletAddress: row.wallet_address,
+      createdAt: row.created_at
     };
   }
 

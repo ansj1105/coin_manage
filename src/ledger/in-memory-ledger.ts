@@ -8,6 +8,7 @@ import type {
   LedgerTransaction,
   TransferResult,
   TxJob,
+  WalletBinding,
   Withdrawal,
   WithdrawalRequestResult,
   WithdrawalStatus
@@ -25,6 +26,8 @@ interface TransferIdempotencyRecord {
 
 export class InMemoryLedger {
   private readonly accounts = new Map<string, Account>();
+  private readonly walletBindingsByUserId = new Map<string, WalletBinding>();
+  private readonly userIdByWalletAddress = new Map<string, string>();
   private readonly transactions = new Map<string, LedgerTransaction>();
   private readonly depositsByTxHash = new Map<string, Deposit>();
   private readonly withdrawals = new Map<string, Withdrawal>();
@@ -39,7 +42,85 @@ export class InMemoryLedger {
   async getAccount(userId: string): Promise<Account> {
     const account = this.accounts.get(userId) ?? this.createEmptyAccount(userId);
     this.accounts.set(userId, account);
-    return { ...account };
+    return this.enrichAccount(account);
+  }
+
+  async getAccountByWalletAddress(walletAddress: string): Promise<Account> {
+    const userId = await this.resolveUserId({ walletAddress });
+    return this.getAccount(userId);
+  }
+
+  async bindWalletAddress(input: { userId: string; walletAddress: string; nowIso?: string }): Promise<WalletBinding> {
+    return this.withLock(() => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      const existingUserId = this.userIdByWalletAddress.get(input.walletAddress);
+      if (existingUserId && existingUserId !== input.userId) {
+        throw new DomainError(409, 'WALLET_ADDRESS_IN_USE', 'wallet address is already bound to another user');
+      }
+
+      const previousBinding = this.walletBindingsByUserId.get(input.userId);
+      if (previousBinding && previousBinding.walletAddress !== input.walletAddress) {
+        this.userIdByWalletAddress.delete(previousBinding.walletAddress);
+      }
+
+      const binding: WalletBinding = {
+        userId: input.userId,
+        walletAddress: input.walletAddress,
+        createdAt: previousBinding?.createdAt ?? nowIso
+      };
+
+      this.walletBindingsByUserId.set(input.userId, binding);
+      this.userIdByWalletAddress.set(input.walletAddress, input.userId);
+
+      const account = this.accounts.get(input.userId);
+      if (account) {
+        account.walletAddress = input.walletAddress;
+      }
+
+      return { ...binding };
+    });
+  }
+
+  async getWalletBinding(input: { userId?: string; walletAddress?: string }): Promise<WalletBinding | undefined> {
+    if (input.userId) {
+      const binding = this.walletBindingsByUserId.get(input.userId);
+      return binding ? { ...binding } : undefined;
+    }
+
+    if (input.walletAddress) {
+      const userId = this.userIdByWalletAddress.get(input.walletAddress);
+      if (!userId) {
+        return undefined;
+      }
+      const binding = this.walletBindingsByUserId.get(userId);
+      return binding ? { ...binding } : undefined;
+    }
+
+    throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
+  }
+
+  async resolveUserId(input: { userId?: string; walletAddress?: string }): Promise<string> {
+    if (input.userId && input.walletAddress) {
+      const boundUserId = this.userIdByWalletAddress.get(input.walletAddress);
+      if (boundUserId && boundUserId !== input.userId) {
+        throw new DomainError(409, 'ACCOUNT_REFERENCE_CONFLICT', 'userId and walletAddress point to different accounts');
+      }
+      return input.userId;
+    }
+
+    if (input.userId) {
+      return input.userId;
+    }
+
+    if (input.walletAddress) {
+      const userId = this.userIdByWalletAddress.get(input.walletAddress);
+      if (!userId) {
+        throw new DomainError(404, 'WALLET_ADDRESS_NOT_FOUND', 'wallet address is not bound to any user');
+      }
+      return userId;
+    }
+
+    throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
   }
 
   async applyDeposit(input: {
@@ -353,11 +434,21 @@ export class InMemoryLedger {
   }
 
   private createEmptyAccount(userId: string, nowIso = new Date().toISOString()): Account {
+    const binding = this.walletBindingsByUserId.get(userId);
     return {
       userId,
+      walletAddress: binding?.walletAddress,
       balance: 0n,
       lockedBalance: 0n,
       updatedAt: nowIso
+    };
+  }
+
+  private enrichAccount(account: Account): Account {
+    const binding = this.walletBindingsByUserId.get(account.userId);
+    return {
+      ...account,
+      walletAddress: binding?.walletAddress
     };
   }
 

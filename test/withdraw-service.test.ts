@@ -10,6 +10,14 @@ describe('withdraw flow (service-level)', () => {
 
   beforeEach(async () => {
     deps = createAppDependencies();
+    await deps.walletService.bindWalletAddress({
+      userId: 'user-1',
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    });
+    await deps.walletService.bindWalletAddress({
+      userId: 'user-2',
+      walletAddress: 'TCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+    });
     await deps.depositService.processDeposit({
       userId: 'user-1',
       txHash: `mock-deposit-${Date.now()}`,
@@ -76,6 +84,49 @@ describe('withdraw flow (service-level)', () => {
   it('validates tron address format', () => {
     expect(isValidTronAddress(VALID_TRON_ADDRESS)).toBe(true);
     expect(isValidTronAddress('invalid-address')).toBe(false);
+  });
+
+  it('supports wallet-address based balance and transfer resolution', async () => {
+    const account = await deps.walletService.getBalance({
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    });
+
+    expect(account.userId).toBe('user-1');
+    expect(account.walletAddress).toBe('TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
+
+    const transfer = await deps.walletService.transfer({
+      fromWalletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      toWalletAddress: 'TCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+      amountKori: 123,
+      idempotencyKey: 'wallet-address-transfer-1'
+    });
+
+    expect(transfer.duplicated).toBe(false);
+    expect(transfer.fromTx.userId).toBe('user-1');
+    expect(transfer.toTx.userId).toBe('user-2');
+  });
+
+  it('supports wallet-address based deposit attribution and withdrawal source resolution', async () => {
+    const deposit = await deps.depositService.processDeposit({
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      txHash: `wallet-address-deposit-${Date.now()}`,
+      toAddress: TRACKED_DEPOSIT_ADDRESS,
+      amountKori: 10,
+      blockNumber: 10
+    });
+
+    expect(deposit.accepted).toBe(true);
+    expect(deposit.deposit?.userId).toBe('user-1');
+
+    const withdrawal = await deps.withdrawService.request({
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      amountKori: 1,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'wallet-address-withdraw-1'
+    });
+
+    expect(withdrawal.duplicated).toBe(false);
+    expect(withdrawal.withdrawal.userId).toBe('user-1');
   });
 
   it('reconciles pending broadcast in scheduler timeout path', async () => {

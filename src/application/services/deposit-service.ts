@@ -1,4 +1,5 @@
 import { parseKoriAmount } from '../../domain/value-objects/money.js';
+import { DomainError } from '../../domain/errors/domain-error.js';
 import type { DepositApplyResult } from '../../domain/ledger/types.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
@@ -22,7 +23,8 @@ export class DepositService {
   }
 
   async processDeposit(input: {
-    userId: string;
+    userId?: string;
+    walletAddress?: string;
     amountKori: number;
     txHash: string;
     toAddress: string;
@@ -37,8 +39,16 @@ export class DepositService {
       };
     }
 
-    const result = await this.ledger.applyDeposit({
+    const userId = await this.ledger.resolveUserId({
       userId: input.userId,
+      walletAddress: input.walletAddress
+    });
+    if (!userId) {
+      throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
+    }
+
+    const result = await this.ledger.applyDeposit({
+      userId,
       amount: parseKoriAmount(input.amountKori),
       txHash: input.txHash,
       blockNumber: input.blockNumber
@@ -48,6 +58,7 @@ export class DepositService {
       this.eventPublisher.publish('deposit.detected', {
         depositId: result.deposit.depositId,
         userId: result.deposit.userId,
+        walletAddress: input.walletAddress,
         txHash: result.deposit.txHash,
         toAddress: normalizedToAddress
       });

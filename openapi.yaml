@@ -59,9 +59,82 @@ paths:
           description: Ignored because destination wallet is not tracked
         '400':
           $ref: '#/components/responses/ErrorResponse'
+  /api/wallets/address-binding:
+    post:
+      summary: Bind a wallet address to a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalletBindingRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  binding:
+                    $ref: '#/components/schemas/WalletBinding'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    get:
+      summary: Lookup wallet binding by userId or walletAddress
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: walletAddress
+          required: false
+          schema:
+            type: string
+            pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+      responses:
+        '200':
+          description: Wallet binding lookup response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  binding:
+                    oneOf:
+                      - $ref: '#/components/schemas/WalletBinding'
+                      - type: 'null'
+  /api/wallets/balance:
+    get:
+      summary: Get wallet balance by userId or walletAddress
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: walletAddress
+          required: false
+          schema:
+            type: string
+            pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+      responses:
+        '200':
+          description: Balance response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
   /api/wallets/{userId}/balance:
     get:
-      summary: Get wallet balance
+      summary: Get wallet balance by userId path
       parameters:
         - in: path
           name: userId
@@ -75,6 +148,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BalanceResponse'
+  /api/wallets/{userId}/address:
+    get:
+      summary: Get bound wallet address by userId
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Wallet address response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  walletAddress:
+                    type: string
+                    nullable: true
   /api/wallets/transfer:
     post:
       summary: Internal transfer
@@ -208,10 +303,13 @@ components:
   schemas:
     DepositScanRequest:
       type: object
-      required: [userId, txHash, toAddress, amount, blockNumber]
+      required: [txHash, toAddress, amount, blockNumber]
       properties:
         userId:
           type: string
+        walletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
         txHash:
           type: string
         toAddress:
@@ -225,32 +323,92 @@ components:
           minimum: 0
     InternalTransferRequest:
       type: object
-      required: [fromUserId, toUserId, amount]
+      required: [amount]
       properties:
         fromUserId:
           type: string
+        fromWalletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
         toUserId:
           type: string
+        toWalletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
         amount:
           type: number
           minimum: 0
     WithdrawRequest:
       type: object
-      required: [userId, amount, toAddress]
+      required: [amount, toAddress]
       properties:
         userId:
           type: string
+        walletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
         amount:
           type: number
           minimum: 0
         toAddress:
           type: string
           pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+    WalletBindingRequest:
+      type: object
+      required: [userId, walletAddress]
+      properties:
+        userId:
+          type: string
+        walletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+    WalletBinding:
+      type: object
+      properties:
+        userId:
+          type: string
+        walletAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        createdAt:
+          type: string
+          format: date-time
+    SystemWallet:
+      type: object
+      properties:
+        code:
+          type: string
+          enum: [treasury, cold, liquidity, reward, marketing, hot]
+        label:
+          type: string
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        custody:
+          type: string
+          enum: [multisig, general]
+        allocationPercent:
+          type: number
+          nullable: true
+        allocationUnits:
+          type: number
+          nullable: true
+        allocationLabel:
+          type: string
+        notes:
+          type: string
+        flowTags:
+          type: array
+          items:
+            type: string
     BalanceResponse:
       type: object
       properties:
         userId:
           type: string
+        walletAddress:
+          type: string
+          nullable: true
         balance:
           type: string
         lockedBalance:
@@ -268,6 +426,9 @@ components:
               type: string
             message:
               type: string
+            details:
+              type: object
+              nullable: true
     RuntimeProfileRequest:
       type: object
       required: [profile]
@@ -329,6 +490,10 @@ components:
               type: array
               items:
                 type: string
+            catalog:
+              type: array
+              items:
+                $ref: '#/components/schemas/SystemWallet'
         contracts:
           type: object
           properties:
@@ -368,6 +533,3 @@ components:
               type: boolean
             hotWalletPrivateKeyConfigured:
               type: boolean
-            details:
-              type: object
-              nullable: true

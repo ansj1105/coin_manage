@@ -14,7 +14,7 @@
 
 ## 포함된 코어 기능
 - Deposit Core: 입금 감지 반영 + `txHash` idempotency
-- Wallet Core: 잔액 조회, 내부 이체
+- Wallet Core: 잔액 조회, 주소 바인딩, 내부 이체
 - Withdraw Core: 출금 요청/승인/브로드캐스트/확정
 - Risk Control: 1회/1일 출금 한도
 - Scheduler: pending 재처리, broadcast 상태 reconcile
@@ -63,7 +63,7 @@ APP_LEDGER_PROVIDER=postgres
 실제 TRC20 송금을 사용하려면:
 ```env
 APP_TRON_GATEWAY_MODE=trc20
-TRON_API_KEY=15b470be-9f49-449a-b720-947fccbe262c
+TRON_API_KEY=replace-with-tron-api-key
 KORI_TOKEN_CONTRACT_ADDRESS=TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W
 MAINNET_KORI_TOKEN_CONTRACT_ADDRESS=TBJZD8RwQ1JcQvEP9BTbPbgBCGxUjxSXnn
 TESTNET_KORI_TOKEN_CONTRACT_ADDRESS=TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W
@@ -72,6 +72,10 @@ TESTNET_KORI_TOKEN_CONTRACT_ADDRESS=TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W
 `TRON_API_KEY`를 안 넣으면 지금까지는 public `TRON_API_URL`만으로 동작했습니다.
 이제는 key가 있으면 `TRON-PRO-API-KEY` 헤더를 같이 붙입니다.
 `sandbox`에서는 `runtime / mainnet / testnet / custom` contract profile 전환이 가능하지만, 실제 프로덕션 런타임 hot-swap은 막습니다.
+
+내부 전송과 실제 온체인 전송은 분리되어 있습니다.
+- `POST /api/wallets/transfer`: 내부 원장 간 이동. private key 불필요.
+- `POST /api/withdrawals` -> `broadcast`: 외부 TRON 주소로 내보내는 출금 흐름. `TRON_GATEWAY_MODE=trc20`일 때만 실제 핫월렛 서명이 발생합니다.
 
 상태/로그:
 ```bash
@@ -87,7 +91,11 @@ npm run stack:down
 ## API
 - `POST /api/deposits/scan`
 - `GET /api/system/status`
+- `POST /api/wallets/address-binding`
+- `GET /api/wallets/address-binding?userId=&walletAddress=`
+- `GET /api/wallets/balance?userId=&walletAddress=`
 - `GET /api/wallets/:userId/balance`
+- `GET /api/wallets/:userId/address`
 - `POST /api/wallets/transfer`
 - `POST /api/withdrawals`
 - `POST /api/withdrawals/:withdrawalId/approve`
@@ -111,11 +119,13 @@ http://localhost:3000/sandbox/
 
 포함 항목:
 - runtime / wallet config 확인
+- treasury / cold / liquidity / reward / marketing / hot wallet 메타데이터 확인
 - TRON API key / contract preset 상태 확인
 - mainnet / testnet / custom contract profile 전환
+- wallet address binding / lookup
 - balance 조회
-- deposit scan
-- internal transfer
+- deposit scan (`userId` 또는 `walletAddress`)
+- internal transfer (`userId` 또는 `walletAddress`)
 - withdrawal request / approve / broadcast / confirm
 - scheduler retry
 

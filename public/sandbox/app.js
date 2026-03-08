@@ -2,7 +2,9 @@ const els = {
   runtimePill: document.querySelector('#runtime-pill'),
   systemStatus: document.querySelector('#system-status'),
   walletList: document.querySelector('#wallet-list'),
+  bindingResult: document.querySelector('#binding-result'),
   contractResult: document.querySelector('#contract-result'),
+  contractProfileNote: document.querySelector('#contract-profile-note'),
   balanceResult: document.querySelector('#balance-result'),
   depositResult: document.querySelector('#deposit-result'),
   transferResult: document.querySelector('#transfer-result'),
@@ -10,7 +12,8 @@ const els = {
   schedulerResult: document.querySelector('#scheduler-result'),
   log: document.querySelector('#activity-log'),
   withdrawIdInput: document.querySelector('#withdraw-actions-form input[name="withdrawalId"]'),
-  contractProfileForm: document.querySelector('#contract-profile-form')
+  contractProfileForm: document.querySelector('#contract-profile-form'),
+  bindingForm: document.querySelector('#binding-form')
 };
 
 const formatJson = (value) => JSON.stringify(value, null, 2);
@@ -42,12 +45,13 @@ const autoKey = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16
 let currentStatus;
 
 const fetchJson = async (url, options = {}) => {
+  const { headers: optionHeaders, ...rest } = options;
   const response = await fetch(url, {
+    ...rest,
     headers: {
       'Content-Type': 'application/json',
-      ...(options.headers ?? {})
-    },
-    ...options
+      ...(optionHeaders ?? {})
+    }
   });
 
   const text = await response.text();
@@ -88,6 +92,7 @@ const hydrateContractForm = (contracts) => {
   const mainnetContract = els.contractProfileForm.elements.mainnetContract;
   const testnetContract = els.contractProfileForm.elements.testnetContract;
   const customContractAddress = els.contractProfileForm.elements.customContractAddress;
+  const submitButton = els.contractProfileForm.querySelector('button[type="submit"]');
 
   profile.value = contracts.activeProfile;
   mainnetContract.value = contracts.profiles.mainnet ?? '';
@@ -95,6 +100,14 @@ const hydrateContractForm = (contracts) => {
   if (contracts.activeProfile !== 'custom') {
     customContractAddress.value = contracts.activeContractAddress ?? '';
   }
+
+  const editable = Boolean(contracts.runtimeEditable);
+  profile.disabled = !editable;
+  customContractAddress.disabled = !editable;
+  submitButton.disabled = !editable;
+  els.contractProfileNote.textContent = editable
+    ? 'Development or test runtime detected. Contract profile switching is enabled for this sandbox.'
+    : 'Production runtime detected. Contract profile switching is read-only here, so mainnet/testnet changes must be done through environment configuration and redeploy.';
 
   setBlock(els.contractResult, {
     activeProfile: contracts.activeProfile,
@@ -107,15 +120,36 @@ const hydrateContractForm = (contracts) => {
 const renderWallets = (wallets) => {
   els.walletList.innerHTML = '';
 
-  const rows = [
-    ['treasury', wallets.treasury],
-    ...wallets.deposits.map((value, index) => [`deposit-${index + 1}`, value]),
-    ['hot', wallets.hot]
-  ];
+  const rows = Array.isArray(wallets.catalog)
+    ? wallets.catalog
+    : [
+        { code: 'treasury', label: 'Treasury Wallet', address: wallets.treasury, custody: 'multisig' },
+        ...wallets.deposits.map((value, index) => ({
+          code: `deposit-${index + 1}`,
+          label: `Deposit Wallet ${index + 1}`,
+          address: value,
+          custody: 'multisig'
+        })),
+        { code: 'hot', label: 'Hot Wallet', address: wallets.hot, custody: 'general' }
+      ];
 
-  for (const [kind, value] of rows) {
+  for (const wallet of rows) {
     const item = document.createElement('li');
-    item.innerHTML = `<span class="wallet-kind">${escapeHtml(kind)}</span><span class="wallet-value">${escapeHtml(value)}</span>`;
+    const flowTags = Array.isArray(wallet.flowTags) ? wallet.flowTags.join(' / ') : '';
+    const allocation = wallet.allocationLabel
+      ? `${wallet.allocationLabel}${wallet.allocationUnits ? ` · ${wallet.allocationUnits}` : ''}`
+      : 'n/a';
+    item.innerHTML = `
+      <div class="wallet-row-head">
+        <span class="wallet-kind">${escapeHtml(wallet.label ?? wallet.code)}</span>
+        <span class="wallet-chip">${escapeHtml(wallet.custody ?? 'unknown')}</span>
+      </div>
+      <span class="wallet-value">${escapeHtml(wallet.address)}</span>
+      <span class="wallet-meta">code: ${escapeHtml(wallet.code ?? 'unknown')}</span>
+      <span class="wallet-meta">allocation: ${escapeHtml(allocation)}</span>
+      ${flowTags ? `<span class="wallet-meta">flows: ${escapeHtml(flowTags)}</span>` : ''}
+      ${wallet.notes ? `<span class="wallet-meta">${escapeHtml(wallet.notes)}</span>` : ''}
+    `;
     els.walletList.append(item);
   }
 };
@@ -133,6 +167,46 @@ document.querySelector('#check-health').addEventListener('click', async () => {
 
 document.querySelector('#clear-log').addEventListener('click', () => {
   els.log.innerHTML = '';
+});
+
+document.querySelector('#lookup-binding').addEventListener('click', async () => {
+  const userId = getFormValue(els.bindingForm, 'userId');
+  const walletAddress = getFormValue(els.bindingForm, 'walletAddress');
+  const searchParams = new URLSearchParams();
+  if (userId) {
+    searchParams.set('userId', userId);
+  }
+  if (walletAddress) {
+    searchParams.set('walletAddress', walletAddress);
+  }
+
+  try {
+    const payload = await fetchJson(`/api/wallets/address-binding?${searchParams.toString()}`);
+    setBlock(els.bindingResult, payload);
+    appendLog('Wallet binding lookup', payload);
+  } catch (error) {
+    setBlock(els.bindingResult, error.payload ?? { message: error.message });
+    appendLog('Wallet binding lookup failed', error.payload ?? { message: error.message });
+  }
+});
+
+els.bindingForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const payload = await fetchJson('/api/wallets/address-binding', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: getFormValue(els.bindingForm, 'userId'),
+        walletAddress: getFormValue(els.bindingForm, 'walletAddress')
+      })
+    });
+    setBlock(els.bindingResult, payload);
+    appendLog('Wallet binding upserted', payload);
+  } catch (error) {
+    setBlock(els.bindingResult, error.payload ?? { message: error.message });
+    appendLog('Wallet binding upsert failed', error.payload ?? { message: error.message });
+  }
 });
 
 els.contractProfileForm.addEventListener('submit', async (event) => {
@@ -162,10 +236,18 @@ els.contractProfileForm.addEventListener('submit', async (event) => {
 document.querySelector('#balance-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const searchParams = new URLSearchParams();
   const userId = getFormValue(form, 'userId');
+  const walletAddress = getFormValue(form, 'walletAddress');
+  if (userId) {
+    searchParams.set('userId', userId);
+  }
+  if (walletAddress) {
+    searchParams.set('walletAddress', walletAddress);
+  }
 
   try {
-    const payload = await fetchJson(`/api/wallets/${encodeURIComponent(userId)}/balance`);
+    const payload = await fetchJson(`/api/wallets/balance?${searchParams.toString()}`);
     setBlock(els.balanceResult, payload);
     appendLog('Balance fetched', payload);
   } catch (error) {
@@ -179,7 +261,8 @@ document.querySelector('#deposit-form').addEventListener('submit', async (event)
   const form = event.currentTarget;
   const system = currentStatus ?? (await fetchJson('/api/system/status'));
   const body = {
-    userId: getFormValue(form, 'userId'),
+    userId: getFormValue(form, 'userId') || undefined,
+    walletAddress: getFormValue(form, 'walletAddress') || undefined,
     txHash: getFormValue(form, 'txHash') || autoKey('deposit'),
     toAddress: getFormValue(form, 'toAddress') || system.wallets.tracked[0],
     amount: Number(getFormValue(form, 'amount')),
@@ -204,8 +287,10 @@ document.querySelector('#transfer-form').addEventListener('submit', async (event
   event.preventDefault();
   const form = event.currentTarget;
   const body = {
-    fromUserId: getFormValue(form, 'fromUserId'),
-    toUserId: getFormValue(form, 'toUserId'),
+    fromUserId: getFormValue(form, 'fromUserId') || undefined,
+    fromWalletAddress: getFormValue(form, 'fromWalletAddress') || undefined,
+    toUserId: getFormValue(form, 'toUserId') || undefined,
+    toWalletAddress: getFormValue(form, 'toWalletAddress') || undefined,
     amount: Number(getFormValue(form, 'amount'))
   };
   const idempotencyKey = getFormValue(form, 'idempotencyKey') || autoKey('transfer');
@@ -230,7 +315,8 @@ document.querySelector('#withdraw-request-form').addEventListener('submit', asyn
   event.preventDefault();
   const form = event.currentTarget;
   const body = {
-    userId: getFormValue(form, 'userId'),
+    userId: getFormValue(form, 'userId') || undefined,
+    walletAddress: getFormValue(form, 'walletAddress') || undefined,
     toAddress: getFormValue(form, 'toAddress'),
     amount: Number(getFormValue(form, 'amount'))
   };

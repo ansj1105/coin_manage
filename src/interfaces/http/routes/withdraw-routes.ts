@@ -7,9 +7,12 @@ import { tronAddressPattern } from '../../../domain/value-objects/tron-address.j
 import { requireIdempotencyKey, zodToDomainError } from '../../../core/validation.js';
 
 const requestSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  walletAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format').optional(),
   amount: z.number().positive(),
   toAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format')
+}).refine((value) => value.userId || value.walletAddress, {
+  message: 'userId or walletAddress is required'
 });
 
 export const createWithdrawRoutes = (withdrawService: WithdrawService): Router => {
@@ -25,6 +28,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
       const idempotencyKey = requireIdempotencyKey(req.header('Idempotency-Key'));
       const result = await withdrawService.request({
         userId: parsed.data.userId,
+        walletAddress: parsed.data.walletAddress,
         amountKori: parsed.data.amount,
         toAddress: parsed.data.toAddress,
         idempotencyKey

@@ -3,6 +3,7 @@ import type {
   DepositApplyResult,
   TransferResult,
   TxJob,
+  WalletBinding,
   Withdrawal,
   WithdrawalRequestResult,
   WithdrawalStatus
@@ -10,6 +11,10 @@ import type {
 
 export interface LedgerRepository {
   getAccount(userId: string): Promise<Account>;
+  getAccountByWalletAddress(walletAddress: string): Promise<Account>;
+  bindWalletAddress(input: { userId: string; walletAddress: string; nowIso?: string }): Promise<WalletBinding>;
+  getWalletBinding(input: { userId?: string; walletAddress?: string }): Promise<WalletBinding | undefined>;
+  resolveUserId(input: { userId?: string; walletAddress?: string }): Promise<string>;
   applyDeposit(input: {
     userId: string;
     amount: bigint;

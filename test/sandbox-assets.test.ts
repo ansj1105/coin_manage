@@ -9,6 +9,8 @@ describe('sandbox assets and runtime status', () => {
     expect(payload.service.name).toBe('korion-kori-backend');
     expect(Array.isArray(payload.wallets.tracked)).toBe(true);
     expect(payload.wallets.tracked.length).toBeGreaterThan(1);
+    expect(Array.isArray(payload.wallets.catalog)).toBe(true);
+    expect(payload.wallets.catalog.some((wallet) => wallet.code === 'hot')).toBe(true);
     expect(payload.contracts.profiles.mainnet).toBeTruthy();
     expect(payload.contracts.profiles.testnet).toBeTruthy();
   });
@@ -18,6 +20,7 @@ describe('sandbox assets and runtime status', () => {
 
     expect(html).toContain('Operational Sandbox');
     expect(html).toContain('Runtime Status');
+    expect(html).toContain('Wallet Binding');
     expect(html).toContain('Withdrawal Control');
     expect(html).toContain('Activity Log');
   });

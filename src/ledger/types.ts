@@ -9,9 +9,16 @@ export type TransactionStatus = 'pending' | 'confirmed' | 'failed';
 
 export interface Account {
   userId: string;
+  walletAddress?: string;
   balance: bigint;
   lockedBalance: bigint;
   updatedAt: string;
+}
+
+export interface WalletBinding {
+  userId: string;
+  walletAddress: string;
+  createdAt: string;
 }
 
 export interface LedgerTransaction {

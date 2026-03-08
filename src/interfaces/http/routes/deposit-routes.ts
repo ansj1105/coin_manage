@@ -6,11 +6,14 @@ import { zodToDomainError } from '../../../core/validation.js';
 import { DepositService } from '../../../application/services/deposit-service.js';
 
 const bodySchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  walletAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format').optional(),
   txHash: z.string().min(8).max(128),
   toAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format'),
   amount: z.number().positive(),
   blockNumber: z.number().int().nonnegative()
+}).refine((value) => value.userId || value.walletAddress, {
+  message: 'userId or walletAddress is required'
 });
 
 export const createDepositRoutes = (depositService: DepositService): Router => {
@@ -25,6 +28,7 @@ export const createDepositRoutes = (depositService: DepositService): Router => {
 
       const result = await depositService.processDeposit({
         userId: parsed.data.userId,
+        walletAddress: parsed.data.walletAddress,
         txHash: parsed.data.txHash,
         toAddress: parsed.data.toAddress,
         amountKori: parsed.data.amount,

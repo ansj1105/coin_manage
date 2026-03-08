@@ -11,13 +11,18 @@ export class WithdrawService {
   ) {}
 
   async request(input: {
-    userId: string;
+    userId?: string;
+    walletAddress?: string;
     amountKori: number;
     toAddress: string;
     idempotencyKey: string;
   }) {
-    const result = await this.ledger.requestWithdrawal({
+    const userId = await this.ledger.resolveUserId({
       userId: input.userId,
+      walletAddress: input.walletAddress
+    });
+    const result = await this.ledger.requestWithdrawal({
+      userId,
       amount: parseKoriAmount(input.amountKori),
       toAddress: input.toAddress,
       idempotencyKey: input.idempotencyKey
@@ -26,7 +31,8 @@ export class WithdrawService {
     if (!result.duplicated) {
       this.eventPublisher.publish('withdraw.requested', {
         withdrawalId: result.withdrawal.withdrawalId,
-        userId: result.withdrawal.userId,
+        userId,
+        walletAddress: input.walletAddress,
         amountKori: input.amountKori
       });
     }

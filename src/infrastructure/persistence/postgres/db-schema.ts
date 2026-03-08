@@ -5,6 +5,12 @@ export interface AccountsTable {
   updated_at: string;
 }
 
+export interface WalletAddressBindingsTable {
+  user_id: string;
+  wallet_address: string;
+  created_at: string;
+}
+
 export interface TransactionsTable {
   tx_id: string;
   user_id: string;
@@ -55,6 +61,7 @@ export interface TxJobsTable {
 
 export interface KorionDatabase {
   accounts: AccountsTable;
+  wallet_address_bindings: WalletAddressBindingsTable;
   transactions: TransactionsTable;
   deposits: DepositsTable;
   withdrawals: WithdrawalsTable;
