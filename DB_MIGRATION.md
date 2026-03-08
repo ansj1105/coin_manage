@@ -37,7 +37,7 @@ npm run db:info
 ```
 
 ## Observed Timings
-- `db:up`: not yet measured in this environment.
-- `db:migrate`: not yet measured in this environment.
-- `db:validate`: not yet measured in this environment.
-- `db:info`: not yet measured in this environment.
+- `db:up`: `real 0.55s` (failed: Docker daemon unavailable)
+- `db:migrate`: `real 0.36s` (failed: Docker daemon unavailable)
+- `db:validate`: `real 0.38s` (failed: Docker daemon unavailable)
+- `db:info`: `real 0.36s` (failed: Docker daemon unavailable)
