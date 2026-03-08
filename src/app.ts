@@ -59,7 +59,7 @@ export const createApp = (deps: AppDependencies): express.Express => {
   app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
-      service: 'orion-kori-backend',
+      service: 'korion-kori-backend',
       timestamp: new Date().toISOString()
     });
   });

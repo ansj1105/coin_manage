@@ -1,4 +1,4 @@
-# ORION KORI Backend (Node.js)
+# KORION KORI Backend (Node.js)
 
 `개발.md` 기반으로 만든 KORI 입금/내부원장/출금 백엔드 스캐폴드입니다.
 
@@ -31,7 +31,7 @@ npm run db:migrate
 npm run db:info
 ```
 
-Rollback SQL은 `flyway/rollback/V1__init_orion_schema.down.sql`에 포함되어 있습니다.
+Rollback SQL은 `flyway/rollback/V1__init_korion_schema.down.sql`에 포함되어 있습니다.
 
 ## API
 - `POST /api/deposits/scan`

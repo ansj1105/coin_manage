@@ -9,10 +9,10 @@
   - `tx_jobs`
 
 ## Up Migration
-- `flyway/sql/V1__init_orion_schema.sql`
+- `flyway/sql/V1__init_korion_schema.sql`
 
 ## Down Migration (manual rollback path)
-- `flyway/rollback/V1__init_orion_schema.down.sql`
+- `flyway/rollback/V1__init_korion_schema.down.sql`
 
 ## Lock / Performance Risk
 - `CREATE TABLE` only: low lock risk for existing workloads (new deploy baseline).

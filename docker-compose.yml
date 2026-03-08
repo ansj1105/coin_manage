@@ -1,31 +1,31 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: orion-postgres
+    container_name: korion-postgres
     environment:
-      POSTGRES_USER: ${DB_USER:-orion}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-orion}
-      POSTGRES_DB: ${DB_NAME:-orion}
+      POSTGRES_USER: ${DB_USER:-korion}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-korion}
+      POSTGRES_DB: ${DB_NAME:-korion}
     ports:
       - '${DB_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-orion} -d ${DB_NAME:-orion}']
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-korion} -d ${DB_NAME:-korion}']
       interval: 5s
       timeout: 5s
       retries: 10
 
   flyway:
     image: flyway/flyway:10.20.1
-    container_name: orion-flyway
+    container_name: korion-flyway
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      FLYWAY_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-orion}
-      FLYWAY_USER: ${DB_USER:-orion}
-      FLYWAY_PASSWORD: ${DB_PASSWORD:-orion}
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-korion}
+      FLYWAY_USER: ${DB_USER:-korion}
+      FLYWAY_PASSWORD: ${DB_PASSWORD:-korion}
       FLYWAY_SCHEMAS: ${DB_SCHEMA:-public}
       FLYWAY_CONNECT_RETRIES: 10
       FLYWAY_LOCATIONS: filesystem:/flyway/sql

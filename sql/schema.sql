@@ -1,4 +1,4 @@
--- ORION KORI backend schema (PostgreSQL)
+-- KORION KORI backend schema (PostgreSQL)
 
 CREATE TABLE IF NOT EXISTS accounts (
   user_id VARCHAR(64) PRIMARY KEY,

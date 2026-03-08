@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: ORION KORI Backend API
+  title: KORION KORI Backend API
   version: 0.1.0
 servers:
   - url: http://localhost:3000

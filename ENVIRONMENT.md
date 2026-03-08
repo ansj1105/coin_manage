@@ -1,6 +1,6 @@
 # .env Required Settings
 
-`ORION KORI Backend` 환경변수 정의입니다.
+`KORION KORI Backend` 환경변수 정의입니다.
 
 ## Core
 | Key | Required (dev) | Required (prod) | Default | Description |
@@ -15,7 +15,7 @@
 |---|---|---|---|---|
 | `TRON_API_URL` | No | Yes | `https://api.trongrid.io` | TRON 노드/게이트웨이 URL |
 | `TREASURY_WALLET_ADDRESS` | No | Yes | `TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa` | 재단(트레저리) 지갑 주소 |
-| `DEPOSIT_WALLET_ADDRESSES` | No | Yes | `TWbu...,TLkg...,TCFD...,TMCU...` | 입금 감지 대상 지갑 목록(콤마 구분) |
+| `DEPOSIT_WALLET_ADDRESSES` | No | Yes | `TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s` | 입금 감지 대상 지갑 목록(콤마 구분) |
 | `HOT_WALLET_ADDRESS` | No | Yes | `TYKL8DPoR99bccujHXxcyBewCV1NimdRc8` | 핫월렛 주소 |
 | `HOT_WALLET_PRIVATE_KEY` | No | Yes | `dev-only-private-key-change-me` | 핫월렛 개인키 (로그 출력 금지) |
 
@@ -24,9 +24,9 @@
 |---|---|---|---|---|
 | `DB_HOST` | No | Yes | `127.0.0.1` | DB 호스트 |
 | `DB_PORT` | No | Yes | `5432` | DB 포트 |
-| `DB_NAME` | No | Yes | `orion` | DB 이름 |
-| `DB_USER` | No | Yes | `orion` | DB 사용자 |
-| `DB_PASSWORD` | No | Yes | `orion` | DB 비밀번호 |
+| `DB_NAME` | No | Yes | `korion` | DB 이름 |
+| `DB_USER` | No | Yes | `korion` | DB 사용자 |
+| `DB_PASSWORD` | No | Yes | `korion` | DB 비밀번호 |
 | `DB_SCHEMA` | No | Yes | `public` | Flyway 대상 스키마 |
 
 ## Risk Control / Scheduler
