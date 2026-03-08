@@ -744,6 +744,13 @@ components:
               type: boolean
             mainnetDirectOnchainSendEnabled:
               type: boolean
+            onchainTransferSourcePolicy:
+              type: string
+              enum: [hot_only]
+            onchainTransferExecutableWalletCodes:
+              type: array
+              items:
+                type: string
     NetworkConfig:
       type: object
       properties:

@@ -13,6 +13,9 @@ const els = {
   onchainLookupResult: document.querySelector('#onchain-lookup-result'),
   onchainSendResult: document.querySelector('#onchain-send-result'),
   onchainSendNote: document.querySelector('#onchain-send-note'),
+  sendSourcePolicy: document.querySelector('#send-source-policy'),
+  sendSourceSummary: document.querySelector('#send-source-summary'),
+  sendSourceStatus: document.querySelector('#send-source-status'),
   fundingPill: document.querySelector('#funding-pill'),
   fundingHotWallet: document.querySelector('#funding-hot-wallet'),
   fundingNetwork: document.querySelector('#funding-network'),
@@ -28,6 +31,7 @@ const els = {
   bindingForm: document.querySelector('#binding-form'),
   onchainLookupForm: document.querySelector('#onchain-lookup-form'),
   onchainSendForm: document.querySelector('#onchain-send-form'),
+  sendSourceForm: document.querySelector('#send-source-form'),
   onchainTabs: Array.from(document.querySelectorAll('#onchain-tabs .tab-button'))
 };
 
@@ -58,6 +62,7 @@ const getFormValue = (form, name) => new FormData(form).get(name)?.toString().tr
 const autoKey = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 let currentStatus;
 let activeOnchainNetwork = 'testnet';
+let selectedSendSourceCode = 'hot';
 const networkResources = {
   mainnet: {
     explorerBaseUrl: 'https://tronscan.org/#/address/',
@@ -102,10 +107,12 @@ const updateOnchainConsole = (status) => {
   const runtime = status?.runtime ?? {};
   const walletAddress = status?.wallets?.hot ?? '';
   const networkLinks = networkResources[activeOnchainNetwork];
+  const executableCodes = status?.sandbox?.onchainTransferExecutableWalletCodes ?? ['hot'];
   const sendEnabled =
     sandbox.directOnchainSendEnabled &&
     (activeOnchainNetwork !== 'mainnet' || sandbox.mainnetDirectOnchainSendEnabled) &&
-    runtime.tronGatewayMode === 'trc20';
+    runtime.tronGatewayMode === 'trc20' &&
+    executableCodes.includes(selectedSendSourceCode);
 
   els.onchainTabs.forEach((tab) => {
     const isActive = tab.dataset.network === activeOnchainNetwork;
@@ -154,6 +161,53 @@ const updateOnchainConsole = (status) => {
     'Direct hot wallet send is enabled for this tab. This sends actual KORI from the configured hot wallet on the selected network.';
 };
 
+const renderSendSourceSelector = (status) => {
+  const executableCodes = status?.sandbox?.onchainTransferExecutableWalletCodes ?? ['hot'];
+  const policy = status?.sandbox?.onchainTransferSourcePolicy ?? 'hot_only';
+  const catalog = status?.wallets?.catalog ?? [];
+  const select = els.sendSourceForm.elements.sourceWalletCode;
+
+  select.innerHTML = '';
+  for (const wallet of catalog) {
+    const option = document.createElement('option');
+    option.value = wallet.code;
+    option.textContent = `${wallet.label} (${wallet.code})${executableCodes.includes(wallet.code) ? '' : ' - monitoring only'}`;
+    option.disabled = !executableCodes.includes(wallet.code);
+    select.append(option);
+  }
+
+  if (!executableCodes.includes(selectedSendSourceCode)) {
+    selectedSendSourceCode = executableCodes[0] ?? 'hot';
+  }
+  select.value = selectedSendSourceCode;
+  els.sendSourcePolicy.textContent = policy.replaceAll('_', ' ');
+
+  const selectedWallet = catalog.find((wallet) => wallet.code === selectedSendSourceCode);
+  const executionEnabled = executableCodes.includes(selectedSendSourceCode);
+  els.sendSourceSummary.textContent = executionEnabled
+    ? `Current execution source is ${selectedWallet?.label ?? 'Hot Wallet'}. In this runtime only the hot wallet can sign and broadcast.`
+    : `${selectedWallet?.label ?? selectedSendSourceCode} is multisig or monitoring-only. Cold, treasury, liquidity, reward, and marketing wallets need a separate multisig execution flow that is not implemented yet.`;
+
+  setBlock(els.sendSourceStatus, {
+    sourceWalletCode: selectedSendSourceCode,
+    executableWalletCodes: executableCodes,
+    selectedWallet: selectedWallet
+      ? {
+          code: selectedWallet.code,
+          label: selectedWallet.label,
+          address: selectedWallet.address,
+          custody: selectedWallet.custody
+        }
+      : null,
+    sendHere: 'On-Chain Console > Hot Wallet Direct Send',
+    verifyHere: [
+      'On-Chain Console > Address Lookup on the destination address',
+      'Funding & Readiness on the same tab for hot wallet source balance',
+      'Explorer link for chain-level tx confirmation'
+    ]
+  });
+};
+
 const refreshFundingStatus = async () => {
   const hotWalletAddress = currentStatus?.wallets?.hot;
   if (!hotWalletAddress) {
@@ -198,6 +252,7 @@ const refreshSystem = async () => {
     setBlock(els.systemStatus, { health, status });
     renderWallets(status.wallets);
     hydrateContractForm(status.contracts);
+    renderSendSourceSelector(status);
     updateOnchainConsole(status);
     await refreshFundingStatus();
     appendLog('Runtime refreshed', { health, status });
@@ -291,6 +346,7 @@ document.querySelector('#run-monitoring').addEventListener('click', async () => 
     setBlock(els.systemStatus, { status: payload.status, run: payload.run });
     renderWallets(payload.status.wallets);
     hydrateContractForm(payload.status.contracts);
+    renderSendSourceSelector(payload.status);
     updateOnchainConsole(payload.status);
     await refreshFundingStatus();
     appendLog('Monitoring cycle completed', payload.run);
@@ -315,6 +371,7 @@ document.querySelector('#clear-log').addEventListener('click', () => {
 els.onchainTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
     activeOnchainNetwork = tab.dataset.network;
+    renderSendSourceSelector(currentStatus);
     updateOnchainConsole(currentStatus);
     refreshFundingStatus();
     appendLog('On-chain tab switched', { network: activeOnchainNetwork });
@@ -322,6 +379,13 @@ els.onchainTabs.forEach((tab) => {
 });
 
 document.querySelector('#check-hot-wallet').addEventListener('click', refreshFundingStatus);
+
+els.sendSourceForm.addEventListener('change', () => {
+  selectedSendSourceCode = getFormValue(els.sendSourceForm, 'sourceWalletCode') || 'hot';
+  renderSendSourceSelector(currentStatus);
+  updateOnchainConsole(currentStatus);
+  appendLog('On-chain send source changed', { sourceWalletCode: selectedSendSourceCode });
+});
 
 document.querySelector('#lookup-binding').addEventListener('click', async () => {
   const userId = getFormValue(els.bindingForm, 'userId');
@@ -379,6 +443,7 @@ els.contractProfileForm.addEventListener('submit', async (event) => {
     });
     currentStatus = payload;
     hydrateContractForm(payload.contracts);
+    renderSendSourceSelector(payload);
     updateOnchainConsole(payload);
     setBlock(els.systemStatus, { health: await fetchJson('/health'), status: payload });
     appendLog('Contract profile updated', payload.contracts);
@@ -410,6 +475,16 @@ els.onchainSendForm.addEventListener('submit', async (event) => {
     toAddress: getFormValue(els.onchainSendForm, 'toAddress'),
     amount: Number(getFormValue(els.onchainSendForm, 'amount'))
   };
+
+  if (selectedSendSourceCode !== 'hot') {
+    const payload = {
+      error: 'Only hot wallet direct send is implemented in the current runtime.',
+      selectedSourceWalletCode: selectedSendSourceCode
+    };
+    setBlock(els.onchainSendResult, payload);
+    appendLog('On-chain transfer blocked', payload);
+    return;
+  }
 
   try {
     const payload = await fetchJson(`/api/onchain/networks/${encodeURIComponent(activeOnchainNetwork)}/transfers`, {

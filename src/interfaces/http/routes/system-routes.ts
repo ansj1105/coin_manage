@@ -80,7 +80,9 @@ export const buildSystemStatusResponse = (
     sandbox: {
       runtimeProfileEditable: env.runtimeProfileEditable,
       directOnchainSendEnabled: env.sandboxDirectOnchainSendEnabled,
-      mainnetDirectOnchainSendEnabled: env.sandboxMainnetDirectOnchainSendEnabled
+      mainnetDirectOnchainSendEnabled: env.sandboxMainnetDirectOnchainSendEnabled,
+      onchainTransferSourcePolicy: 'hot_only',
+      onchainTransferExecutableWalletCodes: ['hot']
     }
   };
 };

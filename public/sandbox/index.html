@@ -134,7 +134,7 @@
             </section>
             <section>
               <h3>On-Chain APIs</h3>
-              <p><code>GET /api/onchain/networks/:network/wallets/:address/balance</code> reads actual TRON TRX and KORI balances for any address on the selected mainnet or testnet. <code>POST /api/onchain/networks/:network/transfers</code> sends KORI directly from the hot wallet only when sandbox send is enabled and the gateway mode is <code>trc20</code>.</p>
+              <p><code>GET /api/onchain/networks/:network/wallets/:address/balance</code> reads actual TRON TRX and KORI balances for any address on the selected mainnet or testnet. <code>POST /api/onchain/networks/:network/transfers</code> currently sends KORI from the <strong>hot wallet only</strong> when sandbox send is enabled and the gateway mode is <code>trc20</code>. Multisig cold or treasury wallets are monitor-only in this runtime.</p>
             </section>
             <section>
               <h3>Deposit API</h3>
@@ -232,6 +232,22 @@
             <div class="panel-head">
               <h3>Hot Wallet Direct Send</h3>
               <span class="pill pill-alert">POST</span>
+            </div>
+            <div class="source-wallet-box">
+              <div class="panel-head compact-head">
+                <h3>Transfer Source</h3>
+                <span class="pill pill-neutral" id="send-source-policy">hot only</span>
+              </div>
+              <p class="panel-copy compact" id="send-source-summary">
+                Only the hot wallet can sign and send in the current runtime. Multisig wallets are monitoring targets only.
+              </p>
+              <form id="send-source-form" class="stack">
+                <label>
+                  <span>Source Wallet</span>
+                  <select name="sourceWalletCode"></select>
+                </label>
+              </form>
+              <pre id="send-source-status" class="code-block"></pre>
             </div>
             <p class="panel-copy" id="onchain-send-note">
               Direct hot wallet send depends on sandbox send policy and <code>TRON_GATEWAY_MODE=trc20</code>.
