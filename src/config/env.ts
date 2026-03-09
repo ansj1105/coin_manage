@@ -15,6 +15,8 @@ const optionalBooleanString = z.preprocess(
   z.enum(['true', 'false']).optional()
 );
 
+const optionalUrlString = z.preprocess((value) => (value === '' ? undefined : value), z.string().url().optional());
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -52,7 +54,7 @@ const schema = z.object({
   DEPOSIT_MONITOR_LOOKBACK_MS: z.coerce.number().int().nonnegative().default(300000),
   DEPOSIT_MONITOR_PAGE_LIMIT: z.coerce.number().int().positive().max(200).default(200),
   DEPOSIT_MONITOR_CURRENCY_IDS: z.string().optional(),
-  FOXYA_INTERNAL_API_URL: z.string().url().optional(),
+  FOXYA_INTERNAL_API_URL: optionalUrlString,
   FOXYA_INTERNAL_API_KEY: z.string().optional(),
   DB_HOST: z.string().default('127.0.0.1'),
   DB_PORT: z.coerce.number().int().positive().default(5432),
