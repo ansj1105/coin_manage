@@ -10,6 +10,9 @@ const els = {
   transferResult: document.querySelector('#transfer-result'),
   withdrawResult: document.querySelector('#withdraw-result'),
   schedulerResult: document.querySelector('#scheduler-result'),
+  depositMonitorResult: document.querySelector('#deposit-monitor-result'),
+  approvalQueueResult: document.querySelector('#approval-queue-result'),
+  opsResult: document.querySelector('#ops-result'),
   onchainLookupResult: document.querySelector('#onchain-lookup-result'),
   onchainSendResult: document.querySelector('#onchain-send-result'),
   onchainSendNote: document.querySelector('#onchain-send-note'),
@@ -27,6 +30,7 @@ const els = {
   onchainNetworkPill: document.querySelector('#onchain-network-pill'),
   log: document.querySelector('#activity-log'),
   withdrawIdInput: document.querySelector('#withdraw-actions-form input[name="withdrawalId"]'),
+  approvalQueueForm: document.querySelector('#approval-queue-form'),
   contractProfileForm: document.querySelector('#contract-profile-form'),
   bindingForm: document.querySelector('#binding-form'),
   onchainLookupForm: document.querySelector('#onchain-lookup-form'),
@@ -241,6 +245,122 @@ const refreshFundingStatus = async () => {
   }
 };
 
+const syncWithdrawalId = (withdrawalId) => {
+  if (!withdrawalId) {
+    return;
+  }
+  els.withdrawIdInput.value = withdrawalId;
+  const approvalInput = els.approvalQueueForm?.elements?.withdrawalId;
+  if (approvalInput) {
+    approvalInput.value = withdrawalId;
+  }
+};
+
+const refreshDepositMonitor = async () => {
+  try {
+    const payload = await fetchJson('/api/system/deposit-monitor');
+    setBlock(els.depositMonitorResult, payload);
+    appendLog('Deposit monitor status loaded', payload);
+  } catch (error) {
+    setBlock(els.depositMonitorResult, error.payload ?? { message: error.message });
+    appendLog('Deposit monitor status failed', error.payload ?? { message: error.message });
+  }
+};
+
+const runDepositMonitor = async () => {
+  try {
+    const payload = await fetchJson('/api/system/deposit-monitor/run', { method: 'POST' });
+    setBlock(els.depositMonitorResult, payload);
+    appendLog('Deposit monitor cycle executed', payload);
+  } catch (error) {
+    setBlock(els.depositMonitorResult, error.payload ?? { message: error.message });
+    appendLog('Deposit monitor cycle failed', error.payload ?? { message: error.message });
+  }
+};
+
+const loadPendingApprovals = async () => {
+  try {
+    const payload = await fetchJson('/api/withdrawals/pending-approvals');
+    setBlock(els.approvalQueueResult, payload);
+    appendLog('Pending approvals loaded', payload);
+  } catch (error) {
+    setBlock(els.approvalQueueResult, error.payload ?? { message: error.message });
+    appendLog('Pending approvals failed', error.payload ?? { message: error.message });
+  }
+};
+
+const processWithdrawQueue = async () => {
+  try {
+    const payload = await fetchJson('/api/scheduler/process-withdraw-queue', { method: 'POST' });
+    setBlock(els.approvalQueueResult, payload);
+    appendLog('Withdraw queue processed', payload);
+  } catch (error) {
+    setBlock(els.approvalQueueResult, error.payload ?? { message: error.message });
+    appendLog('Withdraw queue processing failed', error.payload ?? { message: error.message });
+  }
+};
+
+const fetchApprovalHistory = async () => {
+  const withdrawalId = getFormValue(els.approvalQueueForm, 'withdrawalId');
+  if (!withdrawalId) {
+    setBlock(els.approvalQueueResult, { error: 'withdrawalId is required for approval history' });
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(`/api/withdrawals/${encodeURIComponent(withdrawalId)}/approvals`);
+    setBlock(els.approvalQueueResult, payload);
+    appendLog('Approval history loaded', payload);
+  } catch (error) {
+    setBlock(els.approvalQueueResult, error.payload ?? { message: error.message });
+    appendLog('Approval history failed', error.payload ?? { message: error.message });
+  }
+};
+
+const loadReconciliation = async () => {
+  try {
+    const payload = await fetchJson('/api/system/reconciliation');
+    setBlock(els.opsResult, payload);
+    appendLog('Reconciliation loaded', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('Reconciliation failed', error.payload ?? { message: error.message });
+  }
+};
+
+const loadAuditLogs = async () => {
+  try {
+    const payload = await fetchJson('/api/system/audit-logs?limit=20');
+    setBlock(els.opsResult, payload);
+    appendLog('Audit logs loaded', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('Audit logs failed', error.payload ?? { message: error.message });
+  }
+};
+
+const planSweeps = async () => {
+  try {
+    const payload = await fetchJson('/api/system/sweeps/plan', { method: 'POST' });
+    setBlock(els.opsResult, payload);
+    appendLog('Sweep planning executed', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('Sweep planning failed', error.payload ?? { message: error.message });
+  }
+};
+
+const listSweeps = async () => {
+  try {
+    const payload = await fetchJson('/api/system/sweeps?limit=20');
+    setBlock(els.opsResult, payload);
+    appendLog('Sweeps loaded', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('Sweeps load failed', error.payload ?? { message: error.message });
+  }
+};
+
 const refreshSystem = async () => {
   try {
     const [health, status] = await Promise.all([fetchJson('/health'), fetchJson('/api/system/status')]);
@@ -367,6 +487,15 @@ document.querySelector('#check-health').addEventListener('click', async () => {
 document.querySelector('#clear-log').addEventListener('click', () => {
   els.log.innerHTML = '';
 });
+document.querySelector('#refresh-deposit-monitor').addEventListener('click', refreshDepositMonitor);
+document.querySelector('#run-deposit-monitor').addEventListener('click', runDepositMonitor);
+document.querySelector('#list-pending-approvals').addEventListener('click', loadPendingApprovals);
+document.querySelector('#process-withdraw-queue').addEventListener('click', processWithdrawQueue);
+document.querySelector('#fetch-approval-history').addEventListener('click', fetchApprovalHistory);
+document.querySelector('#load-reconciliation').addEventListener('click', loadReconciliation);
+document.querySelector('#load-audit-logs').addEventListener('click', loadAuditLogs);
+document.querySelector('#plan-sweeps').addEventListener('click', planSweeps);
+document.querySelector('#list-sweeps').addEventListener('click', listSweeps);
 
 els.onchainTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -599,7 +728,7 @@ document.querySelector('#withdraw-request-form').addEventListener('submit', asyn
     });
     const withdrawalId = payload.withdrawal?.withdrawalId;
     if (withdrawalId) {
-      els.withdrawIdInput.value = withdrawalId;
+      syncWithdrawalId(withdrawalId);
     }
     setBlock(els.withdrawResult, payload);
     appendLog('Withdrawal requested', payload);
@@ -630,6 +759,8 @@ document.querySelector('#withdraw-actions-form').addEventListener('click', async
 
   try {
     const payload = await fetchJson(path, { method });
+    const resolvedWithdrawalId = payload.withdrawal?.withdrawalId ?? payload.withdrawalId ?? withdrawalId;
+    syncWithdrawalId(resolvedWithdrawalId);
     setBlock(els.withdrawResult, payload);
     appendLog(`Withdrawal ${action}`, payload);
   } catch (error) {
@@ -658,4 +789,5 @@ document.querySelector('#scheduler-form').addEventListener('submit', async (even
   }
 });
 
+refreshDepositMonitor();
 refreshSystem();

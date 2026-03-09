@@ -20,6 +20,21 @@
           <button id="run-monitoring" class="button button-secondary">Run Monitor Cycle</button>
           <button id="check-health" class="button button-secondary">Ping Health</button>
         </div>
+        <nav class="quick-nav" aria-label="Sandbox sections">
+          <a class="chip-link" href="#runtime-section">Runtime</a>
+          <a class="chip-link" href="#wallet-section">Wallet</a>
+          <a class="chip-link" href="#withdraw-section">Withdraw</a>
+          <a class="chip-link" href="#ops-section">Ops</a>
+          <a class="chip-link" href="#onchain-section">On-Chain</a>
+        </nav>
+      </section>
+
+      <section class="section-head" id="runtime-section">
+        <div>
+          <p class="section-kicker">1. Runtime</p>
+          <h2>Runtime & Monitoring</h2>
+        </div>
+        <p class="section-copy">배포 모드, 시스템 지갑, 계약 프로필, 모니터 캐시를 가장 먼저 점검합니다.</p>
       </section>
 
       <section class="grid two-up">
@@ -156,6 +171,14 @@
         </article>
       </section>
 
+      <section class="section-head" id="onchain-section">
+        <div>
+          <p class="section-kicker">5. Chain</p>
+          <h2>On-Chain Console</h2>
+        </div>
+        <p class="section-copy">mainnet/testnet 직접 조회와 hot wallet direct send를 실제 체인 기준으로 테스트합니다.</p>
+      </section>
+
       <section class="panel panel-wide">
         <div class="panel-head">
           <div>
@@ -268,6 +291,14 @@
         </div>
       </section>
 
+      <section class="section-head" id="wallet-section">
+        <div>
+          <p class="section-kicker">2. Wallet</p>
+          <h2>Wallet & Internal Ledger</h2>
+        </div>
+        <p class="section-copy">지갑 바인딩, 내부 잔액, 수동 입금 반영, 내부 이체를 묶어서 검증합니다.</p>
+      </section>
+
       <section class="grid three-up">
         <article class="panel">
           <div class="panel-head">
@@ -373,6 +404,14 @@
         </article>
       </section>
 
+      <section class="section-head" id="withdraw-section">
+        <div>
+          <p class="section-kicker">3. Withdraw</p>
+          <h2>Withdrawal & Queue</h2>
+        </div>
+        <p class="section-copy">출금 상태 전이와 scheduler 복구, 승인 대기 큐를 검증합니다.</p>
+      </section>
+
       <section class="grid two-up">
         <article class="panel">
           <div class="panel-head">
@@ -439,6 +478,70 @@
             <button class="button" type="submit">Retry Pending</button>
           </form>
           <pre id="scheduler-result" class="code-block"></pre>
+        </article>
+      </section>
+
+      <section class="section-head" id="ops-section">
+        <div>
+          <p class="section-kicker">4. Ops</p>
+          <h2>Deposit Monitor, Audit & Sweep</h2>
+        </div>
+        <p class="section-copy">자동 입금 모니터, 대사, 감사 로그, sweep 계획 생성 등 운영 API를 한 구역에 모았습니다.</p>
+      </section>
+
+      <section class="grid three-up">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Deposit Monitor</h2>
+            <span class="pill pill-positive">foxya</span>
+          </div>
+          <p class="panel-copy">
+            foxya watch-addresses 기반 자동 입금 모니터 상태 조회와 수동 1회 실행을 테스트합니다.
+          </p>
+          <div class="hero-actions compact-actions">
+            <button class="button" id="refresh-deposit-monitor" type="button">Refresh Monitor</button>
+            <button class="button button-secondary" id="run-deposit-monitor" type="button">Run Monitor Cycle</button>
+          </div>
+          <pre id="deposit-monitor-result" class="code-block"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Queue & Approvals</h2>
+            <span class="pill pill-neutral">ops</span>
+          </div>
+          <p class="panel-copy">
+            대기 승인 목록, 승인 이력, 출금 queue 처리 결과를 조회합니다.
+          </p>
+          <form id="approval-queue-form" class="stack">
+            <label>
+              <span>Withdrawal ID</span>
+              <input name="withdrawalId" value="" placeholder="optional for approval history" />
+            </label>
+            <div class="hero-actions compact-actions">
+              <button class="button" type="button" id="list-pending-approvals">List Pending</button>
+              <button class="button button-secondary" type="button" id="process-withdraw-queue">Process Queue</button>
+              <button class="button button-ghost" type="button" id="fetch-approval-history">Approval History</button>
+            </div>
+          </form>
+          <pre id="approval-queue-result" class="code-block"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Reconciliation & Sweep</h2>
+            <span class="pill pill-alert">ops</span>
+          </div>
+          <p class="panel-copy">
+            대사 리포트, 감사 로그, sweep 계획 생성과 기록 조회를 묶어서 확인합니다.
+          </p>
+          <div class="hero-actions compact-actions">
+            <button class="button" id="load-reconciliation" type="button">Load Reconciliation</button>
+            <button class="button button-secondary" id="load-audit-logs" type="button">Load Audit Logs</button>
+            <button class="button button-ghost" id="plan-sweeps" type="button">Plan Sweeps</button>
+            <button class="button button-ghost" id="list-sweeps" type="button">List Sweeps</button>
+          </div>
+          <pre id="ops-result" class="code-block"></pre>
         </article>
       </section>
 
