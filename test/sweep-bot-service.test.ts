@@ -8,7 +8,7 @@ describe('sweep bot service', () => {
     Object.assign(process.env, originalEnv, {
       NODE_ENV: 'test',
       SWEEP_BOT_ENABLED: 'true',
-      HOT_WALLET_ADDRESS: 'TYKL8DPoR99bccujHXxcyBewCV1NimdRc8',
+      HOT_WALLET_ADDRESS: 'TWb6JbQCATPepWeziLhyegXoKLBmmAqdEx',
       HOT_WALLET_PRIVATE_KEY: 'test-hot-wallet-private-key'
     });
   });
@@ -38,7 +38,7 @@ describe('sweep bot service', () => {
       currencyId: 3,
       network: 'TRON',
       fromAddress: 'T1111111111111111111111111111111111',
-      toAddress: 'TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh',
+      toAddress: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9i',
       txHash: 'deposit-tx-1',
       eventIndex: 0,
       blockNumber: 100,
@@ -70,7 +70,7 @@ describe('sweep bot service', () => {
       getWalletSignerByAddress: vi.fn(async () => ({
         userId: 'user-1',
         currencyId: 3,
-        address: 'TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh',
+        address: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9i',
         privateKey: 'test-deposit-wallet-private-key'
       }))
     };
