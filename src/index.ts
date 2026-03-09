@@ -9,6 +9,10 @@ if (env.walletMonitorEnabled) {
   deps.monitoringWorker.start();
 }
 
+if (env.depositMonitorEnabled) {
+  deps.depositMonitorWorker.start();
+}
+
 app.listen(env.port, () => {
   console.log(`korion-kori-backend listening on port ${env.port}`);
 });

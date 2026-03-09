@@ -32,7 +32,7 @@ export const createApp = (deps: AppDependencies): express.Express => {
     res.redirect('/sandbox/');
   });
 
-  app.use('/api/system', createSystemRoutes(deps.systemMonitoringService));
+  app.use('/api/system', createSystemRoutes(deps.systemMonitoringService, deps.operationsService, deps.depositMonitorService));
   app.use('/api/onchain', createOnchainRoutes(deps.onchainService));
   app.use('/api/deposits', createDepositRoutes(deps.depositService));
   app.use('/api/wallets', createWalletRoutes(deps.walletService));

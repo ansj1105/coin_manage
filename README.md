@@ -10,7 +10,7 @@
 - `src/interfaces`: HTTP 라우트/미들웨어
 - `src/app.ts`: Express 앱 조립
 
-프로젝트 기능 정의서는 [DEVELOPMENT_FUNCTION_SPEC.md](/Users/an/work/coin_manage/DEVELOPMENT_FUNCTION_SPEC.md) 참고.
+기능 기준 문서는 [기능정의서.md](/Users/an/work/coin_manage/기능정의서.md), 구현 히스토리 중심 문서는 [DEVELOPMENT_FUNCTION_SPEC.md](/Users/an/work/coin_manage/DEVELOPMENT_FUNCTION_SPEC.md) 참고.
 
 ## 포함된 코어 기능
 - Deposit Core: 입금 감지 반영 + `txHash` idempotency
@@ -18,6 +18,9 @@
 - Withdraw Core: 출금 요청/승인/브로드캐스트/확정
 - Risk Control: 1회/1일 출금 한도
 - Scheduler: pending 재처리, broadcast 상태 reconcile
+- Admin Control: 감사 로그, 관리자 승인 기록, 다중 승인
+- Operations: 출금 큐 처리, sweep plan/기록, 대사 요약, 핫월렛 임계치 알림
+- Deposit Monitor Bot: foxya 내부 API watch-addresses 조회, TRON KORI 입금 감지/등록/확정 자동화
 - 주소 필터: 지정된 재단/입금/핫 지갑 주소로만 입금 반영
 
 ## 빠른 시작
@@ -73,11 +76,28 @@ ALLOW_SANDBOX_DIRECT_ONCHAIN_SEND=true
 ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=false
 ```
 
+foxya 백엔드와 자동 입금 연동을 사용하려면:
+```env
+APP_DEPOSIT_MONITOR_ENABLED=true
+APP_DEPOSIT_MONITOR_NETWORK=mainnet
+APP_DEPOSIT_MONITOR_CONFIRMATIONS=20
+APP_DEPOSIT_MONITOR_CURRENCY_IDS=101
+FOXYA_INTERNAL_API_URL=http://foxya-coin-api:8080/api/v1/internal/deposits
+FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
+SHARED_DOCKER_NETWORK_NAME=fox_coin_foxya-network
+```
+
+주의:
+- foxya `docker-compose.yml`은 현재 네트워크 `name:`이 고정돼 있지 않습니다. 두 프로젝트를 별도 compose 프로젝트로 띄우면 실제 네트워크명이 prefix 포함 값일 수 있으니 `docker network ls`로 확인해서 `SHARED_DOCKER_NETWORK_NAME`에 넣어야 합니다.
+- `watch-addresses` 응답에는 통화 코드가 없어서, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS`로 KORI currency id만 제한해야 합니다.
+
 `TRON_API_KEY`를 안 넣으면 지금까지는 public `TRON_API_URL`만으로 동작했습니다.
 이제는 key가 있으면 `TRON-PRO-API-KEY` 헤더를 같이 붙입니다.
 `ALLOW_RUNTIME_PROFILE_SWITCHING` 또는 `APP_ALLOW_RUNTIME_PROFILE_SWITCHING`을 `true`로 두면 sandbox에서 `runtime / mainnet / testnet / custom` contract profile 전환이 가능합니다.
 운영 서버에서도 이 값을 `true`로 두면 전환 API가 열립니다.
 `WALLET_MONITOR_ENABLED=true`와 `WALLET_MONITOR_INTERVAL_SEC=20`을 두면 백그라운드 수집기가 주기적으로 지갑 모니터링 값을 DB에 저장하고, sandbox/status는 저장된 최근값만 읽습니다.
+`HOT_WALLET_ALERT_MIN_KORI`, `HOT_WALLET_ALERT_MIN_TRX`는 상태/대사 응답에서 핫월렛 알림 임계치로 사용됩니다.
+`SWEEP_PLAN_MIN_KORI`는 sweep plan 생성 최소 잔액 기준입니다.
 `ALLOW_SANDBOX_DIRECT_ONCHAIN_SEND=true`면 sandbox에서 핫월렛 직접 전송 API가 열립니다.
 mainnet 직접 전송은 `ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=true`가 추가로 필요합니다.
 
@@ -100,6 +120,14 @@ npm run stack:down
 - `POST /api/deposits/scan`
 - `GET /api/system/status`
 - `POST /api/system/monitoring/run`
+- `GET /api/system/deposit-monitor`
+- `POST /api/system/deposit-monitor/run`
+- `GET /api/system/audit-logs`
+- `GET /api/system/reconciliation`
+- `GET /api/system/sweeps`
+- `POST /api/system/sweeps/plan`
+- `POST /api/system/sweeps/:sweepId/broadcast`
+- `POST /api/system/sweeps/:sweepId/confirm`
 - `GET /api/onchain/networks/:network/wallets/:address/balance`
 - `POST /api/onchain/networks/:network/transfers`
 - `POST /api/wallets/address-binding`
@@ -109,10 +137,13 @@ npm run stack:down
 - `GET /api/wallets/:userId/address`
 - `POST /api/wallets/transfer`
 - `POST /api/withdrawals`
+- `GET /api/withdrawals/pending-approvals`
 - `POST /api/withdrawals/:withdrawalId/approve`
+- `GET /api/withdrawals/:withdrawalId/approvals`
 - `POST /api/withdrawals/:withdrawalId/broadcast`
 - `POST /api/withdrawals/:withdrawalId/confirm`
 - `GET /api/withdrawals/:withdrawalId`
+- `POST /api/scheduler/process-withdraw-queue`
 - `POST /api/scheduler/retry-pending`
 
 상세 계약은 `openapi.yaml` 참고.
@@ -141,8 +172,11 @@ http://localhost:3000/sandbox/
 - wallet address binding / lookup
 - balance 조회
 - deposit scan (`userId` 또는 `walletAddress`)
+- foxya watch-address 기반 자동 deposit monitor 상태/수동 실행
 - internal transfer (`userId` 또는 `walletAddress`)
 - withdrawal request / approve / broadcast / confirm
+- pending approvals / approval history
+- reconciliation / audit logs / sweep planning
 - scheduler retry
 
 ## 테스트
@@ -156,4 +190,5 @@ npm run build
 - DB 마이그레이션은 Flyway로 적용됨.
 - `APP_LEDGER_PROVIDER=postgres`를 사용하면 앱이 PostgreSQL 기반 Ledger를 사용합니다.
 - `APP_TRON_GATEWAY_MODE=trc20`는 구현되어 있고 TRON API key와 mainnet/testnet contract preset까지 반영됐습니다.
+- `APP_DEPOSIT_MONITOR_ENABLED=true`면 foxya 내부 API와 같은 도커 네트워크에서 watch-address 조회, TRON KORI 입금 register/complete가 자동 실행됩니다.
 - 메인넷 운영 송금 검증은 별도 컨트랙트 주소와 실환경 검증이 필요합니다.

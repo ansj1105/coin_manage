@@ -9,6 +9,56 @@ export class SchedulerService {
     private readonly eventPublisher: EventPublisher
   ) {}
 
+  async processWithdrawQueue() {
+    const pending = await this.ledger.listPendingApprovalWithdrawals();
+    let autoApproved = 0;
+    let reviewQueued = 0;
+
+    for (const withdrawal of pending) {
+      if (withdrawal.riskLevel === 'low' && withdrawal.requiredApprovals <= 1) {
+        await this.withdrawService.approve(withdrawal.withdrawalId, {
+          adminId: 'system-queue',
+          actorType: 'system',
+          note: 'auto-approved low-risk withdrawal'
+        });
+        autoApproved += 1;
+        continue;
+      }
+
+      if (withdrawal.status === 'requested') {
+        await this.ledger.markWithdrawalReviewRequired(withdrawal.withdrawalId, 'manual review required');
+        await this.ledger.enqueueJob('withdraw_manual_review', {
+          withdrawalId: withdrawal.withdrawalId,
+          riskLevel: withdrawal.riskLevel
+        });
+        await this.ledger.appendAuditLog({
+          entityType: 'withdrawal',
+          entityId: withdrawal.withdrawalId,
+          action: 'withdraw.review_required',
+          actorType: 'system',
+          actorId: 'scheduler',
+          metadata: {
+            riskLevel: withdrawal.riskLevel,
+            requiredApprovals: withdrawal.requiredApprovals.toString()
+          }
+        });
+        reviewQueued += 1;
+      }
+    }
+
+    this.eventPublisher.publish('scheduler.withdraw.queue.processed', {
+      pendingCount: pending.length,
+      autoApproved,
+      reviewQueued
+    });
+
+    return {
+      pendingCount: pending.length,
+      autoApproved,
+      reviewQueued
+    };
+  }
+
   async retryPending(timeoutSec: number) {
     const stuck = await this.ledger.listStuckWithdrawals(timeoutSec);
 

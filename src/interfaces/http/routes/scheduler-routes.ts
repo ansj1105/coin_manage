@@ -10,6 +10,15 @@ const retrySchema = z.object({
 export const createSchedulerRoutes = (schedulerService: SchedulerService): Router => {
   const router = Router();
 
+  router.post('/process-withdraw-queue', async (_req, res, next) => {
+    try {
+      const result = await schedulerService.processWithdrawQueue();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/retry-pending', async (req, res, next) => {
     try {
       const parsed = retrySchema.safeParse(req.body ?? {});

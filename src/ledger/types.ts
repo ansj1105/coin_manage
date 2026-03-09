@@ -45,11 +45,14 @@ export interface Deposit {
 
 export type WithdrawalStatus =
   | 'requested'
+  | 'review_required'
   | 'approved'
   | 'broadcasted'
   | 'confirmed'
   | 'failed'
   | 'rejected';
+
+export type RiskLevel = 'low' | 'medium' | 'high';
 
 export interface Withdrawal {
   withdrawalId: string;
@@ -66,15 +69,74 @@ export interface Withdrawal {
   confirmedAt?: string;
   failedAt?: string;
   failReason?: string;
+  riskLevel: RiskLevel;
+  riskScore: number;
+  riskFlags: string[];
+  requiredApprovals: number;
+  approvalCount: number;
+  clientIp?: string;
+  deviceId?: string;
+  reviewRequiredAt?: string;
 }
 
 export interface TxJob {
   jobId: string;
-  type: 'withdraw_reconcile' | 'withdraw_manual_review';
+  type: 'withdraw_dispatch' | 'withdraw_reconcile' | 'withdraw_manual_review' | 'sweep_plan';
   payload: Record<string, string>;
   status: 'pending' | 'running' | 'done' | 'failed';
   retryCount: number;
   createdAt: string;
+}
+
+export interface WithdrawalApproval {
+  approvalId: string;
+  withdrawalId: string;
+  adminId: string;
+  actorType: 'admin' | 'system';
+  note?: string;
+  createdAt: string;
+}
+
+export interface ApprovalDecisionResult {
+  withdrawal: Withdrawal;
+  approval: WithdrawalApproval;
+  finalized: boolean;
+}
+
+export interface AuditLog {
+  auditId: string;
+  entityType: 'withdrawal' | 'sweep' | 'system';
+  entityId: string;
+  action: string;
+  actorType: 'admin' | 'system' | 'user';
+  actorId: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+}
+
+export type SweepStatus = 'planned' | 'broadcasted' | 'confirmed' | 'skipped';
+
+export interface SweepRecord {
+  sweepId: string;
+  sourceWalletCode: string;
+  sourceAddress: string;
+  targetAddress: string;
+  amount: bigint;
+  status: SweepStatus;
+  txHash?: string;
+  note?: string;
+  createdAt: string;
+  broadcastedAt?: string;
+  confirmedAt?: string;
+}
+
+export interface LedgerSummary {
+  accountCount: number;
+  availableBalance: bigint;
+  lockedBalance: bigint;
+  liabilityBalance: bigint;
+  confirmedDepositCount: number;
+  activeWithdrawalCount: number;
 }
 
 export interface DepositApplyResult {

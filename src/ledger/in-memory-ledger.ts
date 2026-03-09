@@ -3,13 +3,18 @@ import { DomainError } from '../core/domain-error.js';
 import { sumBigInt } from '../core/money.js';
 import type {
   Account,
+  ApprovalDecisionResult,
+  AuditLog,
   Deposit,
   DepositApplyResult,
+  LedgerSummary,
   LedgerTransaction,
+  SweepRecord,
   TransferResult,
   TxJob,
   WalletBinding,
   Withdrawal,
+  WithdrawalApproval,
   WithdrawalRequestResult,
   WithdrawalStatus
 } from './types.js';
@@ -24,6 +29,14 @@ interface TransferIdempotencyRecord {
   toTxId: string;
 }
 
+const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
+  'requested',
+  'review_required',
+  'approved',
+  'broadcasted',
+  'confirmed'
+];
+
 export class InMemoryLedger {
   private readonly accounts = new Map<string, Account>();
   private readonly walletBindingsByUserId = new Map<string, WalletBinding>();
@@ -34,6 +47,9 @@ export class InMemoryLedger {
   private readonly withdrawalByIdempotencyKey = new Map<string, string>();
   private readonly transferByIdempotencyKey = new Map<string, TransferIdempotencyRecord>();
   private readonly jobs = new Map<string, TxJob>();
+  private readonly approvalsByWithdrawalId = new Map<string, WithdrawalApproval[]>();
+  private readonly auditLogs = new Map<string, AuditLog>();
+  private readonly sweepRecords = new Map<string, SweepRecord>();
 
   private lock: Promise<void> = Promise.resolve();
 
@@ -238,6 +254,12 @@ export class InMemoryLedger {
     amount: bigint;
     toAddress: string;
     idempotencyKey: string;
+    riskLevel?: Withdrawal['riskLevel'];
+    riskScore?: number;
+    riskFlags?: string[];
+    requiredApprovals?: number;
+    clientIp?: string;
+    deviceId?: string;
     nowIso?: string;
   }): Promise<WithdrawalRequestResult> {
     return this.withLock(() => {
@@ -247,7 +269,7 @@ export class InMemoryLedger {
         if (!existing) {
           throw new DomainError(500, 'STATE_CORRUPTED', 'withdraw idempotency state is invalid');
         }
-        return { withdrawal: { ...existing }, duplicated: true };
+        return { withdrawal: this.cloneWithdrawal(existing), duplicated: true };
       }
 
       if (input.amount > this.limits.singleLimit) {
@@ -288,25 +310,76 @@ export class InMemoryLedger {
         status: 'requested',
         idempotencyKey: input.idempotencyKey,
         ledgerTxId,
-        createdAt: nowIso
+        createdAt: nowIso,
+        riskLevel: input.riskLevel ?? 'low',
+        riskScore: input.riskScore ?? 0,
+        riskFlags: [...(input.riskFlags ?? [])],
+        requiredApprovals: input.requiredApprovals ?? 1,
+        approvalCount: 0,
+        clientIp: input.clientIp,
+        deviceId: input.deviceId
       };
 
       this.withdrawals.set(withdrawal.withdrawalId, withdrawal);
       this.withdrawalByIdempotencyKey.set(input.idempotencyKey, withdrawal.withdrawalId);
+      this.approvalsByWithdrawalId.set(withdrawal.withdrawalId, []);
 
-      return { withdrawal: { ...withdrawal }, duplicated: false };
+      return { withdrawal: this.cloneWithdrawal(withdrawal), duplicated: false };
     });
   }
 
-  async approveWithdrawal(withdrawalId: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
+  async markWithdrawalReviewRequired(withdrawalId: string, _note: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
       if (withdrawal.status !== 'requested') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested');
+        return this.cloneWithdrawal(withdrawal);
       }
-      withdrawal.status = 'approved';
-      withdrawal.approvedAt = nowIso;
-      return { ...withdrawal };
+      withdrawal.status = 'review_required';
+      withdrawal.reviewRequiredAt = nowIso;
+      return this.cloneWithdrawal(withdrawal);
+    });
+  }
+
+  async approveWithdrawal(
+    withdrawalId: string,
+    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    nowIso = new Date().toISOString()
+  ): Promise<ApprovalDecisionResult> {
+    return this.withLock(() => {
+      const withdrawal = this.getMutableWithdrawal(withdrawalId);
+      if (!['requested', 'review_required'].includes(withdrawal.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested or review_required');
+      }
+
+      const approvals = this.approvalsByWithdrawalId.get(withdrawalId) ?? [];
+      if (approvals.some((approval) => approval.adminId === input.adminId)) {
+        throw new DomainError(409, 'ALREADY_APPROVED', 'admin already approved this withdrawal');
+      }
+
+      const approval: WithdrawalApproval = {
+        approvalId: randomUUID(),
+        withdrawalId,
+        adminId: input.adminId,
+        actorType: input.actorType,
+        note: input.note,
+        createdAt: nowIso
+      };
+
+      approvals.push(approval);
+      this.approvalsByWithdrawalId.set(withdrawalId, approvals);
+
+      withdrawal.approvalCount = approvals.length;
+      const finalized = approvals.length >= withdrawal.requiredApprovals;
+      if (finalized) {
+        withdrawal.status = 'approved';
+        withdrawal.approvedAt = nowIso;
+      }
+
+      return {
+        withdrawal: this.cloneWithdrawal(withdrawal),
+        approval: { ...approval },
+        finalized
+      };
     });
   }
 
@@ -319,7 +392,7 @@ export class InMemoryLedger {
       withdrawal.status = 'broadcasted';
       withdrawal.txHash = txHash;
       withdrawal.broadcastedAt = nowIso;
-      return { ...withdrawal };
+      return this.cloneWithdrawal(withdrawal);
     });
   }
 
@@ -347,14 +420,14 @@ export class InMemoryLedger {
 
       withdrawal.status = 'confirmed';
       withdrawal.confirmedAt = nowIso;
-      return { ...withdrawal };
+      return this.cloneWithdrawal(withdrawal);
     });
   }
 
   async failWithdrawal(withdrawalId: string, reason: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (!['requested', 'approved', 'broadcasted'].includes(withdrawal.status)) {
+      if (!['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status)) {
         throw new DomainError(409, 'INVALID_STATE', 'withdrawal cannot be failed in current state');
       }
 
@@ -376,28 +449,39 @@ export class InMemoryLedger {
       withdrawal.status = 'failed';
       withdrawal.failedAt = nowIso;
       withdrawal.failReason = reason;
-      return { ...withdrawal };
+      return this.cloneWithdrawal(withdrawal);
     });
   }
 
   async getWithdrawal(withdrawalId: string): Promise<Withdrawal | undefined> {
     const withdrawal = this.withdrawals.get(withdrawalId);
-    return withdrawal ? { ...withdrawal } : undefined;
+    return withdrawal ? this.cloneWithdrawal(withdrawal) : undefined;
   }
 
   async listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]> {
     const statusSet = new Set(statuses);
     return Array.from(this.withdrawals.values())
       .filter((withdrawal) => statusSet.has(withdrawal.status))
-      .map((withdrawal) => ({ ...withdrawal }));
+      .map((withdrawal) => this.cloneWithdrawal(withdrawal));
+  }
+
+  async listPendingApprovalWithdrawals(): Promise<Withdrawal[]> {
+    return Array.from(this.withdrawals.values())
+      .filter((withdrawal) => ['requested', 'review_required'].includes(withdrawal.status))
+      .filter((withdrawal) => withdrawal.approvalCount < withdrawal.requiredApprovals)
+      .map((withdrawal) => this.cloneWithdrawal(withdrawal));
+  }
+
+  async listWithdrawalApprovals(withdrawalId: string): Promise<WithdrawalApproval[]> {
+    return (this.approvalsByWithdrawalId.get(withdrawalId) ?? []).map((approval) => ({ ...approval }));
   }
 
   async listStuckWithdrawals(timeoutSec: number, nowIso = new Date().toISOString()): Promise<Withdrawal[]> {
     const threshold = new Date(nowIso).getTime() - timeoutSec * 1000;
     return Array.from(this.withdrawals.values())
-      .filter((withdrawal) => ['requested', 'approved', 'broadcasted'].includes(withdrawal.status))
+      .filter((withdrawal) => ['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status))
       .filter((withdrawal) => new Date(withdrawal.createdAt).getTime() <= threshold)
-      .map((withdrawal) => ({ ...withdrawal }));
+      .map((withdrawal) => this.cloneWithdrawal(withdrawal));
   }
 
   async enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso = new Date().toISOString()): Promise<TxJob> {
@@ -411,8 +495,125 @@ export class InMemoryLedger {
         createdAt: nowIso
       };
       this.jobs.set(job.jobId, job);
-      return { ...job };
+      return { ...job, payload: { ...job.payload } };
     });
+  }
+
+  async appendAuditLog(input: {
+    entityType: AuditLog['entityType'];
+    entityId: string;
+    action: string;
+    actorType: AuditLog['actorType'];
+    actorId: string;
+    metadata: Record<string, string>;
+    nowIso?: string;
+  }): Promise<AuditLog> {
+    return this.withLock(() => {
+      const log: AuditLog = {
+        auditId: randomUUID(),
+        entityType: input.entityType,
+        entityId: input.entityId,
+        action: input.action,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        metadata: { ...input.metadata },
+        createdAt: input.nowIso ?? new Date().toISOString()
+      };
+      this.auditLogs.set(log.auditId, log);
+      return {
+        ...log,
+        metadata: { ...log.metadata }
+      };
+    });
+  }
+
+  async listAuditLogs(input?: {
+    entityType?: AuditLog['entityType'];
+    entityId?: string;
+    limit?: number;
+  }): Promise<AuditLog[]> {
+    const limit = input?.limit ?? 100;
+    return Array.from(this.auditLogs.values())
+      .filter((log) => (input?.entityType ? log.entityType === input.entityType : true))
+      .filter((log) => (input?.entityId ? log.entityId === input.entityId : true))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit)
+      .map((log) => ({ ...log, metadata: { ...log.metadata } }));
+  }
+
+  async createSweepRecord(input: {
+    sourceWalletCode: string;
+    sourceAddress: string;
+    targetAddress: string;
+    amount: bigint;
+    note?: string;
+    nowIso?: string;
+  }): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep: SweepRecord = {
+        sweepId: randomUUID(),
+        sourceWalletCode: input.sourceWalletCode,
+        sourceAddress: input.sourceAddress,
+        targetAddress: input.targetAddress,
+        amount: input.amount,
+        status: 'planned',
+        note: input.note,
+        createdAt: input.nowIso ?? new Date().toISOString()
+      };
+      this.sweepRecords.set(sweep.sweepId, sweep);
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async listSweepRecords(limit = 100): Promise<SweepRecord[]> {
+    return Array.from(this.sweepRecords.values())
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit)
+      .map((sweep) => this.cloneSweep(sweep));
+  }
+
+  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep = this.getMutableSweep(sweepId);
+      if (sweep.status !== 'planned') {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned');
+      }
+      sweep.status = 'broadcasted';
+      sweep.txHash = txHash;
+      sweep.note = note ?? sweep.note;
+      sweep.broadcastedAt = nowIso;
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async confirmSweep(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep = this.getMutableSweep(sweepId);
+      if (!['planned', 'broadcasted'].includes(sweep.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+      }
+      sweep.status = 'confirmed';
+      sweep.note = note ?? sweep.note;
+      sweep.confirmedAt = nowIso;
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async getLedgerSummary(): Promise<LedgerSummary> {
+    const accounts = Array.from(this.accounts.values());
+    const availableBalance = sumBigInt(accounts.map((account) => account.balance));
+    const lockedBalance = sumBigInt(accounts.map((account) => account.lockedBalance));
+
+    return {
+      accountCount: accounts.length,
+      availableBalance,
+      lockedBalance,
+      liabilityBalance: availableBalance + lockedBalance,
+      confirmedDepositCount: this.depositsByTxHash.size,
+      activeWithdrawalCount: Array.from(this.withdrawals.values()).filter((withdrawal) =>
+        ACTIVE_WITHDRAWAL_STATUSES.includes(withdrawal.status)
+      ).length
+    };
   }
 
   private getMutableWithdrawal(withdrawalId: string): Withdrawal {
@@ -421,6 +622,14 @@ export class InMemoryLedger {
       throw new DomainError(404, 'NOT_FOUND', 'withdrawal not found');
     }
     return withdrawal;
+  }
+
+  private getMutableSweep(sweepId: string): SweepRecord {
+    const sweep = this.sweepRecords.get(sweepId);
+    if (!sweep) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    return sweep;
   }
 
   private getMutableAccount(userId: string, nowIso: string): Account {
@@ -457,10 +666,21 @@ export class InMemoryLedger {
     const amounts = Array.from(this.withdrawals.values())
       .filter((withdrawal) => withdrawal.userId === userId)
       .filter((withdrawal) => withdrawal.createdAt.slice(0, 10) === day)
-      .filter((withdrawal) => ['requested', 'approved', 'broadcasted', 'confirmed'].includes(withdrawal.status))
+      .filter((withdrawal) => ACTIVE_WITHDRAWAL_STATUSES.includes(withdrawal.status))
       .map((withdrawal) => withdrawal.amount);
 
     return sumBigInt(amounts);
+  }
+
+  private cloneWithdrawal(withdrawal: Withdrawal): Withdrawal {
+    return {
+      ...withdrawal,
+      riskFlags: [...withdrawal.riskFlags]
+    };
+  }
+
+  private cloneSweep(sweep: SweepRecord): SweepRecord {
+    return { ...sweep };
   }
 
   private async withLock<T>(work: () => T): Promise<T> {

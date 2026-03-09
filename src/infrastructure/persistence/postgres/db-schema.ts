@@ -38,7 +38,7 @@ export interface WithdrawalsTable {
   user_id: string;
   amount: string;
   to_address: string;
-  status: 'requested' | 'approved' | 'broadcasted' | 'confirmed' | 'failed' | 'rejected';
+  status: 'requested' | 'review_required' | 'approved' | 'broadcasted' | 'confirmed' | 'failed' | 'rejected';
   tx_hash: string | null;
   idempotency_key: string;
   ledger_tx_id: string;
@@ -48,15 +48,90 @@ export interface WithdrawalsTable {
   confirmed_at: string | null;
   failed_at: string | null;
   fail_reason: string | null;
+  risk_level: 'low' | 'medium' | 'high';
+  risk_score: number;
+  risk_flags: string[];
+  required_approvals: number;
+  client_ip: string | null;
+  device_id: string | null;
+  review_required_at: string | null;
 }
 
 export interface TxJobsTable {
   job_id: string;
-  type: 'withdraw_reconcile' | 'withdraw_manual_review';
+  type: 'withdraw_dispatch' | 'withdraw_reconcile' | 'withdraw_manual_review' | 'sweep_plan';
   payload: Record<string, string>;
   status: 'pending' | 'running' | 'done' | 'failed';
   retry_count: number;
   created_at: string;
+}
+
+export interface WithdrawalApprovalsTable {
+  approval_id: string;
+  withdraw_id: string;
+  admin_id: string;
+  actor_type: 'admin' | 'system';
+  note: string | null;
+  created_at: string;
+}
+
+export interface AuditLogsTable {
+  audit_id: string;
+  entity_type: 'withdrawal' | 'sweep' | 'system';
+  entity_id: string;
+  action: string;
+  actor_type: 'admin' | 'system' | 'user';
+  actor_id: string;
+  metadata: Record<string, string>;
+  created_at: string;
+}
+
+export interface SweepRecordsTable {
+  sweep_id: string;
+  source_wallet_code: string;
+  source_address: string;
+  target_address: string;
+  amount: string;
+  status: 'planned' | 'broadcasted' | 'confirmed' | 'skipped';
+  tx_hash: string | null;
+  note: string | null;
+  created_at: string;
+  broadcasted_at: string | null;
+  confirmed_at: string | null;
+}
+
+export interface DepositMonitorCursorsTable {
+  scanner_key: string;
+  network: 'mainnet' | 'testnet';
+  contract_address: string;
+  cursor_timestamp_ms: string;
+  last_scanned_block_number: number | string | null;
+  last_seen_event_block_number: number | string | null;
+  last_seen_tx_hash: string | null;
+  last_error: string | null;
+  updated_at: string;
+}
+
+export interface ExternalDepositEventsTable {
+  event_key: string;
+  deposit_id: string;
+  user_id: string;
+  currency_id: number;
+  network: string;
+  from_address: string | null;
+  to_address: string;
+  tx_hash: string;
+  event_index: number;
+  block_number: number | string;
+  block_timestamp_ms: string;
+  amount_raw: string;
+  amount_decimal: string;
+  status: 'discovered' | 'registered' | 'completed';
+  foxya_registered_at: string | null;
+  foxya_completed_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WalletMonitorCurrentTable {
@@ -112,6 +187,11 @@ export interface KorionDatabase {
   deposits: DepositsTable;
   withdrawals: WithdrawalsTable;
   tx_jobs: TxJobsTable;
+  withdrawal_approvals: WithdrawalApprovalsTable;
+  audit_logs: AuditLogsTable;
+  sweep_records: SweepRecordsTable;
+  deposit_monitor_cursors: DepositMonitorCursorsTable;
+  external_deposit_events: ExternalDepositEventsTable;
   wallet_monitor_current: WalletMonitorCurrentTable;
   wallet_monitor_history: WalletMonitorHistoryTable;
   monitor_collector_runs: MonitorCollectorRunsTable;

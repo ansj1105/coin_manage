@@ -36,6 +36,38 @@ paths:
                     $ref: '#/components/schemas/CollectorRun'
                   status:
                     $ref: '#/components/schemas/SystemStatusResponse'
+  /api/system/deposit-monitor:
+    get:
+      summary: Get foxya-linked automatic deposit monitor status
+      responses:
+        '200':
+          description: Deposit monitor status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositMonitorStatus'
+  /api/system/deposit-monitor/run:
+    post:
+      summary: Run one automatic deposit monitor cycle now
+      responses:
+        '200':
+          description: Deposit monitor cycle result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    oneOf:
+                      - $ref: '#/components/schemas/DepositMonitorCycleResult'
+                      - type: object
+                        properties:
+                          skipped:
+                            type: boolean
+                          reason:
+                            type: string
+                  status:
+                    $ref: '#/components/schemas/DepositMonitorStatus'
   /api/system/runtime-profile:
     post:
       summary: Switch active contract profile for sandbox runtime
@@ -57,6 +89,138 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/audit-logs:
+    get:
+      summary: List persisted audit logs
+      parameters:
+        - in: query
+          name: entityType
+          required: false
+          schema:
+            type: string
+            enum: [withdrawal, sweep, system]
+        - in: query
+          name: entityId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+  /api/system/reconciliation:
+    get:
+      summary: Get internal ledger versus on-chain reconciliation summary
+      responses:
+        '200':
+          description: Reconciliation summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationReport'
+  /api/system/sweeps:
+    get:
+      summary: List planned and executed sweep records
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Sweep list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweeps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SweepRecord'
+  /api/system/sweeps/plan:
+    post:
+      summary: Plan sweep records from latest monitoring snapshots
+      responses:
+        '200':
+          description: Sweep planning result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plannedCount:
+                    type: integer
+                  sweeps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SweepRecord'
+  /api/system/sweeps/{sweepId}/broadcast:
+    post:
+      summary: Mark a sweep as broadcasted with manual tx hash
+      parameters:
+        - in: path
+          name: sweepId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SweepTransitionRequest'
+      responses:
+        '200':
+          description: Sweep broadcasted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweep:
+                    $ref: '#/components/schemas/SweepRecord'
+  /api/system/sweeps/{sweepId}/confirm:
+    post:
+      summary: Mark a sweep as confirmed
+      parameters:
+        - in: path
+          name: sweepId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SweepTransitionRequest'
+      responses:
+        '200':
+          description: Sweep confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweep:
+                    $ref: '#/components/schemas/SweepRecord'
   /api/onchain/networks/{network}/wallets/{address}/balance:
     get:
       summary: Lookup on-chain TRX and KORI balance for any address on mainnet or testnet
@@ -296,8 +460,30 @@ paths:
       responses:
         '200':
           description: Withdrawal response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal:
+                    $ref: '#/components/schemas/Withdrawal'
         '404':
           $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/pending-approvals:
+    get:
+      summary: List withdrawals waiting for admin approvals
+      responses:
+        '200':
+          description: Pending approval withdrawals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Withdrawal'
   /api/withdrawals/{withdrawalId}/approve:
     post:
       summary: Approve withdrawal
@@ -307,9 +493,26 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveWithdrawalRequest'
       responses:
         '200':
           description: Approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approval:
+                    $ref: '#/components/schemas/WithdrawalApproval'
+                  withdrawal:
+                    $ref: '#/components/schemas/Withdrawal'
+                  finalized:
+                    type: boolean
         '404':
           $ref: '#/components/responses/ErrorResponse'
         '409':
@@ -326,6 +529,13 @@ paths:
       responses:
         '200':
           description: Broadcasted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal:
+                    $ref: '#/components/schemas/Withdrawal'
         '404':
           $ref: '#/components/responses/ErrorResponse'
         '409':
@@ -342,10 +552,38 @@ paths:
       responses:
         '200':
           description: Confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal:
+                    $ref: '#/components/schemas/Withdrawal'
         '404':
           $ref: '#/components/responses/ErrorResponse'
         '409':
           $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}/approvals:
+    get:
+      summary: List approval records for a withdrawal
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal approvals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approvals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WithdrawalApproval'
   /api/scheduler/retry-pending:
     post:
       summary: Retry or reconcile pending withdrawals
@@ -362,6 +600,23 @@ paths:
       responses:
         '200':
           description: Scheduler result
+  /api/scheduler/process-withdraw-queue:
+    post:
+      summary: Process low-risk auto-approvals and queue manual reviews
+      responses:
+        '200':
+          description: Queue processing result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pendingCount:
+                    type: integer
+                  autoApproved:
+                    type: integer
+                  reviewQueued:
+                    type: integer
 components:
   responses:
     ErrorResponse:
@@ -423,6 +678,166 @@ components:
         toAddress:
           type: string
           pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        clientIp:
+          type: string
+        deviceId:
+          type: string
+    ApproveWithdrawalRequest:
+      type: object
+      properties:
+        adminId:
+          type: string
+        note:
+          type: string
+    Withdrawal:
+      type: object
+      properties:
+        withdrawalId:
+          type: string
+        userId:
+          type: string
+        amount:
+          type: string
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        status:
+          type: string
+          enum: [requested, review_required, approved, broadcasted, confirmed, failed, rejected]
+        txHash:
+          type: string
+          nullable: true
+        idempotencyKey:
+          type: string
+        ledgerTxId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        broadcastedAt:
+          type: string
+          format: date-time
+          nullable: true
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failReason:
+          type: string
+          nullable: true
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        riskScore:
+          type: integer
+        riskFlags:
+          type: array
+          items:
+            type: string
+        requiredApprovals:
+          type: integer
+        approvalCount:
+          type: integer
+        clientIp:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        reviewRequiredAt:
+          type: string
+          format: date-time
+          nullable: true
+    WithdrawalApproval:
+      type: object
+      properties:
+        approvalId:
+          type: string
+        withdrawalId:
+          type: string
+        adminId:
+          type: string
+        actorType:
+          type: string
+          enum: [admin, system]
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    AuditLog:
+      type: object
+      properties:
+        auditId:
+          type: string
+        entityType:
+          type: string
+          enum: [withdrawal, sweep, system]
+        entityId:
+          type: string
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [admin, system, user]
+        actorId:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    SweepTransitionRequest:
+      type: object
+      properties:
+        txHash:
+          type: string
+        note:
+          type: string
+    SweepRecord:
+      type: object
+      properties:
+        sweepId:
+          type: string
+        sourceWalletCode:
+          type: string
+        sourceAddress:
+          type: string
+        targetAddress:
+          type: string
+        amount:
+          type: string
+        status:
+          type: string
+          enum: [planned, broadcasted, confirmed, skipped]
+        txHash:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        broadcastedAt:
+          type: string
+          format: date-time
+          nullable: true
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
     WalletBindingRequest:
       type: object
       required: [userId, walletAddress]
@@ -580,6 +995,143 @@ components:
         errorMessage:
           type: string
           nullable: true
+    DepositMonitorCursor:
+      type: object
+      properties:
+        scannerKey:
+          type: string
+        network:
+          type: string
+          enum: [mainnet, testnet]
+        contractAddress:
+          type: string
+        cursorTimestampMs:
+          type: integer
+        lastScannedBlockNumber:
+          type: integer
+          nullable: true
+        lastSeenEventBlockNumber:
+          type: integer
+          nullable: true
+        lastSeenTxHash:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+    ExternalDepositEvent:
+      type: object
+      properties:
+        eventKey:
+          type: string
+        depositId:
+          type: string
+        userId:
+          type: string
+        currencyId:
+          type: integer
+        network:
+          type: string
+        fromAddress:
+          type: string
+          nullable: true
+        toAddress:
+          type: string
+        txHash:
+          type: string
+        eventIndex:
+          type: integer
+        blockNumber:
+          type: integer
+        blockTimestampMs:
+          type: integer
+        amountRaw:
+          type: string
+        amountDecimal:
+          type: string
+        status:
+          type: string
+          enum: [discovered, registered, completed]
+        foxyaRegisteredAt:
+          type: string
+          format: date-time
+          nullable: true
+        foxyaCompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DepositMonitorStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        network:
+          type: string
+          enum: [mainnet, testnet]
+        contractAddress:
+          type: string
+          nullable: true
+        foxyaIntegrationEnabled:
+          type: boolean
+        pollIntervalSec:
+          type: integer
+        requiredConfirmations:
+          type: integer
+        startTimestampMs:
+          type: integer
+          nullable: true
+        currencyFilterIds:
+          type: array
+          items:
+            type: integer
+        cursor:
+          oneOf:
+            - $ref: '#/components/schemas/DepositMonitorCursor'
+            - type: 'null'
+        recentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDepositEvent'
+        counts:
+          type: object
+          properties:
+            discovered:
+              type: integer
+            registered:
+              type: integer
+            completed:
+              type: integer
+    DepositMonitorCycleResult:
+      type: object
+      properties:
+        scannedEvents:
+          type: integer
+        watchedAddresses:
+          type: integer
+        matchedEvents:
+          type: integer
+        registeredCount:
+          type: integer
+        completedCount:
+          type: integer
+        skippedCount:
+          type: integer
+        currentBlockNumber:
+          type: integer
+        cursorTimestampMs:
+          type: integer
     BalanceResponse:
       type: object
       properties:
@@ -654,6 +1206,12 @@ components:
               type: number
             tronFeeLimitSun:
               type: integer
+            hotWalletAlertMinKori:
+              type: number
+            hotWalletAlertMinTrx:
+              type: number
+            sweepPlanMinKori:
+              type: number
         wallets:
           type: object
           properties:
@@ -728,6 +1286,10 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/CollectorRun'
+        depositMonitor:
+          oneOf:
+            - $ref: '#/components/schemas/DepositMonitorStatus'
+            - type: 'null'
         security:
           type: object
           properties:
@@ -751,6 +1313,51 @@ components:
               type: array
               items:
                 type: string
+        reconciliation:
+          oneOf:
+            - $ref: '#/components/schemas/ReconciliationReport'
+            - type: 'null'
+    ReconciliationReport:
+      type: object
+      properties:
+        ledger:
+          type: object
+          properties:
+            accountCount:
+              type: integer
+            availableBalance:
+              type: string
+            lockedBalance:
+              type: string
+            liabilityBalance:
+              type: string
+            confirmedDepositCount:
+              type: integer
+            activeWithdrawalCount:
+              type: integer
+        onchain:
+          type: object
+          properties:
+            trackedWalletCount:
+              type: integer
+            trackedBalance:
+              type: string
+            hotWalletBalance:
+              type: string
+            hotWalletTrx:
+              type: string
+        gap:
+          type: object
+          properties:
+            amount:
+              type: string
+            status:
+              type: string
+              enum: [covered, deficit]
+        alerts:
+          type: array
+          items:
+            type: string
     NetworkConfig:
       type: object
       properties:

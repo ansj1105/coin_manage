@@ -1,9 +1,14 @@
 import type {
   Account,
+  ApprovalDecisionResult,
+  AuditLog,
   DepositApplyResult,
+  LedgerSummary,
+  SweepRecord,
   TransferResult,
   TxJob,
   WalletBinding,
+  WithdrawalApproval,
   Withdrawal,
   WithdrawalRequestResult,
   WithdrawalStatus
@@ -34,14 +39,53 @@ export interface LedgerRepository {
     amount: bigint;
     toAddress: string;
     idempotencyKey: string;
+    riskLevel?: Withdrawal['riskLevel'];
+    riskScore?: number;
+    riskFlags?: string[];
+    requiredApprovals?: number;
+    clientIp?: string;
+    deviceId?: string;
     nowIso?: string;
   }): Promise<WithdrawalRequestResult>;
-  approveWithdrawal(withdrawalId: string, nowIso?: string): Promise<Withdrawal>;
+  markWithdrawalReviewRequired(withdrawalId: string, note: string, nowIso?: string): Promise<Withdrawal>;
+  approveWithdrawal(
+    withdrawalId: string,
+    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    nowIso?: string
+  ): Promise<ApprovalDecisionResult>;
   broadcastWithdrawal(withdrawalId: string, txHash: string, nowIso?: string): Promise<Withdrawal>;
   confirmWithdrawal(withdrawalId: string, nowIso?: string): Promise<Withdrawal>;
   failWithdrawal(withdrawalId: string, reason: string, nowIso?: string): Promise<Withdrawal>;
   getWithdrawal(withdrawalId: string): Promise<Withdrawal | undefined>;
   listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]>;
+  listPendingApprovalWithdrawals(): Promise<Withdrawal[]>;
+  listWithdrawalApprovals(withdrawalId: string): Promise<WithdrawalApproval[]>;
   listStuckWithdrawals(timeoutSec: number, nowIso?: string): Promise<Withdrawal[]>;
   enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso?: string): Promise<TxJob>;
+  appendAuditLog(input: {
+    entityType: AuditLog['entityType'];
+    entityId: string;
+    action: string;
+    actorType: AuditLog['actorType'];
+    actorId: string;
+    metadata: Record<string, string>;
+    nowIso?: string;
+  }): Promise<AuditLog>;
+  listAuditLogs(input?: {
+    entityType?: AuditLog['entityType'];
+    entityId?: string;
+    limit?: number;
+  }): Promise<AuditLog[]>;
+  createSweepRecord(input: {
+    sourceWalletCode: string;
+    sourceAddress: string;
+    targetAddress: string;
+    amount: bigint;
+    note?: string;
+    nowIso?: string;
+  }): Promise<SweepRecord>;
+  listSweepRecords(limit?: number): Promise<SweepRecord[]>;
+  markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso?: string): Promise<SweepRecord>;
+  confirmSweep(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
+  getLedgerSummary(): Promise<LedgerSummary>;
 }

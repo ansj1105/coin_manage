@@ -41,6 +41,19 @@ const schema = z.object({
     .default('TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s'),
   HOT_WALLET_ADDRESS: z.string().default('TYKL8DPoR99bccujHXxcyBewCV1NimdRc8'),
   HOT_WALLET_PRIVATE_KEY: z.string().optional(),
+  HOT_WALLET_ALERT_MIN_KORI: z.coerce.number().positive().default(1000),
+  HOT_WALLET_ALERT_MIN_TRX: z.coerce.number().positive().default(100),
+  SWEEP_PLAN_MIN_KORI: z.coerce.number().positive().default(1),
+  DEPOSIT_MONITOR_ENABLED: optionalBooleanString,
+  DEPOSIT_MONITOR_NETWORK: z.enum(['mainnet', 'testnet']).default('mainnet'),
+  DEPOSIT_MONITOR_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(20),
+  DEPOSIT_MONITOR_CONFIRMATIONS: z.coerce.number().int().positive().default(20),
+  DEPOSIT_MONITOR_START_TIMESTAMP_MS: z.coerce.number().int().nonnegative().optional(),
+  DEPOSIT_MONITOR_LOOKBACK_MS: z.coerce.number().int().nonnegative().default(300000),
+  DEPOSIT_MONITOR_PAGE_LIMIT: z.coerce.number().int().positive().max(200).default(200),
+  DEPOSIT_MONITOR_CURRENCY_IDS: z.string().optional(),
+  FOXYA_INTERNAL_API_URL: z.string().url().optional(),
+  FOXYA_INTERNAL_API_KEY: z.string().optional(),
   DB_HOST: z.string().default('127.0.0.1'),
   DB_PORT: z.coerce.number().int().positive().default(5432),
   DB_NAME: z.string().default('korion'),
@@ -103,6 +116,25 @@ export const env = Object.freeze({
     .filter(Boolean),
   hotWalletAddress: parsed.HOT_WALLET_ADDRESS,
   hotWalletPrivateKey: parsed.HOT_WALLET_PRIVATE_KEY ?? 'dev-only-private-key-change-me',
+  hotWalletAlertMinKori: parsed.HOT_WALLET_ALERT_MIN_KORI,
+  hotWalletAlertMinTrx: parsed.HOT_WALLET_ALERT_MIN_TRX,
+  sweepPlanMinKori: parsed.SWEEP_PLAN_MIN_KORI,
+  depositMonitorEnabled:
+    parsed.DEPOSIT_MONITOR_ENABLED !== undefined ? parsed.DEPOSIT_MONITOR_ENABLED === 'true' : false,
+  depositMonitorNetwork: parsed.DEPOSIT_MONITOR_NETWORK,
+  depositMonitorPollIntervalSec: parsed.DEPOSIT_MONITOR_POLL_INTERVAL_SEC,
+  depositMonitorConfirmations: parsed.DEPOSIT_MONITOR_CONFIRMATIONS,
+  depositMonitorStartTimestampMs: parsed.DEPOSIT_MONITOR_START_TIMESTAMP_MS,
+  depositMonitorLookbackMs: parsed.DEPOSIT_MONITOR_LOOKBACK_MS,
+  depositMonitorPageLimit: parsed.DEPOSIT_MONITOR_PAGE_LIMIT,
+  depositMonitorCurrencyIds: (parsed.DEPOSIT_MONITOR_CURRENCY_IDS ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0),
+  foxyaInternalApiUrl: parsed.FOXYA_INTERNAL_API_URL,
+  foxyaInternalApiKey: parsed.FOXYA_INTERNAL_API_KEY,
   db: {
     host: parsed.DB_HOST,
     port: parsed.DB_PORT,

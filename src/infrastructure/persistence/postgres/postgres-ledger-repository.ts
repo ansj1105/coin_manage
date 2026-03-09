@@ -1,16 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { Kysely, sql, type Transaction } from 'kysely';
 import { DomainError } from '../../../domain/errors/domain-error.js';
-import { formatKoriAmount, parseStoredKoriAmount, sumBigInt } from '../../../domain/value-objects/money.js';
+import { formatKoriAmount, parseStoredKoriAmount } from '../../../domain/value-objects/money.js';
 import type {
   Account,
+  ApprovalDecisionResult,
+  AuditLog,
   Deposit,
   DepositApplyResult,
+  LedgerSummary,
   LedgerTransaction,
+  SweepRecord,
   TransferResult,
   TxJob,
   WalletBinding,
   Withdrawal,
+  WithdrawalApproval,
   WithdrawalRequestResult,
   WithdrawalStatus
 } from '../../../domain/ledger/types.js';
@@ -18,7 +23,15 @@ import type { LedgerRepository } from '../../../application/ports/ledger-reposit
 import type { WithdrawalLimitConfig } from '../../../ledger/in-memory-ledger.js';
 import type { KorionDatabase } from './db-schema.js';
 
-const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = ['requested', 'approved', 'broadcasted', 'confirmed'];
+const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
+  'requested',
+  'review_required',
+  'approved',
+  'broadcasted',
+  'confirmed'
+];
+
+type DbExecutor = Kysely<KorionDatabase> | Transaction<KorionDatabase>;
 
 export class PostgresLedgerRepository implements LedgerRepository {
   constructor(
@@ -325,6 +338,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
     amount: bigint;
     toAddress: string;
     idempotencyKey: string;
+    riskLevel?: Withdrawal['riskLevel'];
+    riskScore?: number;
+    riskFlags?: string[];
+    requiredApprovals?: number;
+    clientIp?: string;
+    deviceId?: string;
     nowIso?: string;
   }): Promise<WithdrawalRequestResult> {
     if (input.amount > this.limits.singleLimit) {
@@ -345,7 +364,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .executeTakeFirst();
 
       if (existing) {
-        return { withdrawal: this.mapWithdrawal(existing), duplicated: true };
+        return {
+          withdrawal: await this.hydrateWithdrawal(trx, existing),
+          duplicated: true
+        };
       }
 
       await this.ensureAccount(trx, input.userId, nowIso);
@@ -403,44 +425,114 @@ export class PostgresLedgerRepository implements LedgerRepository {
           broadcasted_at: null,
           confirmed_at: null,
           failed_at: null,
-          fail_reason: null
+          fail_reason: null,
+          risk_level: input.riskLevel ?? 'low',
+          risk_score: input.riskScore ?? 0,
+          risk_flags: input.riskFlags ?? [],
+          required_approvals: input.requiredApprovals ?? 1,
+          client_ip: input.clientIp ?? null,
+          device_id: input.deviceId ?? null,
+          review_required_at: null
         })
         .execute();
 
+      const inserted = await trx
+        .selectFrom('withdrawals')
+        .selectAll()
+        .where('withdraw_id', '=', withdrawalId)
+        .executeTakeFirstOrThrow();
+
       return {
-        withdrawal: {
-          withdrawalId,
-          userId: input.userId,
-          amount: input.amount,
-          toAddress: input.toAddress,
-          status: 'requested',
-          idempotencyKey: input.idempotencyKey,
-          ledgerTxId,
-          createdAt: nowIso
-        },
+        withdrawal: await this.hydrateWithdrawal(trx, inserted),
         duplicated: false
       };
     });
   }
 
-  async approveWithdrawal(withdrawalId: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
+  async markWithdrawalReviewRequired(withdrawalId: string, _note: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
       if (withdrawal.status !== 'requested') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested');
+        return this.hydrateWithdrawal(trx, withdrawal);
       }
 
       await trx
         .updateTable('withdrawals')
         .set({
-          status: 'approved',
-          approved_at: nowIso
+          status: 'review_required',
+          review_required_at: nowIso
         })
         .where('withdraw_id', '=', withdrawalId)
         .execute();
 
-      return { ...this.mapWithdrawal(withdrawal), status: 'approved', approvedAt: nowIso };
+      const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      return this.hydrateWithdrawal(trx, updated);
+    });
+  }
+
+  async approveWithdrawal(
+    withdrawalId: string,
+    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    nowIso = new Date().toISOString()
+  ): Promise<ApprovalDecisionResult> {
+    return this.withTransaction(async (trx) => {
+      await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
+      const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      if (!['requested', 'review_required'].includes(withdrawal.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested or review_required');
+      }
+
+      const existingApproval = await trx
+        .selectFrom('withdrawal_approvals')
+        .selectAll()
+        .where('withdraw_id', '=', withdrawalId)
+        .where('admin_id', '=', input.adminId)
+        .executeTakeFirst();
+
+      if (existingApproval) {
+        throw new DomainError(409, 'ALREADY_APPROVED', 'admin already approved this withdrawal');
+      }
+
+      const approvalId = randomUUID();
+      await trx
+        .insertInto('withdrawal_approvals')
+        .values({
+          approval_id: approvalId,
+          withdraw_id: withdrawalId,
+          admin_id: input.adminId,
+          actor_type: input.actorType,
+          note: input.note ?? null,
+          created_at: nowIso
+        })
+        .execute();
+
+      const approvalCount = await this.getApprovalCount(trx, withdrawalId);
+      const finalized = approvalCount >= withdrawal.required_approvals;
+      if (finalized) {
+        await trx
+          .updateTable('withdrawals')
+          .set({
+            status: 'approved',
+            approved_at: nowIso
+          })
+          .where('withdraw_id', '=', withdrawalId)
+          .execute();
+      }
+
+      const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      return {
+        withdrawal: await this.hydrateWithdrawal(trx, updated),
+        approval: {
+          approvalId,
+          withdrawalId,
+          adminId: input.adminId,
+          actorType: input.actorType,
+          note: input.note,
+          createdAt: nowIso
+        },
+        finalized
+      };
     });
   }
 
@@ -462,12 +554,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('withdraw_id', '=', withdrawalId)
         .execute();
 
-      return {
-        ...this.mapWithdrawal(withdrawal),
-        status: 'broadcasted',
-        txHash,
-        broadcastedAt: nowIso
-      };
+      const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      return this.hydrateWithdrawal(trx, updated);
     });
   }
 
@@ -479,7 +567,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be broadcasted');
       }
 
-      const mapped = this.mapWithdrawal(withdrawal);
+      const mapped = await this.hydrateWithdrawal(trx, withdrawal);
       await this.lockUsers(trx, [mapped.userId]);
       const account = await this.getAccountForUpdate(trx, mapped.userId);
       if (parseStoredKoriAmount(account.locked_balance) < mapped.amount) {
@@ -515,7 +603,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('withdraw_id', '=', withdrawalId)
         .execute();
 
-      return { ...mapped, status: 'confirmed', confirmedAt: nowIso };
+      const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      return this.hydrateWithdrawal(trx, updated);
     });
   }
 
@@ -523,11 +612,11 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (!['requested', 'approved', 'broadcasted'].includes(withdrawal.status)) {
+      if (!['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status)) {
         throw new DomainError(409, 'INVALID_STATE', 'withdrawal cannot be failed in current state');
       }
 
-      const mapped = this.mapWithdrawal(withdrawal);
+      const mapped = await this.hydrateWithdrawal(trx, withdrawal);
       await this.lockUsers(trx, [mapped.userId]);
       const account = await this.getAccountForUpdate(trx, mapped.userId);
       if (parseStoredKoriAmount(account.locked_balance) < mapped.amount) {
@@ -562,12 +651,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('withdraw_id', '=', withdrawalId)
         .execute();
 
-      return {
-        ...mapped,
-        status: 'failed',
-        failedAt: nowIso,
-        failReason: reason
-      };
+      const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      return this.hydrateWithdrawal(trx, updated);
     });
   }
 
@@ -578,7 +663,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .where('withdraw_id', '=', withdrawalId)
       .executeTakeFirst();
 
-    return row ? this.mapWithdrawal(row) : undefined;
+    return row ? this.hydrateWithdrawal(this.db, row) : undefined;
   }
 
   async listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]> {
@@ -593,7 +678,30 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .orderBy('created_at asc')
       .execute();
 
-    return rows.map((row) => this.mapWithdrawal(row));
+    return this.hydrateWithdrawals(this.db, rows);
+  }
+
+  async listPendingApprovalWithdrawals(): Promise<Withdrawal[]> {
+    const rows = await this.db
+      .selectFrom('withdrawals')
+      .selectAll()
+      .where('status', 'in', ['requested', 'review_required'])
+      .orderBy('created_at asc')
+      .execute();
+
+    const hydrated = await this.hydrateWithdrawals(this.db, rows);
+    return hydrated.filter((withdrawal) => withdrawal.approvalCount < withdrawal.requiredApprovals);
+  }
+
+  async listWithdrawalApprovals(withdrawalId: string): Promise<WithdrawalApproval[]> {
+    const rows = await this.db
+      .selectFrom('withdrawal_approvals')
+      .selectAll()
+      .where('withdraw_id', '=', withdrawalId)
+      .orderBy('created_at asc')
+      .execute();
+
+    return rows.map((row) => this.mapApproval(row));
   }
 
   async listStuckWithdrawals(timeoutSec: number, nowIso = new Date().toISOString()): Promise<Withdrawal[]> {
@@ -601,12 +709,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
     const rows = await this.db
       .selectFrom('withdrawals')
       .selectAll()
-      .where('status', 'in', ['requested', 'approved', 'broadcasted'])
+      .where('status', 'in', ['requested', 'review_required', 'approved', 'broadcasted'])
       .where('created_at', '<=', thresholdIso)
       .orderBy('created_at asc')
       .execute();
 
-    return rows.map((row) => this.mapWithdrawal(row));
+    return this.hydrateWithdrawals(this.db, rows);
   }
 
   async enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso = new Date().toISOString()): Promise<TxJob> {
@@ -627,21 +735,197 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.mapJob(row);
   }
 
+  async appendAuditLog(input: {
+    entityType: AuditLog['entityType'];
+    entityId: string;
+    action: string;
+    actorType: AuditLog['actorType'];
+    actorId: string;
+    metadata: Record<string, string>;
+    nowIso?: string;
+  }): Promise<AuditLog> {
+    const row = await this.db
+      .insertInto('audit_logs')
+      .values({
+        audit_id: randomUUID(),
+        entity_type: input.entityType,
+        entity_id: input.entityId,
+        action: input.action,
+        actor_type: input.actorType,
+        actor_id: input.actorId,
+        metadata: input.metadata,
+        created_at: input.nowIso ?? new Date().toISOString()
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapAuditLog(row);
+  }
+
+  async listAuditLogs(input?: {
+    entityType?: AuditLog['entityType'];
+    entityId?: string;
+    limit?: number;
+  }): Promise<AuditLog[]> {
+    let query = this.db.selectFrom('audit_logs').selectAll();
+
+    if (input?.entityType) {
+      query = query.where('entity_type', '=', input.entityType);
+    }
+    if (input?.entityId) {
+      query = query.where('entity_id', '=', input.entityId);
+    }
+
+    const rows = await query.orderBy('created_at desc').limit(input?.limit ?? 100).execute();
+    return rows.map((row) => this.mapAuditLog(row));
+  }
+
+  async createSweepRecord(input: {
+    sourceWalletCode: string;
+    sourceAddress: string;
+    targetAddress: string;
+    amount: bigint;
+    note?: string;
+    nowIso?: string;
+  }): Promise<SweepRecord> {
+    const row = await this.db
+      .insertInto('sweep_records')
+      .values({
+        sweep_id: randomUUID(),
+        source_wallet_code: input.sourceWalletCode,
+        source_address: input.sourceAddress,
+        target_address: input.targetAddress,
+        amount: formatKoriAmount(input.amount),
+        status: 'planned',
+        tx_hash: null,
+        note: input.note ?? null,
+        created_at: input.nowIso ?? new Date().toISOString(),
+        broadcasted_at: null,
+        confirmed_at: null
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async listSweepRecords(limit = 100): Promise<SweepRecord[]> {
+    const rows = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .orderBy('created_at desc')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => this.mapSweep(row));
+  }
+
+  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    const existing = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('sweep_id', '=', sweepId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    if (existing.status !== 'planned') {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned');
+    }
+
+    const row = await this.db
+      .updateTable('sweep_records')
+      .set({
+        status: 'broadcasted',
+        tx_hash: txHash,
+        note: note ?? existing.note,
+        broadcasted_at: nowIso
+      })
+      .where('sweep_id', '=', sweepId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async confirmSweep(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    const existing = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('sweep_id', '=', sweepId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    if (!['planned', 'broadcasted'].includes(existing.status)) {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+    }
+
+    const row = await this.db
+      .updateTable('sweep_records')
+      .set({
+        status: 'confirmed',
+        note: note ?? existing.note,
+        confirmed_at: nowIso
+      })
+      .where('sweep_id', '=', sweepId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async getLedgerSummary(): Promise<LedgerSummary> {
+    const accountSummary = await this.db
+      .selectFrom('accounts')
+      .select((eb) => [
+        sql<string>`count(*)::text`.as('account_count'),
+        sql<string>`coalesce(sum(balance)::text, '0')`.as('available_balance'),
+        sql<string>`coalesce(sum(locked_balance)::text, '0')`.as('locked_balance')
+      ])
+      .executeTakeFirstOrThrow();
+
+    const depositSummary = await this.db
+      .selectFrom('deposits')
+      .select(sql<string>`count(*)::text`.as('deposit_count'))
+      .executeTakeFirstOrThrow();
+
+    const activeSummary = await this.db
+      .selectFrom('withdrawals')
+      .select(sql<string>`count(*)::text`.as('active_count'))
+      .where('status', 'in', ACTIVE_WITHDRAWAL_STATUSES)
+      .executeTakeFirstOrThrow();
+
+    const availableBalance = parseStoredKoriAmount(accountSummary.available_balance);
+    const lockedBalance = parseStoredKoriAmount(accountSummary.locked_balance);
+
+    return {
+      accountCount: Number(accountSummary.account_count),
+      availableBalance,
+      lockedBalance,
+      liabilityBalance: availableBalance + lockedBalance,
+      confirmedDepositCount: Number(depositSummary.deposit_count),
+      activeWithdrawalCount: Number(activeSummary.active_count)
+    };
+  }
+
   private async withTransaction<T>(work: (trx: Transaction<KorionDatabase>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => work(trx));
   }
 
-  private async lockKey(db: Kysely<KorionDatabase> | Transaction<KorionDatabase>, key: string): Promise<void> {
+  private async lockKey(db: DbExecutor, key: string): Promise<void> {
     await sql`select pg_advisory_xact_lock(hashtext(${key}))`.execute(db);
   }
 
-  private async lockUsers(db: Kysely<KorionDatabase> | Transaction<KorionDatabase>, userIds: string[]): Promise<void> {
+  private async lockUsers(db: DbExecutor, userIds: string[]): Promise<void> {
     for (const userId of [...new Set(userIds)].sort()) {
       await this.lockKey(db, `account:${userId}`);
     }
   }
 
-  private async ensureAccount(db: Kysely<KorionDatabase> | Transaction<KorionDatabase>, userId: string, nowIso = new Date().toISOString()): Promise<void> {
+  private async ensureAccount(db: DbExecutor, userId: string, nowIso = new Date().toISOString()): Promise<void> {
     await db
       .insertInto('accounts')
       .values({
@@ -669,7 +953,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return row;
   }
 
-  private async getWithdrawalForUpdate(trx: Transaction<KorionDatabase>, withdrawalId: string): Promise<KorionDatabase['withdrawals']> {
+  private async getWithdrawalForUpdate(
+    trx: Transaction<KorionDatabase>,
+    withdrawalId: string
+  ): Promise<KorionDatabase['withdrawals']> {
     const row = await trx
       .selectFrom('withdrawals')
       .selectAll()
@@ -698,11 +985,54 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .where('status', 'in', ACTIVE_WITHDRAWAL_STATUSES)
       .executeTakeFirst();
 
-    return sumBigInt([parseStoredKoriAmount(row?.amount ?? '0')]);
+    return parseStoredKoriAmount(row?.amount ?? '0');
+  }
+
+  private async getApprovalCount(db: DbExecutor, withdrawalId: string): Promise<number> {
+    const row = await db
+      .selectFrom('withdrawal_approvals')
+      .select(sql<string>`count(*)::text`.as('count'))
+      .where('withdraw_id', '=', withdrawalId)
+      .executeTakeFirst();
+
+    return Number(row?.count ?? '0');
+  }
+
+  private async hydrateWithdrawal(db: DbExecutor, row: KorionDatabase['withdrawals']): Promise<Withdrawal> {
+    const count = await this.getApprovalCount(db, row.withdraw_id);
+    return this.mapWithdrawal(row, count);
+  }
+
+  private async hydrateWithdrawals(db: DbExecutor, rows: KorionDatabase['withdrawals'][]): Promise<Withdrawal[]> {
+    if (!rows.length) {
+      return [];
+    }
+
+    const counts = await this.getApprovalCounts(db, rows.map((row) => row.withdraw_id));
+    return rows.map((row) => this.mapWithdrawal(row, counts.get(row.withdraw_id) ?? 0));
+  }
+
+  private async getApprovalCounts(db: DbExecutor, withdrawalIds: string[]): Promise<Map<string, number>> {
+    const ids = [...new Set(withdrawalIds)];
+    if (!ids.length) {
+      return new Map();
+    }
+
+    const rows = await db
+      .selectFrom('withdrawal_approvals')
+      .select([
+        'withdraw_id',
+        sql<string>`count(*)::text`.as('approval_count')
+      ])
+      .where('withdraw_id', 'in', ids)
+      .groupBy('withdraw_id')
+      .execute();
+
+    return new Map(rows.map((row) => [row.withdraw_id, Number(row.approval_count)]));
   }
 
   private async findWalletBindingByUserId(
-    db: Kysely<KorionDatabase> | Transaction<KorionDatabase>,
+    db: DbExecutor,
     userId: string
   ): Promise<KorionDatabase['wallet_address_bindings'] | undefined> {
     return db
@@ -713,7 +1043,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
   }
 
   private async findWalletBindingByWalletAddress(
-    db: Kysely<KorionDatabase> | Transaction<KorionDatabase>,
+    db: DbExecutor,
     walletAddress: string
   ): Promise<KorionDatabase['wallet_address_bindings'] | undefined> {
     return db
@@ -770,7 +1100,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     };
   }
 
-  private mapWithdrawal(row: KorionDatabase['withdrawals']): Withdrawal {
+  private mapWithdrawal(row: KorionDatabase['withdrawals'], approvalCount: number): Withdrawal {
     return {
       withdrawalId: row.withdraw_id,
       userId: row.user_id,
@@ -785,7 +1115,55 @@ export class PostgresLedgerRepository implements LedgerRepository {
       broadcastedAt: row.broadcasted_at ?? undefined,
       confirmedAt: row.confirmed_at ?? undefined,
       failedAt: row.failed_at ?? undefined,
-      failReason: row.fail_reason ?? undefined
+      failReason: row.fail_reason ?? undefined,
+      riskLevel: row.risk_level,
+      riskScore: row.risk_score,
+      riskFlags: row.risk_flags ?? [],
+      requiredApprovals: row.required_approvals,
+      approvalCount,
+      clientIp: row.client_ip ?? undefined,
+      deviceId: row.device_id ?? undefined,
+      reviewRequiredAt: row.review_required_at ?? undefined
+    };
+  }
+
+  private mapApproval(row: KorionDatabase['withdrawal_approvals']): WithdrawalApproval {
+    return {
+      approvalId: row.approval_id,
+      withdrawalId: row.withdraw_id,
+      adminId: row.admin_id,
+      actorType: row.actor_type,
+      note: row.note ?? undefined,
+      createdAt: row.created_at
+    };
+  }
+
+  private mapAuditLog(row: KorionDatabase['audit_logs']): AuditLog {
+    return {
+      auditId: row.audit_id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      action: row.action,
+      actorType: row.actor_type,
+      actorId: row.actor_id,
+      metadata: row.metadata ?? {},
+      createdAt: row.created_at
+    };
+  }
+
+  private mapSweep(row: KorionDatabase['sweep_records']): SweepRecord {
+    return {
+      sweepId: row.sweep_id,
+      sourceWalletCode: row.source_wallet_code,
+      sourceAddress: row.source_address,
+      targetAddress: row.target_address,
+      amount: parseStoredKoriAmount(row.amount),
+      status: row.status,
+      txHash: row.tx_hash ?? undefined,
+      note: row.note ?? undefined,
+      createdAt: row.created_at,
+      broadcastedAt: row.broadcasted_at ?? undefined,
+      confirmedAt: row.confirmed_at ?? undefined
     };
   }
 

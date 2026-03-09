@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { CollectorRunRecord, StoredWalletMonitoringSnapshot } from '../../../application/ports/monitoring-repository.js';
+import type { DepositMonitorStatus } from '../../../domain/deposit-monitor/types.js';
+import { DepositMonitorService } from '../../../application/services/deposit-monitor-service.js';
+import { OperationsService } from '../../../application/services/operations-service.js';
 import { SystemMonitoringService } from '../../../application/services/system-monitoring-service.js';
 import { buildBlockchainNetworkCatalog } from '../../../config/blockchain-networks.js';
 import { env } from '../../../config/env.js';
 import { getRuntimeContractProfile, setRuntimeContractProfile } from '../../../config/runtime-settings.js';
 import { getConfiguredSystemWallets } from '../../../config/system-wallets.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
+import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 
 const PLACEHOLDER_SECRETS = new Set([
@@ -21,9 +25,21 @@ const runtimeProfileSchema = z.object({
   customContractAddress: z.string().regex(tronAddressPattern).optional()
 });
 
+const sweepTransitionSchema = z.object({
+  txHash: z.string().min(8).max(128).optional(),
+  note: z.string().max(500).optional()
+});
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
-  collectorRuns: CollectorRunRecord[] = []
+  collectorRuns: CollectorRunRecord[] = [],
+  depositMonitor?: DepositMonitorStatus,
+  reconciliation?: {
+    ledger: Record<string, string | number>;
+    onchain: Record<string, string | number>;
+    gap: { amount: string; status: string };
+    alerts: string[];
+  }
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
   const walletCatalog = getConfiguredSystemWallets().map((wallet) => ({
@@ -50,7 +66,10 @@ export const buildSystemStatusResponse = (
     limits: {
       withdrawSingleLimitKori: env.withdrawSingleLimitKori,
       withdrawDailyLimitKori: env.withdrawDailyLimitKori,
-      tronFeeLimitSun: env.tronFeeLimitSun
+      tronFeeLimitSun: env.tronFeeLimitSun,
+      hotWalletAlertMinKori: env.hotWalletAlertMinKori,
+      hotWalletAlertMinTrx: env.hotWalletAlertMinTrx,
+      sweepPlanMinKori: env.sweepPlanMinKori
     },
     wallets: {
       treasury: env.treasuryWalletAddress,
@@ -67,6 +86,7 @@ export const buildSystemStatusResponse = (
       requestGapMs: env.walletMonitorRequestGapMs,
       collectors: collectorRuns
     },
+    depositMonitor: depositMonitor ?? null,
     database: {
       host: env.db.host,
       port: env.db.port,
@@ -83,22 +103,29 @@ export const buildSystemStatusResponse = (
       mainnetDirectOnchainSendEnabled: env.sandboxMainnetDirectOnchainSendEnabled,
       onchainTransferSourcePolicy: 'hot_only',
       onchainTransferExecutableWalletCodes: ['hot']
-    }
+    },
+    reconciliation: reconciliation ?? null
   };
 };
 
-export const createSystemRoutes = (systemMonitoringService: SystemMonitoringService): Router => {
+export const createSystemRoutes = (
+  systemMonitoringService: SystemMonitoringService,
+  operationsService: OperationsService,
+  depositMonitorService: DepositMonitorService
+): Router => {
   const router = Router();
   const getConfiguredWallets = () => getConfiguredSystemWallets();
 
   router.get('/status', async (_req, res, next) => {
     try {
       const wallets = getConfiguredWallets();
-      const [monitoring, collectorRuns] = await Promise.all([
+      const [monitoring, collectorRuns, depositMonitor, reconciliation] = await Promise.all([
         systemMonitoringService.getStoredWallets(wallets),
-        systemMonitoringService.getCollectorRuns()
+        systemMonitoringService.getCollectorRuns(),
+        depositMonitorService.getStatus(),
+        operationsService.getReconciliationReport()
       ]);
-      res.json(buildSystemStatusResponse(monitoring, collectorRuns));
+      res.json(buildSystemStatusResponse(monitoring, collectorRuns, depositMonitor, reconciliation));
     } catch (error) {
       next(error);
     }
@@ -108,10 +135,34 @@ export const createSystemRoutes = (systemMonitoringService: SystemMonitoringServ
     try {
       const wallets = getConfiguredWallets();
       const { snapshots, run } = await systemMonitoringService.collectWallets(wallets);
-      const collectorRuns = await systemMonitoringService.getCollectorRuns();
+      const [collectorRuns, depositMonitor, reconciliation] = await Promise.all([
+        systemMonitoringService.getCollectorRuns(),
+        depositMonitorService.getStatus(),
+        operationsService.getReconciliationReport()
+      ]);
       res.json({
         run,
-        status: buildSystemStatusResponse(snapshots, collectorRuns)
+        status: buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/deposit-monitor', async (_req, res, next) => {
+    try {
+      res.json(await depositMonitorService.getStatus());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/deposit-monitor/run', async (_req, res, next) => {
+    try {
+      const result = await depositMonitorService.runCycle();
+      res.json({
+        result,
+        status: await depositMonitorService.getStatus()
       });
     } catch (error) {
       next(error);
@@ -136,8 +187,104 @@ export const createSystemRoutes = (systemMonitoringService: SystemMonitoringServ
       setRuntimeContractProfile(parsed.data.profile, parsed.data.customContractAddress);
       const wallets = getConfiguredWallets();
       const { snapshots } = await systemMonitoringService.collectWallets(wallets);
-      const collectorRuns = await systemMonitoringService.getCollectorRuns();
-      res.json(buildSystemStatusResponse(snapshots, collectorRuns));
+      const [collectorRuns, depositMonitor, reconciliation] = await Promise.all([
+        systemMonitoringService.getCollectorRuns(),
+        depositMonitorService.getStatus(),
+        operationsService.getReconciliationReport()
+      ]);
+      res.json(buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/audit-logs', async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const logs = await operationsService.listAuditLogs({
+        entityType: req.query.entityType as 'withdrawal' | 'sweep' | 'system' | undefined,
+        entityId: typeof req.query.entityId === 'string' ? req.query.entityId : undefined,
+        limit
+      });
+      res.json({ logs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/reconciliation', async (_req, res, next) => {
+    try {
+      res.json(await operationsService.getReconciliationReport());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sweeps/plan', async (_req, res, next) => {
+    try {
+      const result = await operationsService.planSweeps();
+      res.json({
+        plannedCount: result.plannedCount,
+        sweeps: result.sweeps.map((sweep) => ({
+          ...sweep,
+          amount: formatKoriAmount(sweep.amount)
+        }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/sweeps', async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const sweeps = await operationsService.listSweeps(limit);
+      res.json({
+        sweeps: sweeps.map((sweep) => ({
+          ...sweep,
+          amount: formatKoriAmount(sweep.amount)
+        }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sweeps/:sweepId/broadcast', async (req, res, next) => {
+    try {
+      const parsed = sweepTransitionSchema.safeParse(req.body ?? {});
+      if (!parsed.success || !parsed.data.txHash) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'txHash is required for sweep broadcast');
+      }
+      const sweep = await operationsService.markSweepBroadcasted(
+        req.params.sweepId,
+        parsed.data.txHash,
+        parsed.data.note
+      );
+      res.json({
+        sweep: {
+          ...sweep,
+          amount: formatKoriAmount(sweep.amount)
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sweeps/:sweepId/confirm', async (req, res, next) => {
+    try {
+      const parsed = sweepTransitionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid sweep confirm payload', parsed.error.flatten());
+      }
+      const sweep = await operationsService.confirmSweep(req.params.sweepId, parsed.data.note);
+      res.json({
+        sweep: {
+          ...sweep,
+          amount: formatKoriAmount(sweep.amount)
+        }
+      });
     } catch (error) {
       next(error);
     }

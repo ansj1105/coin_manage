@@ -10,9 +10,16 @@ const requestSchema = z.object({
   userId: z.string().min(1).optional(),
   walletAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format').optional(),
   amount: z.number().positive(),
-  toAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format')
+  toAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format'),
+  clientIp: z.string().max(64).optional(),
+  deviceId: z.string().max(128).optional()
 }).refine((value) => value.userId || value.walletAddress, {
   message: 'userId or walletAddress is required'
+});
+
+const approveSchema = z.object({
+  adminId: z.string().min(1).optional(),
+  note: z.string().max(500).optional()
 });
 
 export const createWithdrawRoutes = (withdrawService: WithdrawService): Router => {
@@ -31,7 +38,9 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
         walletAddress: parsed.data.walletAddress,
         amountKori: parsed.data.amount,
         toAddress: parsed.data.toAddress,
-        idempotencyKey
+        idempotencyKey,
+        clientIp: parsed.data.clientIp,
+        deviceId: parsed.data.deviceId
       });
 
       res.status(result.duplicated ? 200 : 201).json({
@@ -46,14 +55,38 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/:withdrawalId/approve', async (req, res, next) => {
+  router.get('/pending-approvals', async (_req, res, next) => {
     try {
-      const withdrawal = await withdrawService.approve(req.params.withdrawalId);
+      const withdrawals = await withdrawService.listPendingApprovals();
       res.json({
-        withdrawal: {
+        withdrawals: withdrawals.map((withdrawal) => ({
           ...withdrawal,
           amount: formatKoriAmount(withdrawal.amount)
-        }
+        }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/:withdrawalId/approve', async (req, res, next) => {
+    try {
+      const parsed = approveSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const result = await withdrawService.approve(req.params.withdrawalId, {
+        adminId: parsed.data.adminId,
+        note: parsed.data.note
+      });
+      res.json({
+        approval: result.approval,
+        withdrawal: {
+          ...result.withdrawal,
+          amount: formatKoriAmount(result.withdrawal.amount)
+        },
+        finalized: result.finalized
       });
     } catch (error) {
       next(error);
@@ -86,6 +119,15 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
           amount: formatKoriAmount(withdrawal.amount)
         }
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/:withdrawalId/approvals', async (req, res, next) => {
+    try {
+      const approvals = await withdrawService.listApprovals(req.params.withdrawalId);
+      res.json({ approvals });
     } catch (error) {
       next(error);
     }
