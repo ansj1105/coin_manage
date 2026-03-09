@@ -6,6 +6,8 @@ export interface BroadcastRequest {
   network?: BlockchainNetwork;
   apiUrl?: string;
   contractAddress?: string;
+  fromAddress?: string;
+  fromPrivateKey?: string;
 }
 
 export type TronReceiptStatus = 'pending' | 'confirmed' | 'failed';

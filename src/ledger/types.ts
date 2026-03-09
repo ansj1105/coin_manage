@@ -114,7 +114,7 @@ export interface AuditLog {
   createdAt: string;
 }
 
-export type SweepStatus = 'planned' | 'broadcasted' | 'confirmed' | 'skipped';
+export type SweepStatus = 'planned' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
 
 export interface SweepRecord {
   sweepId: string;
@@ -123,6 +123,7 @@ export interface SweepRecord {
   targetAddress: string;
   amount: bigint;
   status: SweepStatus;
+  externalRef?: string;
   txHash?: string;
   note?: string;
   createdAt: string;

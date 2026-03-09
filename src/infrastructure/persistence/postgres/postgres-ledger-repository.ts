@@ -785,6 +785,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     sourceAddress: string;
     targetAddress: string;
     amount: bigint;
+    externalRef?: string;
     note?: string;
     nowIso?: string;
   }): Promise<SweepRecord> {
@@ -797,6 +798,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         target_address: input.targetAddress,
         amount: formatKoriAmount(input.amount),
         status: 'planned',
+        external_ref: input.externalRef ?? null,
         tx_hash: null,
         note: input.note ?? null,
         created_at: input.nowIso ?? new Date().toISOString(),
@@ -818,6 +820,16 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .execute();
 
     return rows.map((row) => this.mapSweep(row));
+  }
+
+  async findSweepByExternalRef(externalRef: string): Promise<SweepRecord | undefined> {
+    const row = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('external_ref', '=', externalRef)
+      .executeTakeFirst();
+
+    return row ? this.mapSweep(row) : undefined;
   }
 
   async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
@@ -868,6 +880,34 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .set({
         status: 'confirmed',
         note: note ?? existing.note,
+        confirmed_at: nowIso
+      })
+      .where('sweep_id', '=', sweepId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async failSweep(sweepId: string, reason: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    const existing = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('sweep_id', '=', sweepId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    if (!['planned', 'broadcasted'].includes(existing.status)) {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+    }
+
+    const row = await this.db
+      .updateTable('sweep_records')
+      .set({
+        status: 'failed',
+        note: reason,
         confirmed_at: nowIso
       })
       .where('sweep_id', '=', sweepId)
@@ -1159,6 +1199,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       targetAddress: row.target_address,
       amount: parseStoredKoriAmount(row.amount),
       status: row.status,
+      externalRef: row.external_ref ?? undefined,
       txHash: row.tx_hash ?? undefined,
       note: row.note ?? undefined,
       createdAt: row.created_at,

@@ -12,7 +12,8 @@
   - 상태: 부분 구현
   - 구현됨: 수동 입금 스캔 API, 추적 지갑 필터, `txHash` 중복 방지, Ledger 반영
   - 구현됨: foxya 내부 API 기반 자동 입금 모니터, TRON KORI `Transfer` 이벤트 스캔, cursor 저장, 재기동 후 이어받기
-  - 미구현: sweep 자동 브로드캐스트까지 이어지는 signer 연동
+  - 구현됨: foxya DB signer + `ENCRYPTION_KEY` 기반 sweep bot 자동 브로드캐스트 / receipt confirm
+  - 미구현: source wallet TRX gas 자동 top-up
 
 - `Wallet Core` [잔액/송금관리]
   - 상태: 구현
@@ -23,8 +24,8 @@
 - `Blockchain Monitor` [TRON Node / API]
   - 상태: 부분 구현
   - 구현됨: wallet monitoring snapshot 저장, collector run 이력, TRC20 event polling, last cursor 저장
-  - 구현됨: mainnet/testnet API URL 분리, shared docker network 기반 foxya 연동
-  - 미구현: fallback node, 운영 알림 채널 전송
+  - 구현됨: mainnet/testnet API URL 분리, foxya 내부 API / 외부 DB 기반 연동, 텔레그램 운영 알림 전송
+  - 미구현: fallback node
 
 - `Hot Wallet` [Sign & Send]
   - 상태: 부분 구현
@@ -40,8 +41,8 @@
 
 - `TRON Blockchain` [KORI Token]
   - 상태: 부분 연동
-  - 구현됨: TRON 네트워크 호출 구조, 출금 receipt 조회, TRC20 전송 경로, 자동 입금 이벤트 모니터
-  - 미구현: 메인넷 실송금 검증, user wallet sweep signer
+  - 구현됨: TRON 네트워크 호출 구조, 출금 receipt 조회, TRC20 전송 경로, 자동 입금 이벤트 모니터, user wallet signer 기반 sweep
+  - 미구현: 메인넷 실송금 검증
 
 - `KORION Pay Server` [결제 정산 서버]
   - 상태: 미구현
@@ -50,8 +51,8 @@
 - `Application Server` [Wallet App Backend / API Server]
   - 상태: 구현
   - 구현됨: Express API, Clean Architecture 분리, container/factory 기반 의존성 조립, Docker Compose 배포 경로
-  - 구현됨: 상태 API, 감사 로그, 대사, sweep plan, deposit monitor status/run
-  - 미구현: 인증/인가, rate limit, observability, 알림 채널
+  - 구현됨: 상태 API, 감사 로그, 대사, sweep plan, deposit monitor status/run, sweep bot status/run, telegram test
+  - 미구현: 인증/인가, rate limit, observability
 
 - `Foxyya Platform` [온라인 서비스]
   - 상태: 연동 가능
@@ -76,8 +77,6 @@
 
 - `운영 전 필수 보강`
   - 메인넷 실출금 검증
-  - sweep 자동 signer 또는 foxya 내부 signer API
   - 관리자 인증/인가
   - 멀티시그
   - 결제/정산 서버 분리
-  - 운영 알림 채널

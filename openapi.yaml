@@ -68,6 +68,53 @@ paths:
                             type: string
                   status:
                     $ref: '#/components/schemas/DepositMonitorStatus'
+  /api/system/sweep-bot:
+    get:
+      summary: Get automatic sweep bot status
+      responses:
+        '200':
+          description: Sweep bot status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SweepBotStatus'
+  /api/system/sweep-bot/run:
+    post:
+      summary: Run one automatic sweep bot cycle now
+      responses:
+        '200':
+          description: Sweep bot cycle result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    oneOf:
+                      - $ref: '#/components/schemas/SweepBotCycleResult'
+                      - type: object
+                        properties:
+                          skipped:
+                            type: boolean
+                          reason:
+                            type: string
+                  status:
+                    $ref: '#/components/schemas/SweepBotStatus'
+  /api/system/alerts/telegram/test:
+    post:
+      summary: Send a test Telegram alert
+      responses:
+        '200':
+          description: Telegram test dispatch result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  telegramEnabled:
+                    type: boolean
   /api/system/runtime-profile:
     post:
       summary: Switch active contract profile for sandbox runtime
@@ -820,7 +867,10 @@ components:
           type: string
         status:
           type: string
-          enum: [planned, broadcasted, confirmed, skipped]
+          enum: [planned, broadcasted, confirmed, failed, skipped]
+        externalRef:
+          type: string
+          nullable: true
         txHash:
           type: string
           nullable: true
@@ -838,6 +888,37 @@ components:
           type: string
           format: date-time
           nullable: true
+    SweepBotStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        configured:
+          type: boolean
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        lastResult:
+          oneOf:
+            - $ref: '#/components/schemas/SweepBotCycleResult'
+            - type: 'null'
+    SweepBotCycleResult:
+      type: object
+      properties:
+        scanned:
+          type: integer
+        broadcasted:
+          type: integer
+        confirmed:
+          type: integer
+        failed:
+          type: integer
+        skipped:
+          type: integer
     WalletBindingRequest:
       type: object
       required: [userId, walletAddress]
@@ -1289,6 +1370,15 @@ components:
         depositMonitor:
           oneOf:
             - $ref: '#/components/schemas/DepositMonitorStatus'
+            - type: 'null'
+        automation:
+          oneOf:
+            - type: object
+              properties:
+                sweepBot:
+                  $ref: '#/components/schemas/SweepBotStatus'
+                telegramEnabled:
+                  type: boolean
             - type: 'null'
         security:
           type: object

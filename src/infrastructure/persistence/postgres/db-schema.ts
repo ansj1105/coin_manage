@@ -92,7 +92,8 @@ export interface SweepRecordsTable {
   source_address: string;
   target_address: string;
   amount: string;
-  status: 'planned' | 'broadcasted' | 'confirmed' | 'skipped';
+  status: 'planned' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
+  external_ref: string | null;
   tx_hash: string | null;
   note: string | null;
   created_at: string;

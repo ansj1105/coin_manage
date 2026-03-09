@@ -81,11 +81,14 @@ export interface LedgerRepository {
     sourceAddress: string;
     targetAddress: string;
     amount: bigint;
+    externalRef?: string;
     note?: string;
     nowIso?: string;
   }): Promise<SweepRecord>;
   listSweepRecords(limit?: number): Promise<SweepRecord[]>;
+  findSweepByExternalRef(externalRef: string): Promise<SweepRecord | undefined>;
   markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   confirmSweep(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
+  failSweep(sweepId: string, reason: string, nowIso?: string): Promise<SweepRecord>;
   getLedgerSummary(): Promise<LedgerSummary>;
 }

@@ -150,6 +150,19 @@ export class PostgresDepositMonitorRepository implements DepositMonitorRepositor
     return rows.map((row) => this.mapEvent(row));
   }
 
+  async listEventsByStatus(status: ExternalDepositEventStatus, limit = 100): Promise<ExternalDepositEvent[]> {
+    const rows = await this.db
+      .selectFrom('external_deposit_events')
+      .selectAll()
+      .where('status', '=', status)
+      .orderBy('block_timestamp_ms desc')
+      .orderBy('updated_at desc')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => this.mapEvent(row));
+  }
+
   async countEventsByStatus(): Promise<Record<ExternalDepositEventStatus, number>> {
     const counts = Object.fromEntries(EVENT_STATUS_VALUES.map((status) => [status, 0])) as Record<
       ExternalDepositEventStatus,

@@ -63,6 +63,12 @@ export interface ExternalDepositRecord {
   depositId: string;
   status?: string;
   txHash?: string;
+  sweepStatus?: string;
+  sweepTxHash?: string;
+  sweepRequestedAt?: string;
+  sweepSubmittedAt?: string;
+  sweepFailedAt?: string;
+  sweepErrorMessage?: string;
 }
 
 export interface DepositMonitorCycleResult {

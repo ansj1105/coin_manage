@@ -13,6 +13,14 @@ if (env.depositMonitorEnabled) {
   deps.depositMonitorWorker.start();
 }
 
+if (env.sweepBotEnabled) {
+  deps.sweepBotWorker.start();
+}
+
+if (deps.alertService.enabled) {
+  deps.alertWorker.start();
+}
+
 app.listen(env.port, () => {
   console.log(`korion-kori-backend listening on port ${env.port}`);
 });

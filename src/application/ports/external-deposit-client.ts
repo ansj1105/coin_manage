@@ -18,4 +18,6 @@ export interface ExternalDepositClient {
   registerDeposit(input: RegisterExternalDepositRequest): Promise<ExternalDepositRecord>;
   completeDeposit(depositId: string): Promise<ExternalDepositRecord>;
   getDeposit(depositId: string): Promise<ExternalDepositRecord | undefined>;
+  submitSweep(depositId: string, txHash: string): Promise<ExternalDepositRecord>;
+  failSweep(depositId: string, errorMessage: string): Promise<ExternalDepositRecord>;
 }

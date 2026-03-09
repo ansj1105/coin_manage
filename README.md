@@ -87,9 +87,30 @@ FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
 SHARED_DOCKER_NETWORK_NAME=fox_coin_foxya-network
 ```
 
+foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면:
+```env
+SWEEP_BOT_ENABLED=true
+SWEEP_BOT_POLL_INTERVAL_SEC=30
+SWEEP_BOT_CYCLE_LIMIT=100
+FOXYA_DB_HOST=foxya-postgres
+FOXYA_DB_PORT=5432
+FOXYA_DB_NAME=foxya
+FOXYA_DB_USER=foxya
+FOXYA_DB_PASSWORD=replace-with-password
+FOXYA_ENCRYPTION_KEY=replace-with-foxya-encryption-key
+```
+
+텔레그램 알림을 사용하려면:
+```env
+TELEGRAM_BOT_TOKEN=replace-with-bot-token
+TELEGRAM_CHAT_ID=replace-with-chat-id
+```
+
 주의:
 - foxya `docker-compose.yml`은 현재 네트워크 `name:`이 고정돼 있지 않습니다. 두 프로젝트를 별도 compose 프로젝트로 띄우면 실제 네트워크명이 prefix 포함 값일 수 있으니 `docker network ls`로 확인해서 `SHARED_DOCKER_NETWORK_NAME`에 넣어야 합니다.
 - `watch-addresses` 응답에는 통화 코드가 없어서, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS`로 KORI currency id만 제한해야 합니다.
+- 같은 Docker 네트워크가 아니어도 됩니다. `FOXYA_INTERNAL_API_URL`과 `FOXYA_DB_HOST`가 이 서비스에서 도달 가능한 주소면 외부 서버 연동도 가능합니다.
+- sweep bot은 source wallet에 TRX gas가 없으면 브로드캐스트 실패할 수 있습니다. 이 경우 foxya deposit `sweep_failed`와 텔레그램 알림으로 남깁니다.
 
 `TRON_API_KEY`를 안 넣으면 지금까지는 public `TRON_API_URL`만으로 동작했습니다.
 이제는 key가 있으면 `TRON-PRO-API-KEY` 헤더를 같이 붙입니다.
@@ -122,6 +143,9 @@ npm run stack:down
 - `POST /api/system/monitoring/run`
 - `GET /api/system/deposit-monitor`
 - `POST /api/system/deposit-monitor/run`
+- `GET /api/system/sweep-bot`
+- `POST /api/system/sweep-bot/run`
+- `POST /api/system/alerts/telegram/test`
 - `GET /api/system/audit-logs`
 - `GET /api/system/reconciliation`
 - `GET /api/system/sweeps`
@@ -173,10 +197,11 @@ http://localhost:3000/sandbox/
 - balance 조회
 - deposit scan (`userId` 또는 `walletAddress`)
 - foxya watch-address 기반 자동 deposit monitor 상태/수동 실행
+- foxya DB signer 기반 automatic sweep bot 상태/수동 실행
 - internal transfer (`userId` 또는 `walletAddress`)
 - withdrawal request / approve / broadcast / confirm
 - pending approvals / approval history
-- reconciliation / audit logs / sweep planning
+- reconciliation / audit logs / sweep planning / telegram test
 - scheduler retry
 
 ## 테스트
@@ -191,4 +216,6 @@ npm run build
 - `APP_LEDGER_PROVIDER=postgres`를 사용하면 앱이 PostgreSQL 기반 Ledger를 사용합니다.
 - `APP_TRON_GATEWAY_MODE=trc20`는 구현되어 있고 TRON API key와 mainnet/testnet contract preset까지 반영됐습니다.
 - `APP_DEPOSIT_MONITOR_ENABLED=true`면 foxya 내부 API와 같은 도커 네트워크에서 watch-address 조회, TRON KORI 입금 register/complete가 자동 실행됩니다.
+- `SWEEP_BOT_ENABLED=true`와 foxya DB 접속 정보 + `FOXYA_ENCRYPTION_KEY`가 있으면 completed deposit를 hot wallet로 자동 sweep합니다.
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`가 있으면 핫월렛 임계치와 sweep/deposit monitor 실패를 텔레그램으로 전송합니다.
 - 메인넷 운영 송금 검증은 별도 컨트랙트 주소와 실환경 검증이 필요합니다.

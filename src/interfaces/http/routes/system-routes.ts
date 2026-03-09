@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { CollectorRunRecord, StoredWalletMonitoringSnapshot } from '../../../application/ports/monitoring-repository.js';
 import type { DepositMonitorStatus } from '../../../domain/deposit-monitor/types.js';
+import { AlertService } from '../../../application/services/alert-service.js';
 import { DepositMonitorService } from '../../../application/services/deposit-monitor-service.js';
 import { OperationsService } from '../../../application/services/operations-service.js';
+import { SweepBotService } from '../../../application/services/sweep-bot-service.js';
 import { SystemMonitoringService } from '../../../application/services/system-monitoring-service.js';
 import { buildBlockchainNetworkCatalog } from '../../../config/blockchain-networks.js';
 import { env } from '../../../config/env.js';
@@ -39,6 +41,10 @@ export const buildSystemStatusResponse = (
     onchain: Record<string, string | number>;
     gap: { amount: string; status: string };
     alerts: string[];
+  },
+  automation?: {
+    sweepBot: ReturnType<SweepBotService['getStatus']>;
+    telegramEnabled: boolean;
   }
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
@@ -87,6 +93,7 @@ export const buildSystemStatusResponse = (
       collectors: collectorRuns
     },
     depositMonitor: depositMonitor ?? null,
+    automation: automation ?? null,
     database: {
       host: env.db.host,
       port: env.db.port,
@@ -111,7 +118,9 @@ export const buildSystemStatusResponse = (
 export const createSystemRoutes = (
   systemMonitoringService: SystemMonitoringService,
   operationsService: OperationsService,
-  depositMonitorService: DepositMonitorService
+  depositMonitorService: DepositMonitorService,
+  sweepBotService: SweepBotService,
+  alertService: AlertService
 ): Router => {
   const router = Router();
   const getConfiguredWallets = () => getConfiguredSystemWallets();
@@ -125,7 +134,12 @@ export const createSystemRoutes = (
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport()
       ]);
-      res.json(buildSystemStatusResponse(monitoring, collectorRuns, depositMonitor, reconciliation));
+      res.json(
+        buildSystemStatusResponse(monitoring, collectorRuns, depositMonitor, reconciliation, {
+          sweepBot: sweepBotService.getStatus(),
+          telegramEnabled: alertService.enabled
+        })
+      );
     } catch (error) {
       next(error);
     }
@@ -142,7 +156,10 @@ export const createSystemRoutes = (
       ]);
       res.json({
         run,
-        status: buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation)
+        status: buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation, {
+          sweepBot: sweepBotService.getStatus(),
+          telegramEnabled: alertService.enabled
+        })
       });
     } catch (error) {
       next(error);
@@ -192,7 +209,41 @@ export const createSystemRoutes = (
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport()
       ]);
-      res.json(buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation));
+      res.json(
+        buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation, {
+          sweepBot: sweepBotService.getStatus(),
+          telegramEnabled: alertService.enabled
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/sweep-bot', async (_req, res, next) => {
+    try {
+      res.json(sweepBotService.getStatus());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sweep-bot/run', async (_req, res, next) => {
+    try {
+      const result = await sweepBotService.runCycle();
+      res.json({
+        result,
+        status: sweepBotService.getStatus()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/alerts/telegram/test', async (_req, res, next) => {
+    try {
+      await alertService.sendTestMessage();
+      res.json({ ok: true, telegramEnabled: alertService.enabled });
     } catch (error) {
       next(error);
     }

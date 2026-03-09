@@ -19,5 +19,6 @@ export interface DepositMonitorRepository {
     }
   ): Promise<ExternalDepositEvent>;
   listRecentEvents(limit?: number): Promise<ExternalDepositEvent[]>;
+  listEventsByStatus(status: ExternalDepositEventStatus, limit?: number): Promise<ExternalDepositEvent[]>;
   countEventsByStatus(): Promise<Record<ExternalDepositEventStatus, number>>;
 }

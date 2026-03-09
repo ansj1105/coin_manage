@@ -278,6 +278,28 @@ const runDepositMonitor = async () => {
   }
 };
 
+const refreshSweepBot = async () => {
+  try {
+    const payload = await fetchJson('/api/system/sweep-bot');
+    setBlock(els.depositMonitorResult, payload);
+    appendLog('Sweep bot status loaded', payload);
+  } catch (error) {
+    setBlock(els.depositMonitorResult, error.payload ?? { message: error.message });
+    appendLog('Sweep bot status failed', error.payload ?? { message: error.message });
+  }
+};
+
+const runSweepBot = async () => {
+  try {
+    const payload = await fetchJson('/api/system/sweep-bot/run', { method: 'POST' });
+    setBlock(els.depositMonitorResult, payload);
+    appendLog('Sweep bot cycle executed', payload);
+  } catch (error) {
+    setBlock(els.depositMonitorResult, error.payload ?? { message: error.message });
+    appendLog('Sweep bot cycle failed', error.payload ?? { message: error.message });
+  }
+};
+
 const loadPendingApprovals = async () => {
   try {
     const payload = await fetchJson('/api/withdrawals/pending-approvals');
@@ -358,6 +380,17 @@ const listSweeps = async () => {
   } catch (error) {
     setBlock(els.opsResult, error.payload ?? { message: error.message });
     appendLog('Sweeps load failed', error.payload ?? { message: error.message });
+  }
+};
+
+const sendTelegramTest = async () => {
+  try {
+    const payload = await fetchJson('/api/system/alerts/telegram/test', { method: 'POST' });
+    setBlock(els.opsResult, payload);
+    appendLog('Telegram alert test sent', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('Telegram alert test failed', error.payload ?? { message: error.message });
   }
 };
 
@@ -489,6 +522,8 @@ document.querySelector('#clear-log').addEventListener('click', () => {
 });
 document.querySelector('#refresh-deposit-monitor').addEventListener('click', refreshDepositMonitor);
 document.querySelector('#run-deposit-monitor').addEventListener('click', runDepositMonitor);
+document.querySelector('#refresh-sweep-bot').addEventListener('click', refreshSweepBot);
+document.querySelector('#run-sweep-bot').addEventListener('click', runSweepBot);
 document.querySelector('#list-pending-approvals').addEventListener('click', loadPendingApprovals);
 document.querySelector('#process-withdraw-queue').addEventListener('click', processWithdrawQueue);
 document.querySelector('#fetch-approval-history').addEventListener('click', fetchApprovalHistory);
@@ -496,6 +531,7 @@ document.querySelector('#load-reconciliation').addEventListener('click', loadRec
 document.querySelector('#load-audit-logs').addEventListener('click', loadAuditLogs);
 document.querySelector('#plan-sweeps').addEventListener('click', planSweeps);
 document.querySelector('#list-sweeps').addEventListener('click', listSweeps);
+document.querySelector('#send-telegram-test').addEventListener('click', sendTelegramTest);
 
 els.onchainTabs.forEach((tab) => {
   tab.addEventListener('click', () => {

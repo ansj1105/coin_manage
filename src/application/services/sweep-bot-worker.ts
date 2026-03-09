@@ -1,11 +1,11 @@
-import { DepositMonitorService } from './deposit-monitor-service.js';
 import { AlertService } from './alert-service.js';
+import { SweepBotService } from './sweep-bot-service.js';
 
-export class DepositMonitorWorker {
+export class SweepBotWorker {
   private timer?: ReturnType<typeof setInterval>;
 
   constructor(
-    private readonly depositMonitorService: DepositMonitorService,
+    private readonly sweepBotService: SweepBotService,
     private readonly alertService: AlertService,
     private readonly intervalMs: number
   ) {}
@@ -26,9 +26,13 @@ export class DepositMonitorWorker {
 
   async runCycle() {
     try {
-      await this.depositMonitorService.runCycle();
+      await this.sweepBotService.runCycle();
     } catch (error) {
-      await this.alertService.notifyDepositMonitorFailure(error instanceof Error ? error.message : 'deposit monitor cycle failed');
+      await this.alertService.notifySweepFailure({
+        depositId: 'cycle',
+        sourceAddress: 'sweep-bot',
+        message: error instanceof Error ? error.message : 'sweep bot cycle failed'
+      });
     }
   }
 }

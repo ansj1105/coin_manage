@@ -16,6 +16,10 @@ const optionalBooleanString = z.preprocess(
 );
 
 const optionalUrlString = z.preprocess((value) => (value === '' ? undefined : value), z.string().url().optional());
+const optionalNumberString = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.coerce.number().int().nonnegative().optional()
+);
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -46,16 +50,27 @@ const schema = z.object({
   HOT_WALLET_ALERT_MIN_KORI: z.coerce.number().positive().default(1000),
   HOT_WALLET_ALERT_MIN_TRX: z.coerce.number().positive().default(100),
   SWEEP_PLAN_MIN_KORI: z.coerce.number().positive().default(1),
+  SWEEP_BOT_ENABLED: optionalBooleanString,
+  SWEEP_BOT_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
+  SWEEP_BOT_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(100),
   DEPOSIT_MONITOR_ENABLED: optionalBooleanString,
   DEPOSIT_MONITOR_NETWORK: z.enum(['mainnet', 'testnet']).default('mainnet'),
   DEPOSIT_MONITOR_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(20),
   DEPOSIT_MONITOR_CONFIRMATIONS: z.coerce.number().int().positive().default(20),
-  DEPOSIT_MONITOR_START_TIMESTAMP_MS: z.coerce.number().int().nonnegative().optional(),
+  DEPOSIT_MONITOR_START_TIMESTAMP_MS: optionalNumberString,
   DEPOSIT_MONITOR_LOOKBACK_MS: z.coerce.number().int().nonnegative().default(300000),
   DEPOSIT_MONITOR_PAGE_LIMIT: z.coerce.number().int().positive().max(200).default(200),
   DEPOSIT_MONITOR_CURRENCY_IDS: z.string().optional(),
   FOXYA_INTERNAL_API_URL: optionalUrlString,
   FOXYA_INTERNAL_API_KEY: z.string().optional(),
+  FOXYA_DB_HOST: z.string().optional(),
+  FOXYA_DB_PORT: z.coerce.number().int().positive().default(5432),
+  FOXYA_DB_NAME: z.string().optional(),
+  FOXYA_DB_USER: z.string().optional(),
+  FOXYA_DB_PASSWORD: z.string().optional(),
+  FOXYA_ENCRYPTION_KEY: z.string().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
   DB_HOST: z.string().default('127.0.0.1'),
   DB_PORT: z.coerce.number().int().positive().default(5432),
   DB_NAME: z.string().default('korion'),
@@ -121,6 +136,9 @@ export const env = Object.freeze({
   hotWalletAlertMinKori: parsed.HOT_WALLET_ALERT_MIN_KORI,
   hotWalletAlertMinTrx: parsed.HOT_WALLET_ALERT_MIN_TRX,
   sweepPlanMinKori: parsed.SWEEP_PLAN_MIN_KORI,
+  sweepBotEnabled: parsed.SWEEP_BOT_ENABLED !== undefined ? parsed.SWEEP_BOT_ENABLED === 'true' : false,
+  sweepBotPollIntervalSec: parsed.SWEEP_BOT_POLL_INTERVAL_SEC,
+  sweepBotCycleLimit: parsed.SWEEP_BOT_CYCLE_LIMIT,
   depositMonitorEnabled:
     parsed.DEPOSIT_MONITOR_ENABLED !== undefined ? parsed.DEPOSIT_MONITOR_ENABLED === 'true' : false,
   depositMonitorNetwork: parsed.DEPOSIT_MONITOR_NETWORK,
@@ -137,6 +155,24 @@ export const env = Object.freeze({
     .filter((item) => Number.isInteger(item) && item > 0),
   foxyaInternalApiUrl: parsed.FOXYA_INTERNAL_API_URL,
   foxyaInternalApiKey: parsed.FOXYA_INTERNAL_API_KEY,
+  foxyaDb:
+    parsed.FOXYA_DB_HOST && parsed.FOXYA_DB_NAME && parsed.FOXYA_DB_USER
+      ? {
+          host: parsed.FOXYA_DB_HOST,
+          port: parsed.FOXYA_DB_PORT,
+          name: parsed.FOXYA_DB_NAME,
+          user: parsed.FOXYA_DB_USER,
+          password: parsed.FOXYA_DB_PASSWORD ?? '',
+          encryptionKey: parsed.FOXYA_ENCRYPTION_KEY
+        }
+      : undefined,
+  telegram:
+    parsed.TELEGRAM_BOT_TOKEN && parsed.TELEGRAM_CHAT_ID
+      ? {
+          botToken: parsed.TELEGRAM_BOT_TOKEN,
+          chatId: parsed.TELEGRAM_CHAT_ID
+        }
+      : undefined,
   db: {
     host: parsed.DB_HOST,
     port: parsed.DB_PORT,

@@ -69,6 +69,22 @@ export class FoxyaInternalDepositClient implements ExternalDepositClient {
     }
   }
 
+  async submitSweep(depositId: string, txHash: string): Promise<ExternalDepositRecord> {
+    return this.request<ExternalDepositRecord>({
+      method: 'POST',
+      path: `/${depositId}/sweep/submit`,
+      body: { txHash }
+    });
+  }
+
+  async failSweep(depositId: string, errorMessage: string): Promise<ExternalDepositRecord> {
+    return this.request<ExternalDepositRecord>({
+      method: 'POST',
+      path: `/${depositId}/sweep/fail`,
+      body: { errorMessage }
+    });
+  }
+
   private async request<T>(options: RequestOptions): Promise<T> {
     const response = await fetch(`${this.baseUrl}${options.path}`, {
       method: options.method ?? 'GET',

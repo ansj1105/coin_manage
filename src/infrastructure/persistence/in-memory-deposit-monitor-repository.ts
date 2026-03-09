@@ -76,6 +76,13 @@ export class InMemoryDepositMonitorRepository implements DepositMonitorRepositor
       .slice(0, limit);
   }
 
+  async listEventsByStatus(status: ExternalDepositEventStatus, limit = 100): Promise<ExternalDepositEvent[]> {
+    return [...this.events.values()]
+      .filter((event) => event.status === status)
+      .sort((left, right) => right.blockTimestampMs - left.blockTimestampMs || right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit);
+  }
+
   async countEventsByStatus(): Promise<Record<ExternalDepositEventStatus, number>> {
     const counts = Object.fromEntries(EVENT_STATUS_VALUES.map((status) => [status, 0])) as Record<
       ExternalDepositEventStatus,

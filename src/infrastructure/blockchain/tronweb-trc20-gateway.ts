@@ -27,6 +27,13 @@ export class TronWebTrc20Gateway implements TronGateway {
   }
 
   async broadcastTransfer(request: BroadcastRequest): Promise<{ txHash: string }> {
+    const privateKey = request.fromPrivateKey ?? env.hotWalletPrivateKey;
+    const fromAddress = request.fromAddress ?? env.hotWalletAddress;
+    const derivedAddress = TronWeb.address.fromPrivateKey(privateKey);
+    if (!derivedAddress || derivedAddress !== fromAddress) {
+      throw new DomainError(500, 'CONFIG_ERROR', 'broadcast signer private key does not match source address');
+    }
+
     const contractAddress =
       request.contractAddress ??
       (request.network ? getBlockchainNetworkConfig(request.network).contractAddress : getEffectiveKoriTokenContractAddress());
@@ -36,7 +43,9 @@ export class TronWebTrc20Gateway implements TronGateway {
 
     const tronWeb = this.createTronWeb(
       request.apiUrl ??
-        (request.network ? getBlockchainNetworkConfig(request.network).tronApiUrl : getEffectiveTronApiUrl())
+        (request.network ? getBlockchainNetworkConfig(request.network).tronApiUrl : getEffectiveTronApiUrl()),
+      privateKey,
+      fromAddress
     );
     const contract = await tronWeb.contract(TRC20_ABI, contractAddress).at(contractAddress);
     const txHash = await contract.transfer(request.toAddress, request.amount.toString()).send({
@@ -58,15 +67,17 @@ export class TronWebTrc20Gateway implements TronGateway {
     return 'confirmed';
   }
 
-  private createTronWeb(fullHost: string) {
-    return new TronWeb({
+  private createTronWeb(fullHost: string, privateKey = env.hotWalletPrivateKey, fromAddress = env.hotWalletAddress) {
+    const tronWeb = new TronWeb({
       fullHost,
       headers: env.tronApiKey
         ? {
             'TRON-PRO-API-KEY': env.tronApiKey
           }
         : undefined,
-      privateKey: env.hotWalletPrivateKey
+      privateKey
     });
+    tronWeb.setAddress(fromAddress);
+    return tronWeb;
   }
 }

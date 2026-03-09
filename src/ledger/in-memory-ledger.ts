@@ -546,6 +546,7 @@ export class InMemoryLedger {
     sourceAddress: string;
     targetAddress: string;
     amount: bigint;
+    externalRef?: string;
     note?: string;
     nowIso?: string;
   }): Promise<SweepRecord> {
@@ -557,6 +558,7 @@ export class InMemoryLedger {
         targetAddress: input.targetAddress,
         amount: input.amount,
         status: 'planned',
+        externalRef: input.externalRef,
         note: input.note,
         createdAt: input.nowIso ?? new Date().toISOString()
       };
@@ -570,6 +572,11 @@ export class InMemoryLedger {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, limit)
       .map((sweep) => this.cloneSweep(sweep));
+  }
+
+  async findSweepByExternalRef(externalRef: string): Promise<SweepRecord | undefined> {
+    const found = Array.from(this.sweepRecords.values()).find((sweep) => sweep.externalRef === externalRef);
+    return found ? this.cloneSweep(found) : undefined;
   }
 
   async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
@@ -594,6 +601,19 @@ export class InMemoryLedger {
       }
       sweep.status = 'confirmed';
       sweep.note = note ?? sweep.note;
+      sweep.confirmedAt = nowIso;
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async failSweep(sweepId: string, reason: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep = this.getMutableSweep(sweepId);
+      if (!['planned', 'broadcasted'].includes(sweep.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+      }
+      sweep.status = 'failed';
+      sweep.note = reason;
       sweep.confirmedAt = nowIso;
       return this.cloneSweep(sweep);
     });
