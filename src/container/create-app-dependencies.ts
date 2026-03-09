@@ -1,3 +1,5 @@
+import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
+import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
@@ -21,11 +23,14 @@ import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-ev
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
 import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-internal-deposit-client.js';
+import { PostgresFoxyaAlertSourceRepository } from '../infrastructure/integration/foxya-alert-source-repository.js';
 import { PostgresFoxyaWalletRepository } from '../infrastructure/integration/foxya-wallet-repository.js';
 import { TelegramAlertNotifier } from '../infrastructure/notifications/telegram-alert-notifier.js';
+import { InMemoryAlertMonitorStateRepository } from '../infrastructure/persistence/in-memory-alert-monitor-state-repository.js';
 import { InMemoryDepositMonitorRepository } from '../infrastructure/persistence/in-memory-deposit-monitor-repository.js';
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
 import { InMemoryMonitoringRepository } from '../infrastructure/persistence/in-memory-monitoring-repository.js';
+import { PostgresAlertMonitorStateRepository } from '../infrastructure/persistence/postgres/postgres-alert-monitor-state-repository.js';
 import { PostgresDepositMonitorRepository } from '../infrastructure/persistence/postgres/postgres-deposit-monitor-repository.js';
 import { PostgresMonitoringRepository } from '../infrastructure/persistence/postgres/postgres-monitoring-repository.js';
 import { PostgresLedgerRepository } from '../infrastructure/persistence/postgres/postgres-ledger-repository.js';
@@ -52,14 +57,16 @@ const createPersistence = () => {
     return {
       ledger: new PostgresLedgerRepository(db, limits),
       monitoringRepository: new PostgresMonitoringRepository(db),
-      depositMonitorRepository: new PostgresDepositMonitorRepository(db)
+      depositMonitorRepository: new PostgresDepositMonitorRepository(db),
+      alertMonitorStateRepository: new PostgresAlertMonitorStateRepository(db)
     };
   }
 
   return {
     ledger: new InMemoryLedgerRepository(limits),
     monitoringRepository: new InMemoryMonitoringRepository(),
-    depositMonitorRepository: new InMemoryDepositMonitorRepository()
+    depositMonitorRepository: new InMemoryDepositMonitorRepository(),
+    alertMonitorStateRepository: new InMemoryAlertMonitorStateRepository()
   };
 };
 
@@ -69,7 +76,7 @@ const createTronGateway = () => {
 
 export const createAppDependencies = (overrides: AppDependencyOverrides = {}): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
-  const { ledger, monitoringRepository, depositMonitorRepository } = createPersistence();
+  const { ledger, monitoringRepository, depositMonitorRepository, alertMonitorStateRepository } = createPersistence();
   const tronGateway = overrides.tronGateway ?? createTronGateway();
   const blockchainReader = overrides.blockchainReader ?? new TronWalletReader();
   const alertNotifier = env.telegram ? new TelegramAlertNotifier(env.telegram.botToken, env.telegram.chatId) : undefined;
@@ -112,6 +119,19 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
           env.foxyaDb.encryptionKey
         )
       : undefined;
+  const foxyaAlertSourceRepository =
+    env.foxyaDb?.host && env.foxyaDb.name && env.foxyaDb.user
+      ? new PostgresFoxyaAlertSourceRepository(
+          new Pool({
+            host: env.foxyaDb.host,
+            port: env.foxyaDb.port,
+            database: env.foxyaDb.name,
+            user: env.foxyaDb.user,
+            password: env.foxyaDb.password,
+            max: 5
+          })
+        )
+      : undefined;
   const depositMonitorService = new DepositMonitorService(depositMonitorRepository, foxyaClient, trc20EventReader);
   const depositMonitorWorker = new DepositMonitorWorker(
     depositMonitorService,
@@ -132,12 +152,31 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   );
   const sweepBotWorker = new SweepBotWorker(sweepBotService, alertService, env.sweepBotPollIntervalSec * 1000);
   const alertWorker = new AlertWorker(alertService, operationsService, env.walletMonitorIntervalSec * 1000);
+  const externalAlertMonitorService = new ExternalAlertMonitorService(
+    alertMonitorStateRepository,
+    alertService,
+    foxyaAlertSourceRepository,
+    {
+      enabled: env.alertMonitor.enabled,
+      tables: env.alertMonitor.tables,
+      healthTargets: env.alertMonitor.healthTargets,
+      eventLimit: env.alertMonitor.eventLimit,
+      healthFailureThreshold: env.alertMonitor.healthFailureThreshold
+    }
+  );
+  const externalAlertMonitorWorker = new ExternalAlertMonitorWorker(
+    externalAlertMonitorService,
+    env.alertMonitor.pollIntervalSec * 1000
+  );
 
   return {
     ledger,
     depositMonitorRepository,
+    alertMonitorStateRepository,
     eventPublisher,
     alertService,
+    externalAlertMonitorService,
+    externalAlertMonitorWorker,
     systemMonitoringService,
     onchainService,
     depositMonitorService,

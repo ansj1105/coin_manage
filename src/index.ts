@@ -21,6 +21,10 @@ if (deps.alertService.enabled) {
   deps.alertWorker.start();
 }
 
+if (env.alertMonitor.enabled) {
+  deps.externalAlertMonitorWorker.start();
+}
+
 app.listen(env.port, () => {
   console.log(`korion-kori-backend listening on port ${env.port}`);
 });

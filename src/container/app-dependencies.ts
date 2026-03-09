@@ -4,8 +4,11 @@ import { DepositMonitorService } from '../application/services/deposit-monitor-s
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
+import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import type { LedgerRepository } from '../application/ports/ledger-repository.js';
+import type { AlertMonitorStateRepository } from '../application/ports/alert-monitor-state-repository.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { DepositService } from '../application/services/deposit-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
@@ -19,8 +22,11 @@ import { WithdrawService } from '../application/services/withdraw-service.js';
 export interface AppDependencies {
   ledger: LedgerRepository;
   depositMonitorRepository: DepositMonitorRepository;
+  alertMonitorStateRepository: AlertMonitorStateRepository;
   eventPublisher: EventPublisher;
   alertService: AlertService;
+  externalAlertMonitorService: ExternalAlertMonitorService;
+  externalAlertMonitorWorker: ExternalAlertMonitorWorker;
   systemMonitoringService: SystemMonitoringService;
   onchainService: OnchainService;
   depositMonitorService: DepositMonitorService;

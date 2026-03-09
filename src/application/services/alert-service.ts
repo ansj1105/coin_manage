@@ -45,6 +45,43 @@ export class AlertService {
     });
   }
 
+  async notifyExternalEvent(input: { title: string; bodyLines: string[]; dedupeKey: string }) {
+    await this.send({
+      title: input.title,
+      body: input.bodyLines.join('\n'),
+      dedupeKey: `external-event:${input.dedupeKey}`
+    });
+  }
+
+  async notifyExternalMonitorFailure(message: string) {
+    await this.send({
+      title: '[KORION] External Alert Monitor Failed',
+      body: message,
+      dedupeKey: `external-alert-monitor:${message}`
+    });
+  }
+
+  async notifyHealthCheckUnhealthy(input: {
+    targetName: string;
+    targetUrl: string;
+    detail: string;
+    consecutiveFailures: number;
+  }) {
+    await this.send({
+      title: `[KORION] Health Down - ${input.targetName}`,
+      body: [`url=${input.targetUrl}`, `detail=${input.detail}`, `consecutiveFailures=${input.consecutiveFailures}`].join('\n'),
+      dedupeKey: `health-unhealthy:${input.targetName}:${input.targetUrl}`
+    });
+  }
+
+  async notifyHealthCheckRecovered(input: { targetName: string; targetUrl: string }) {
+    await this.send({
+      title: `[KORION] Health Recovered - ${input.targetName}`,
+      body: `url=${input.targetUrl}`,
+      dedupeKey: `health-recovered:${input.targetName}:${input.targetUrl}`
+    });
+  }
+
   private async send(input: { title: string; body: string; dedupeKey?: string }) {
     if (!this.notifier) {
       return;

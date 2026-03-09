@@ -4,6 +4,7 @@ import type { CollectorRunRecord, StoredWalletMonitoringSnapshot } from '../../.
 import type { DepositMonitorStatus } from '../../../domain/deposit-monitor/types.js';
 import { AlertService } from '../../../application/services/alert-service.js';
 import { DepositMonitorService } from '../../../application/services/deposit-monitor-service.js';
+import { ExternalAlertMonitorService } from '../../../application/services/external-alert-monitor-service.js';
 import { OperationsService } from '../../../application/services/operations-service.js';
 import { SweepBotService } from '../../../application/services/sweep-bot-service.js';
 import { SystemMonitoringService } from '../../../application/services/system-monitoring-service.js';
@@ -49,6 +50,7 @@ export const buildSystemStatusResponse = (
   automation?: {
     sweepBot: ReturnType<SweepBotService['getStatus']>;
     telegramEnabled: boolean;
+    externalAlertMonitor?: Awaited<ReturnType<ExternalAlertMonitorService['getStatus']>>;
   }
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
@@ -124,7 +126,8 @@ export const createSystemRoutes = (
   operationsService: OperationsService,
   depositMonitorService: DepositMonitorService,
   sweepBotService: SweepBotService,
-  alertService: AlertService
+  alertService: AlertService,
+  externalAlertMonitorService: ExternalAlertMonitorService
 ): Router => {
   const router = Router();
   const getConfiguredWallets = () => getConfiguredSystemWallets();
@@ -138,10 +141,12 @@ export const createSystemRoutes = (
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport()
       ]);
+      const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json(
         buildSystemStatusResponse(monitoring, collectorRuns, depositMonitor, reconciliation, {
           sweepBot: sweepBotService.getStatus(),
-          telegramEnabled: alertService.enabled
+          telegramEnabled: alertService.enabled,
+          externalAlertMonitor
         })
       );
     } catch (error) {
@@ -158,11 +163,13 @@ export const createSystemRoutes = (
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport()
       ]);
+      const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json({
         run,
         status: buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation, {
           sweepBot: sweepBotService.getStatus(),
-          telegramEnabled: alertService.enabled
+          telegramEnabled: alertService.enabled,
+          externalAlertMonitor
         })
       });
     } catch (error) {
@@ -213,10 +220,12 @@ export const createSystemRoutes = (
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport()
       ]);
+      const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json(
         buildSystemStatusResponse(snapshots, collectorRuns, depositMonitor, reconciliation, {
           sweepBot: sweepBotService.getStatus(),
-          telegramEnabled: alertService.enabled
+          telegramEnabled: alertService.enabled,
+          externalAlertMonitor
         })
       );
     } catch (error) {
@@ -253,6 +262,26 @@ export const createSystemRoutes = (
 
       await alertService.sendTestMessage(parsed.data.message);
       res.json({ ok: true, telegramEnabled: alertService.enabled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/external-alert-monitor', async (_req, res, next) => {
+    try {
+      res.json(await externalAlertMonitorService.getStatus());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/external-alert-monitor/run', async (_req, res, next) => {
+    try {
+      const result = await externalAlertMonitorService.runCycle();
+      res.json({
+        result,
+        status: await externalAlertMonitorService.getStatus()
+      });
     } catch (error) {
       next(error);
     }

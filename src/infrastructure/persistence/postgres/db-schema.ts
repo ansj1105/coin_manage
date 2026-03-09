@@ -181,6 +181,23 @@ export interface MonitorCollectorRunsTable {
   finished_at: string;
 }
 
+export interface AlertMonitorCursorsTable {
+  monitor_key: string;
+  last_seen_id: string | number;
+  updated_at: string;
+}
+
+export interface HealthCheckStatesTable {
+  target_key: string;
+  target_name: string;
+  target_url: string;
+  last_status: 'healthy' | 'unhealthy';
+  consecutive_failures: number;
+  last_checked_at: string;
+  last_failure_at: string | null;
+  last_error: string | null;
+}
+
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
@@ -196,4 +213,6 @@ export interface KorionDatabase {
   wallet_monitor_current: WalletMonitorCurrentTable;
   wallet_monitor_history: WalletMonitorHistoryTable;
   monitor_collector_runs: MonitorCollectorRunsTable;
+  alert_monitor_cursors: AlertMonitorCursorsTable;
+  health_check_states: HealthCheckStatesTable;
 }

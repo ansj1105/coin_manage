@@ -399,6 +399,28 @@ const sendTelegramTest = async () => {
   }
 };
 
+const refreshExternalAlertMonitor = async () => {
+  try {
+    const payload = await fetchJson('/api/system/external-alert-monitor');
+    setBlock(els.opsResult, payload);
+    appendLog('External alert monitor status loaded', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('External alert monitor status failed', error.payload ?? { message: error.message });
+  }
+};
+
+const runExternalAlertMonitor = async () => {
+  try {
+    const payload = await fetchJson('/api/system/external-alert-monitor/run', { method: 'POST' });
+    setBlock(els.opsResult, payload);
+    appendLog('External alert monitor run completed', payload);
+  } catch (error) {
+    setBlock(els.opsResult, error.payload ?? { message: error.message });
+    appendLog('External alert monitor run failed', error.payload ?? { message: error.message });
+  }
+};
+
 const refreshSystem = async () => {
   try {
     const [health, status] = await Promise.all([fetchJson('/health'), fetchJson('/api/system/status')]);
@@ -536,6 +558,8 @@ document.querySelector('#load-reconciliation').addEventListener('click', loadRec
 document.querySelector('#load-audit-logs').addEventListener('click', loadAuditLogs);
 document.querySelector('#plan-sweeps').addEventListener('click', planSweeps);
 document.querySelector('#list-sweeps').addEventListener('click', listSweeps);
+document.querySelector('#refresh-external-alert-monitor').addEventListener('click', refreshExternalAlertMonitor);
+document.querySelector('#run-external-alert-monitor').addEventListener('click', runExternalAlertMonitor);
 document.querySelector('#send-telegram-test').addEventListener('click', sendTelegramTest);
 
 els.onchainTabs.forEach((tab) => {

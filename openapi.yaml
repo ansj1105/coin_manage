@@ -126,6 +126,47 @@ paths:
                     type: boolean
                   telegramEnabled:
                     type: boolean
+  /api/system/external-alert-monitor:
+    get:
+      summary: Get external alert monitor status
+      responses:
+        '200':
+          description: External alert monitor status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalAlertMonitorStatus'
+  /api/system/external-alert-monitor/run:
+    post:
+      summary: Run external alert monitor once
+      responses:
+        '200':
+          description: External alert monitor cycle result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    oneOf:
+                      - type: object
+                        properties:
+                          startedAt:
+                            type: string
+                          checkedTargets:
+                            type: integer
+                          alertedEvents:
+                            type: integer
+                          initializedCursors:
+                            type: integer
+                      - type: object
+                        properties:
+                          skipped:
+                            type: boolean
+                          reason:
+                            type: string
+                  status:
+                    $ref: '#/components/schemas/ExternalAlertMonitorStatus'
   /api/system/runtime-profile:
     post:
       summary: Switch active contract profile for sandbox runtime
@@ -930,6 +971,79 @@ components:
           type: integer
         skipped:
           type: integer
+    ExternalAlertMonitorCursor:
+      type: object
+      properties:
+        monitorKey:
+          type: string
+        lastSeenId:
+          type: integer
+        updatedAt:
+          type: string
+    HealthCheckState:
+      type: object
+      properties:
+        targetKey:
+          type: string
+        targetName:
+          type: string
+        targetUrl:
+          type: string
+        lastStatus:
+          type: string
+          enum: [healthy, unhealthy]
+        consecutiveFailures:
+          type: integer
+        lastCheckedAt:
+          type: string
+        lastFailureAt:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+    ExternalAlertMonitorStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        running:
+          type: boolean
+        lastRunAt:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        foxyaEventSourceConfigured:
+          type: boolean
+        eventTables:
+          type: array
+          items:
+            type: string
+        eventLimit:
+          type: integer
+        healthFailureThreshold:
+          type: integer
+        healthTargets:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              name:
+                type: string
+              url:
+                type: string
+        cursors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalAlertMonitorCursor'
+        healthStates:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthCheckState'
     WalletBindingRequest:
       type: object
       required: [userId, walletAddress]
@@ -1390,6 +1504,8 @@ components:
                   $ref: '#/components/schemas/SweepBotStatus'
                 telegramEnabled:
                   type: boolean
+                externalAlertMonitor:
+                  $ref: '#/components/schemas/ExternalAlertMonitorStatus'
             - type: 'null'
         security:
           type: object

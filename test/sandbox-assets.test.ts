@@ -33,5 +33,7 @@ describe('sandbox assets and runtime status', () => {
     expect(html).toContain('Activity Log');
     expect(html).toContain('Telegram Message');
     expect(html).toContain('Send Telegram');
+    expect(html).toContain('Alert Monitor Status');
+    expect(html).toContain('Run Alert Monitor');
   });
 });

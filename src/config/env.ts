@@ -20,6 +20,7 @@ const optionalNumberString = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.coerce.number().int().nonnegative().optional()
 );
+const optionalString = z.preprocess((value) => (value === '' ? undefined : value), z.string().optional());
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -69,6 +70,12 @@ const schema = z.object({
   FOXYA_DB_USER: z.string().optional(),
   FOXYA_DB_PASSWORD: z.string().optional(),
   FOXYA_ENCRYPTION_KEY: z.string().optional(),
+  ALERT_MONITOR_ENABLED: optionalBooleanString,
+  ALERT_MONITOR_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
+  ALERT_MONITOR_EVENT_LIMIT: z.coerce.number().int().positive().max(500).default(100),
+  ALERT_MONITOR_HEALTH_FAILURE_THRESHOLD: z.coerce.number().int().positive().max(10).default(2),
+  ALERT_MONITOR_TABLES: optionalString,
+  ALERT_MONITOR_HEALTH_TARGETS: optionalString,
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
   DB_HOST: z.string().default('127.0.0.1'),
@@ -83,6 +90,42 @@ const schema = z.object({
 });
 
 const parsed = schema.parse(process.env);
+
+const foxyaAlertTables = ['internal_transfers', 'external_transfers', 'token_deposits', 'payment_deposits', 'swaps', 'exchanges'] as const;
+
+const parseAlertMonitorTables = (value?: string) => {
+  const configured = (value ?? foxyaAlertTables.join(','))
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return configured.filter((item): item is (typeof foxyaAlertTables)[number] =>
+    (foxyaAlertTables as readonly string[]).includes(item)
+  );
+};
+
+const parseHealthTargets = (value?: string) => {
+  return (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .flatMap((item) => {
+      const [namePart, ...urlParts] = item.split('=');
+      const url = urlParts.join('=').trim();
+      const name = namePart.trim();
+      if (!name || !url) {
+        return [];
+      }
+
+      return [
+        {
+          key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          name,
+          url
+        }
+      ];
+    });
+};
 
 if (parsed.NODE_ENV === 'production') {
   if (!parsed.JWT_SECRET || PLACEHOLDER_SECRETS.has(parsed.JWT_SECRET)) {
@@ -166,6 +209,14 @@ export const env = Object.freeze({
           encryptionKey: parsed.FOXYA_ENCRYPTION_KEY
         }
       : undefined,
+  alertMonitor: {
+    enabled: parsed.ALERT_MONITOR_ENABLED !== undefined ? parsed.ALERT_MONITOR_ENABLED === 'true' : false,
+    pollIntervalSec: parsed.ALERT_MONITOR_POLL_INTERVAL_SEC,
+    eventLimit: parsed.ALERT_MONITOR_EVENT_LIMIT,
+    healthFailureThreshold: parsed.ALERT_MONITOR_HEALTH_FAILURE_THRESHOLD,
+    tables: parseAlertMonitorTables(parsed.ALERT_MONITOR_TABLES),
+    healthTargets: parseHealthTargets(parsed.ALERT_MONITOR_HEALTH_TARGETS)
+  },
   telegram:
     parsed.TELEGRAM_BOT_TOKEN && parsed.TELEGRAM_CHAT_ID
       ? {

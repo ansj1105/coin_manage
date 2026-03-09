@@ -39,7 +39,8 @@ export const createApp = (deps: AppDependencies): express.Express => {
       deps.operationsService,
       deps.depositMonitorService,
       deps.sweepBotService,
-      deps.alertService
+      deps.alertService,
+      deps.externalAlertMonitorService
     )
   );
   app.use('/api/onchain', createOnchainRoutes(deps.onchainService));
