@@ -103,6 +103,17 @@ paths:
   /api/system/alerts/telegram/test:
     post:
       summary: Send a test Telegram alert
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  maxLength: 2000
+                  description: Optional message body to send instead of the default test text.
       responses:
         '200':
           description: Telegram test dispatch result

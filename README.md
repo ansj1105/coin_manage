@@ -146,6 +146,7 @@ npm run stack:down
 - `GET /api/system/sweep-bot`
 - `POST /api/system/sweep-bot/run`
 - `POST /api/system/alerts/telegram/test`
+  - optional body: `{ "message": "..." }`
 - `GET /api/system/audit-logs`
 - `GET /api/system/reconciliation`
 - `GET /api/system/sweeps`
@@ -201,7 +202,7 @@ http://localhost:3000/sandbox/
 - internal transfer (`userId` 또는 `walletAddress`)
 - withdrawal request / approve / broadcast / confirm
 - pending approvals / approval history
-- reconciliation / audit logs / sweep planning / telegram test
+- reconciliation / audit logs / sweep planning / custom telegram test message
 - scheduler retry
 
 ## 테스트

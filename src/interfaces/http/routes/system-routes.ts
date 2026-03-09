@@ -32,6 +32,10 @@ const sweepTransitionSchema = z.object({
   note: z.string().max(500).optional()
 });
 
+const telegramTestSchema = z.object({
+  message: z.string().trim().min(1).max(2000).optional()
+});
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
   collectorRuns: CollectorRunRecord[] = [],
@@ -240,9 +244,14 @@ export const createSystemRoutes = (
     }
   });
 
-  router.post('/alerts/telegram/test', async (_req, res, next) => {
+  router.post('/alerts/telegram/test', async (req, res, next) => {
     try {
-      await alertService.sendTestMessage();
+      const parsed = telegramTestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid telegram test payload', parsed.error.flatten());
+      }
+
+      await alertService.sendTestMessage(parsed.data.message);
       res.json({ ok: true, telegramEnabled: alertService.enabled });
     } catch (error) {
       next(error);

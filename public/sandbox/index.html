@@ -537,12 +537,20 @@
           <p class="panel-copy">
             대사 리포트, 감사 로그, sweep 계획 생성과 기록 조회를 묶어서 확인합니다.
           </p>
+          <label class="stack">
+            <span>Telegram Message</span>
+            <textarea
+              id="telegram-message"
+              rows="3"
+              placeholder="KORION 테스트 메시지를 입력하세요."
+            >KORION 테스트 메시지입니다.</textarea>
+          </label>
           <div class="hero-actions compact-actions">
             <button class="button" id="load-reconciliation" type="button">Load Reconciliation</button>
             <button class="button button-secondary" id="load-audit-logs" type="button">Load Audit Logs</button>
             <button class="button button-ghost" id="plan-sweeps" type="button">Plan Sweeps</button>
             <button class="button button-ghost" id="list-sweeps" type="button">List Sweeps</button>
-            <button class="button button-ghost" id="send-telegram-test" type="button">Telegram Test</button>
+            <button class="button button-ghost" id="send-telegram-test" type="button">Send Telegram</button>
           </div>
           <pre id="ops-result" class="code-block"></pre>
         </article>

@@ -31,5 +31,7 @@ describe('sandbox assets and runtime status', () => {
     expect(html).toContain('Funding & Readiness');
     expect(html).toContain('Withdrawal Control');
     expect(html).toContain('Activity Log');
+    expect(html).toContain('Telegram Message');
+    expect(html).toContain('Send Telegram');
   });
 });

@@ -9,10 +9,10 @@ export class AlertService {
     return Boolean(this.notifier);
   }
 
-  async sendTestMessage() {
+  async sendTestMessage(message?: string) {
     await this.send({
       title: '[KORION] Telegram Test',
-      body: 'coin_manage telegram notifier is configured.'
+      body: message?.trim() || 'coin_manage telegram notifier is configured.'
     });
   }
 

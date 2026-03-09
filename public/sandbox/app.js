@@ -13,6 +13,7 @@ const els = {
   depositMonitorResult: document.querySelector('#deposit-monitor-result'),
   approvalQueueResult: document.querySelector('#approval-queue-result'),
   opsResult: document.querySelector('#ops-result'),
+  telegramMessage: document.querySelector('#telegram-message'),
   onchainLookupResult: document.querySelector('#onchain-lookup-result'),
   onchainSendResult: document.querySelector('#onchain-send-result'),
   onchainSendNote: document.querySelector('#onchain-send-note'),
@@ -385,12 +386,16 @@ const listSweeps = async () => {
 
 const sendTelegramTest = async () => {
   try {
-    const payload = await fetchJson('/api/system/alerts/telegram/test', { method: 'POST' });
+    const message = els.telegramMessage?.value?.trim() ?? '';
+    const payload = await fetchJson('/api/system/alerts/telegram/test', {
+      method: 'POST',
+      body: JSON.stringify(message ? { message } : {})
+    });
     setBlock(els.opsResult, payload);
-    appendLog('Telegram alert test sent', payload);
+    appendLog('Telegram alert sent', { ...payload, message: message || '(default)' });
   } catch (error) {
     setBlock(els.opsResult, error.payload ?? { message: error.message });
-    appendLog('Telegram alert test failed', error.payload ?? { message: error.message });
+    appendLog('Telegram alert send failed', error.payload ?? { message: error.message });
   }
 };
 
