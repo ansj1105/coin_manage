@@ -40,7 +40,7 @@
 | `TRON_FEE_LIMIT_SUN` | No | Yes | `100000000` | TRON 스마트컨트랙트 호출 feeLimit |
 | `TREASURY_WALLET_ADDRESS` | No | Yes | `TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa` | 재단(트레저리) 지갑 주소 |
 | `DEPOSIT_WALLET_ADDRESSES` | No | Yes | `TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s` | 입금 감지 대상 지갑 목록(콤마 구분) |
-| `HOT_WALLET_ADDRESS` | No | Yes | `TYKL8DPoR99bccujHXxcyBewCV1NimdRc8` | 핫월렛 주소 |
+| `HOT_WALLET_ADDRESS` | No | Yes | `replace-with-hot-wallet-address` | 핫월렛 주소 |
 | `HOT_WALLET_PRIVATE_KEY` | No | Yes | `dev-only-private-key-change-me` | 핫월렛 개인키 (로그 출력 금지) |
 
 주의:

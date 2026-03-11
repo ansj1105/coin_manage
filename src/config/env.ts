@@ -46,7 +46,7 @@ const schema = z.object({
   DEPOSIT_WALLET_ADDRESSES: z
     .string()
     .default('TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s'),
-  HOT_WALLET_ADDRESS: z.string().default('TYKL8DPoR99bccujHXxcyBewCV1NimdRc8'),
+  HOT_WALLET_ADDRESS: z.string().default('replace-with-hot-wallet-address'),
   HOT_WALLET_PRIVATE_KEY: z.string().optional(),
   HOT_WALLET_ALERT_MIN_KORI: z.coerce.number().positive().default(1000),
   HOT_WALLET_ALERT_MIN_TRX: z.coerce.number().positive().default(100),
