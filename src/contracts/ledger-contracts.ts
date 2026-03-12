@@ -87,6 +87,10 @@ export type DepositStateChangedContract = z.infer<typeof depositStateChangedCont
 export type JournalEntryContract = z.infer<typeof journalEntryContractSchema>;
 export type WithdrawalStateChangedContract = z.infer<typeof withdrawalStateChangedContractSchema>;
 export type WithdrawalLedgerStatus = z.infer<typeof withdrawalLedgerStatusSchema>;
+export type SupportedLedgerContract =
+  | DepositStateChangedContract
+  | JournalEntryContract
+  | WithdrawalStateChangedContract;
 
 const sortValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -124,6 +128,24 @@ export const verifyLedgerContractSignature = (payload: { issuer: string; signatu
   const { signature, ...unsigned } = payload;
   const expected = signLedgerContractPayload(unsigned);
   return signature === expected;
+};
+
+export const parseLedgerContract = (payload: unknown): SupportedLedgerContract => {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('ledger contract payload must be an object');
+  }
+
+  const eventType = (payload as { eventType?: unknown }).eventType;
+  switch (eventType) {
+    case 'deposit.state.changed':
+      return depositStateChangedContractSchema.parse(payload);
+    case 'ledger.journal.recorded':
+      return journalEntryContractSchema.parse(payload);
+    case 'withdrawal.state.changed':
+      return withdrawalStateChangedContractSchema.parse(payload);
+    default:
+      throw new Error(`unsupported ledger contract event type: ${String(eventType ?? '')}`);
+  }
 };
 
 export const buildDepositStateChangedContract = (input: {
@@ -219,3 +241,62 @@ export const buildWithdrawalStateChangedContract = (
       occurredAt
     })
   );
+
+export const buildLedgerContractExamples = () => ({
+  schemaVersion: LEDGER_SCHEMA_VERSION,
+  issuer: env.ledgerIdentity.systemId,
+  events: {
+    depositStateChanged: buildDepositStateChangedContract({
+      depositId: 'dep-example-001',
+      userId: '138',
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      txHash: 'mock-deposit-tx-001',
+      toAddress: 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa',
+      status: 'COMPLETED',
+      amount: 10_000n,
+      blockNumber: 12345678,
+      occurredAt: '2026-03-12T12:00:00.000Z'
+    }),
+    withdrawalStateChanged: buildWithdrawalStateChangedContract(
+      {
+        withdrawalId: 'wd-example-001',
+        userId: '138',
+        amount: 1_000_000n,
+        toAddress: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        status: 'ADMIN_APPROVED',
+        idempotencyKey: 'withdraw-example-key',
+        ledgerTxId: 'ledger-example-001',
+        createdAt: '2026-03-12T12:00:00.000Z',
+        riskLevel: 'medium',
+        riskScore: 50,
+        riskFlags: ['medium_amount'],
+        requiredApprovals: 2,
+        approvalCount: 2,
+        externalAuthProvider: 'foxya-admin',
+        externalAuthRequestId: 'admin-approval-001'
+      },
+      '2026-03-12T12:05:00.000Z'
+    ),
+    journalEntryRecorded: buildJournalEntryContract({
+      journalType: 'withdraw_reserved',
+      referenceType: 'withdrawal',
+      referenceId: 'wd-example-001',
+      description: 'Reserve user balance before admin approval',
+      postings: [
+        {
+          accountCode: 'user:138:available',
+          accountType: 'liability',
+          side: 'debit',
+          amount: '1.000000'
+        },
+        {
+          accountCode: 'user:138:withdraw_pending',
+          accountType: 'liability',
+          side: 'credit',
+          amount: '1.000000'
+        }
+      ],
+      occurredAt: '2026-03-12T12:05:00.000Z'
+    })
+  }
+});

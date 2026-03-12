@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildLedgerContractExamples,
   buildDepositStateChangedContract,
   buildJournalEntryContract,
   buildWithdrawalStateChangedContract,
+  parseLedgerContract,
   verifyLedgerContractSignature
 } from '../src/contracts/ledger-contracts.js';
 
@@ -76,5 +78,34 @@ describe('ledger contracts', () => {
     expect(payload.status).toBe('LEDGER_RESERVED');
     expect(payload.requiredApprovals).toBe(2);
     expect(verifyLedgerContractSignature(payload)).toBe(true);
+  });
+
+  it('builds signed example contracts for downstream integration', () => {
+    const examples = buildLedgerContractExamples();
+
+    expect(examples.issuer).toBeTruthy();
+    expect(verifyLedgerContractSignature(examples.events.depositStateChanged)).toBe(true);
+    expect(verifyLedgerContractSignature(examples.events.withdrawalStateChanged)).toBe(true);
+    expect(verifyLedgerContractSignature(examples.events.journalEntryRecorded)).toBe(true);
+  });
+
+  it('rejects tampered contracts after parsing', () => {
+    const payload = buildDepositStateChangedContract({
+      depositId: 'dep-2',
+      userId: 'user-2',
+      walletAddress: 'TCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+      txHash: 'mock-deposit-tx-2',
+      toAddress: 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa',
+      status: 'COMPLETED',
+      amount: 2_000_000n,
+      blockNumber: 456,
+      occurredAt: '2026-03-12T13:00:00.000Z'
+    });
+    const parsed = parseLedgerContract({
+      ...payload,
+      amount: '3.000000'
+    });
+
+    expect(verifyLedgerContractSignature(parsed)).toBe(false);
   });
 });

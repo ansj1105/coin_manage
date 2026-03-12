@@ -12,6 +12,11 @@ import { buildBlockchainNetworkCatalog } from '../../../config/blockchain-networ
 import { env } from '../../../config/env.js';
 import { getRuntimeContractProfile, setRuntimeContractProfile } from '../../../config/runtime-settings.js';
 import { getConfiguredSystemWallets } from '../../../config/system-wallets.js';
+import {
+  buildLedgerContractExamples,
+  parseLedgerContract,
+  verifyLedgerContractSignature
+} from '../../../contracts/ledger-contracts.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
@@ -35,6 +40,10 @@ const sweepTransitionSchema = z.object({
 
 const telegramTestSchema = z.object({
   message: z.string().trim().min(1).max(2000).optional()
+});
+
+const ledgerContractVerifySchema = z.object({
+  payload: z.record(z.string(), z.unknown())
 });
 
 export const buildSystemStatusResponse = (
@@ -191,6 +200,43 @@ export const createSystemRoutes = (
       res.json({
         result,
         status: await depositMonitorService.getStatus()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/ledger/contracts', async (_req, res, next) => {
+    try {
+      res.json({
+        issuer: env.ledgerIdentity.systemId,
+        schemaVersion: buildLedgerContractExamples().schemaVersion,
+        verification: {
+          algorithm: 'HMAC-SHA256',
+          verifyRoute: '/system/ledger/contracts/verify',
+          note: 'Verify signature against the exact JSON body excluding no fields.'
+        },
+        examples: buildLedgerContractExamples()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/ledger/contracts/verify', async (req, res, next) => {
+    try {
+      const parsed = ledgerContractVerifySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid ledger contract verify payload', parsed.error.flatten());
+      }
+
+      const contract = parseLedgerContract(parsed.data.payload);
+      const signatureValid = verifyLedgerContractSignature(contract);
+
+      res.json({
+        valid: signatureValid,
+        eventType: contract.eventType,
+        issuer: contract.issuer
       });
     } catch (error) {
       next(error);
