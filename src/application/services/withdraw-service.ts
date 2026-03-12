@@ -1,4 +1,5 @@
 import { parseKoriAmount } from '../../domain/value-objects/money.js';
+import { buildWithdrawalStateChangedContract } from '../../contracts/ledger-contracts.js';
 import { env } from '../../config/env.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
@@ -39,12 +40,10 @@ export class WithdrawService {
     });
 
     if (!result.duplicated) {
-      this.eventPublisher.publish('withdraw.requested', {
-        withdrawalId: result.withdrawal.withdrawalId,
-        userId,
-        walletAddress: input.walletAddress,
-        amountKori: input.amountKori
-      });
+      this.eventPublisher.publish(
+        'withdrawal.state.changed',
+        buildWithdrawalStateChangedContract(result.withdrawal, result.withdrawal.createdAt)
+      );
       await this.ledger.appendAuditLog({
         entityType: 'withdrawal',
         entityId: result.withdrawal.withdrawalId,
@@ -64,6 +63,29 @@ export class WithdrawService {
     return result;
   }
 
+  async confirmExternalAuth(
+    withdrawalId: string,
+    input: { provider: string; requestId: string; actorId?: string }
+  ) {
+    const updated = await this.ledger.confirmWithdrawalExternalAuth(withdrawalId, {
+      provider: input.provider,
+      requestId: input.requestId
+    });
+    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
+    await this.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: withdrawalId,
+      action: 'withdraw.external_auth.confirmed',
+      actorType: 'system',
+      actorId: input.actorId ?? input.provider,
+      metadata: {
+        provider: input.provider,
+        requestId: input.requestId
+      }
+    });
+    return updated;
+  }
+
   async approve(
     withdrawalId: string,
     input: { adminId?: string; actorType?: 'admin' | 'system'; note?: string } = {}
@@ -73,10 +95,10 @@ export class WithdrawService {
       actorType: input.actorType ?? 'admin',
       note: input.note
     });
-    this.eventPublisher.publish('withdraw.approved', {
-      withdrawalId,
-      userId: result.withdrawal.userId
-    });
+    this.eventPublisher.publish(
+      'withdrawal.state.changed',
+      buildWithdrawalStateChangedContract(result.withdrawal, result.approval.createdAt)
+    );
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -104,10 +126,7 @@ export class WithdrawService {
     });
 
     const updated = await this.ledger.broadcastWithdrawal(withdrawalId, txHash);
-    this.eventPublisher.publish('withdraw.broadcast', {
-      withdrawalId,
-      txHash
-    });
+    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -123,10 +142,7 @@ export class WithdrawService {
 
   async confirm(withdrawalId: string) {
     const updated = await this.ledger.confirmWithdrawal(withdrawalId);
-    this.eventPublisher.publish('withdraw.confirmed', {
-      withdrawalId,
-      txHash: updated.txHash
-    });
+    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -142,10 +158,7 @@ export class WithdrawService {
 
   async fail(withdrawalId: string, reason: string) {
     const updated = await this.ledger.failWithdrawal(withdrawalId, reason);
-    this.eventPublisher.publish('withdraw.failed', {
-      withdrawalId,
-      reason
-    });
+    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -172,7 +185,7 @@ export class WithdrawService {
   }
 
   async reconcileBroadcasted(): Promise<{ confirmed: string[]; failed: string[]; pending: string[] }> {
-    const broadcasted = await this.ledger.listWithdrawalsByStatuses(['broadcasted']);
+    const broadcasted = await this.ledger.listWithdrawalsByStatuses(['TX_BROADCASTED']);
 
     const confirmed: string[] = [];
     const failed: string[] = [];

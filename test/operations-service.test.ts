@@ -41,11 +41,16 @@ describe('operations and control flows', () => {
       deviceId: 'device-1'
     });
 
+    await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'cloud-auto-queue-1'
+    });
+
     const processed = await deps.schedulerService.processWithdrawQueue();
     expect(processed.autoApproved).toBe(1);
 
     const stored = await deps.withdrawService.get(request.withdrawal.withdrawalId);
-    expect(stored?.status).toBe('approved');
+    expect(stored?.status).toBe('ADMIN_APPROVED');
     expect(stored?.approvalCount).toBe(1);
 
     const logs = await deps.operationsService.listAuditLogs({
@@ -64,11 +69,17 @@ describe('operations and control flows', () => {
       idempotencyKey: 'manual-review-1'
     });
 
+    await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'cloud-manual-review-1'
+    });
+
     const processed = await deps.schedulerService.processWithdrawQueue();
     expect(processed.reviewQueued).toBe(1);
 
     const reviewRequired = await deps.withdrawService.get(request.withdrawal.withdrawalId);
-    expect(reviewRequired?.status).toBe('review_required');
+    expect(reviewRequired?.status).toBe('PENDING_ADMIN');
+    expect(reviewRequired?.reviewRequiredAt).toBeTruthy();
     expect(reviewRequired?.requiredApprovals).toBe(2);
 
     const first = await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
@@ -76,14 +87,14 @@ describe('operations and control flows', () => {
       note: 'first approval'
     });
     expect(first.finalized).toBe(false);
-    expect(first.withdrawal.status).toBe('review_required');
+    expect(first.withdrawal.status).toBe('PENDING_ADMIN');
 
     const second = await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
       adminId: 'admin-2',
       note: 'second approval'
     });
     expect(second.finalized).toBe(true);
-    expect(second.withdrawal.status).toBe('approved');
+    expect(second.withdrawal.status).toBe('ADMIN_APPROVED');
 
     const approvals = await deps.withdrawService.listApprovals(request.withdrawal.withdrawalId);
     expect(approvals).toHaveLength(2);

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://korion.io/contracts/ledger/deposit-state-changed.schema.json",
+  "title": "DepositStateChanged",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventType",
+    "issuer",
+    "signature",
+    "depositId",
+    "userId",
+    "walletAddress",
+    "txHash",
+    "toAddress",
+    "status",
+    "amount",
+    "currency",
+    "blockNumber",
+    "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "eventType": { "const": "deposit.state.changed" },
+    "issuer": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "signature": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "depositId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "userId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "walletAddress": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "txHash": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "toAddress": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "status": { "type": "string", "enum": ["DETECTED", "CONFIRMED", "CREDITED", "COMPLETED"] },
+    "amount": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{6}$" },
+    "currency": { "type": "string", "const": "KORI" },
+    "blockNumber": { "type": "integer", "minimum": 0 },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

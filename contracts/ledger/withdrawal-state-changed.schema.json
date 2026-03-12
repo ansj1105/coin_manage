@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://korion.io/contracts/ledger/withdrawal-state-changed.schema.json",
+  "title": "WithdrawalStateChanged",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventType",
+    "issuer",
+    "signature",
+    "withdrawalId",
+    "userId",
+    "status",
+    "amount",
+    "currency",
+    "toAddress",
+    "approvalCount",
+    "requiredApprovals",
+    "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "eventType": { "const": "withdrawal.state.changed" },
+    "issuer": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "signature": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "withdrawalId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "userId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "REQUESTED",
+        "LEDGER_RESERVED",
+        "PENDING_ADMIN",
+        "ADMIN_APPROVED",
+        "TX_BROADCASTED",
+        "ONCHAIN_CONFIRMED",
+        "COMPLETED",
+        "FAILED",
+        "REJECTED"
+      ]
+    },
+    "amount": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{6}$" },
+    "currency": { "type": "string", "const": "KORI" },
+    "toAddress": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "txHash": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "approvalCount": { "type": "integer", "minimum": 0 },
+    "requiredApprovals": { "type": "integer", "minimum": 1 },
+    "externalAuthProvider": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "externalAuthRequestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

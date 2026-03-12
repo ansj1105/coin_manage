@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://korion.io/contracts/ledger/journal-entry.schema.json",
+  "title": "JournalEntry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventType",
+    "issuer",
+    "signature",
+    "journalType",
+    "referenceType",
+    "referenceId",
+    "currency",
+    "postings",
+    "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "eventType": { "const": "ledger.journal.recorded" },
+    "issuer": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "signature": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "journalType": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "referenceType": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "referenceId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "currency": { "type": "string", "const": "KORI" },
+    "description": { "type": "string", "maxLength": 500 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "postings": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["accountCode", "accountType", "side", "amount"],
+        "properties": {
+          "accountCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "accountType": {
+            "type": "string",
+            "enum": ["asset", "liability", "equity", "revenue", "expense", "control"]
+          },
+          "side": { "type": "string", "enum": ["debit", "credit"] },
+          "amount": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{6}$" }
+        }
+      }
+    }
+  }
+}

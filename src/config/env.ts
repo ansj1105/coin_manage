@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 
 dotenv.config();
@@ -77,6 +78,8 @@ const schema = z.object({
   FOXYA_DB_PASSWORD: z.string().optional(),
   FOXYA_ENCRYPTION_KEY: z.string().optional(),
   VIRTUAL_WALLET_ENCRYPTION_KEY: z.string().optional(),
+  LEDGER_SYSTEM_ID: z.string().min(1).default('korion'),
+  LEDGER_SHARED_HMAC_SECRET: z.string().optional(),
   ALERT_MONITOR_ENABLED: optionalBooleanString,
   ALERT_MONITOR_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
   ALERT_MONITOR_EVENT_LIMIT: z.coerce.number().int().positive().max(500).default(100),
@@ -229,6 +232,11 @@ export const env = Object.freeze({
         }
       : undefined,
   virtualWalletEncryptionKey: parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ?? 'dev-only-secret-change-me',
+  ledgerIdentity: {
+    systemId: parsed.LEDGER_SYSTEM_ID,
+    sharedHmacSecret:
+      parsed.LEDGER_SHARED_HMAC_SECRET ?? crypto.createHash('sha256').update('korion-dev-ledger-secret').digest('hex')
+  },
   alertMonitor: {
     enabled: parsed.ALERT_MONITOR_ENABLED !== undefined ? parsed.ALERT_MONITOR_ENABLED === 'true' : false,
     pollIntervalSec: parsed.ALERT_MONITOR_POLL_INTERVAL_SEC,

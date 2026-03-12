@@ -61,8 +61,31 @@ describe('DepositMonitorService', () => {
         })
         .mockResolvedValueOnce({ events: [] })
     };
+    const ledger = {
+      applyDeposit: vi.fn(async () => ({
+        deposit: {
+          depositId: 'ledger-dep-1',
+          userId: '77',
+          txHash: 'tx-1',
+          amount: 1_500_000n,
+          status: 'CREDITED',
+          blockNumber: 100,
+          createdAt: new Date().toISOString()
+        },
+        duplicated: false
+      })),
+      completeDeposit: vi.fn(async () => ({
+        depositId: 'ledger-dep-1',
+        userId: '77',
+        txHash: 'tx-1',
+        amount: 1_500_000n,
+        status: 'COMPLETED',
+        blockNumber: 100,
+        createdAt: new Date().toISOString()
+      }))
+    };
 
-    const service = new DepositMonitorService(repository, foxyaClient as any, eventReader as any);
+    const service = new DepositMonitorService(repository, foxyaClient as any, eventReader as any, ledger as any);
     const result = await service.runCycle();
     const status = await service.getStatus();
 
@@ -75,6 +98,8 @@ describe('DepositMonitorService', () => {
     expect(result.completedCount).toBe(1);
     expect(foxyaClient.registerDeposit).toHaveBeenCalledOnce();
     expect(foxyaClient.completeDeposit).toHaveBeenCalledOnce();
+    expect(ledger.applyDeposit).toHaveBeenCalledOnce();
+    expect(ledger.completeDeposit).toHaveBeenCalledOnce();
     expect(status.counts.completed).toBe(1);
     expect(status.recentEvents[0]?.amountDecimal).toBe('1.5');
   });
@@ -126,12 +151,37 @@ describe('DepositMonitorService', () => {
         })
         .mockResolvedValueOnce({ events: [] })
     };
+    const ledger = {
+      applyDeposit: vi.fn(async () => ({
+        deposit: {
+          depositId: 'ledger-dep-repeat',
+          userId: '77',
+          txHash: 'tx-repeat',
+          amount: 2_000_000n,
+          status: 'CREDITED',
+          blockNumber: 100,
+          createdAt: new Date().toISOString()
+        },
+        duplicated: false
+      })),
+      completeDeposit: vi.fn(async () => ({
+        depositId: 'ledger-dep-repeat',
+        userId: '77',
+        txHash: 'tx-repeat',
+        amount: 2_000_000n,
+        status: 'COMPLETED',
+        blockNumber: 100,
+        createdAt: new Date().toISOString()
+      }))
+    };
 
-    const service = new DepositMonitorService(repository, foxyaClient as any, eventReader as any);
+    const service = new DepositMonitorService(repository, foxyaClient as any, eventReader as any, ledger as any);
     await service.runCycle();
     await service.runCycle();
 
     expect(foxyaClient.registerDeposit).toHaveBeenCalledTimes(1);
     expect(foxyaClient.completeDeposit).toHaveBeenCalledTimes(1);
+    expect(ledger.applyDeposit).toHaveBeenCalledTimes(1);
+    expect(ledger.completeDeposit).toHaveBeenCalledTimes(1);
   });
 });

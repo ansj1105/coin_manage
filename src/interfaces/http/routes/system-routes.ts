@@ -339,6 +339,19 @@ export const createSystemRoutes = (
     }
   });
 
+  router.post('/ledger/projections/rebuild', async (_req, res, next) => {
+    try {
+      const result = await operationsService.rebuildLedgerProjections();
+      const reconciliation = await operationsService.getReconciliationReport();
+      res.json({
+        result,
+        reconciliation
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/sweeps/:sweepId/broadcast', async (req, res, next) => {
     try {
       const parsed = sweepTransitionSchema.safeParse(req.body ?? {});

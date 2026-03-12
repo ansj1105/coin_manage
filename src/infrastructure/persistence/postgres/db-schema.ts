@@ -45,7 +45,7 @@ export interface DepositsTable {
   user_id: string;
   tx_hash: string;
   amount: string;
-  status: 'confirmed';
+  status: 'DETECTED' | 'CONFIRMED' | 'CREDITED' | 'COMPLETED';
   block_number: number;
   created_at: string;
 }
@@ -55,7 +55,7 @@ export interface WithdrawalsTable {
   user_id: string;
   amount: string;
   to_address: string;
-  status: 'requested' | 'review_required' | 'approved' | 'broadcasted' | 'confirmed' | 'failed' | 'rejected';
+  status: 'LEDGER_RESERVED' | 'PENDING_ADMIN' | 'ADMIN_APPROVED' | 'TX_BROADCASTED' | 'COMPLETED' | 'FAILED' | 'REJECTED';
   tx_hash: string | null;
   idempotency_key: string;
   ledger_tx_id: string;
@@ -72,6 +72,9 @@ export interface WithdrawalsTable {
   client_ip: string | null;
   device_id: string | null;
   review_required_at: string | null;
+  external_auth_provider: string | null;
+  external_auth_request_id: string | null;
+  external_auth_confirmed_at: string | null;
 }
 
 export interface TxJobsTable {
@@ -220,6 +223,31 @@ export interface HealthCheckStatesTable {
   last_error: string | null;
 }
 
+export interface LedgerAccountsTable {
+  ledger_account_code: string;
+  account_type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense' | 'control';
+  currency_code: string;
+  created_at: string;
+}
+
+export interface LedgerJournalsTable {
+  journal_id: string;
+  journal_type: string;
+  reference_type: string;
+  reference_id: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface LedgerPostingsTable {
+  posting_id: string;
+  journal_id: string;
+  ledger_account_code: string;
+  entry_side: 'debit' | 'credit';
+  amount: string;
+  created_at: string;
+}
+
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
@@ -238,4 +266,7 @@ export interface KorionDatabase {
   monitor_collector_runs: MonitorCollectorRunsTable;
   alert_monitor_cursors: AlertMonitorCursorsTable;
   health_check_states: HealthCheckStatesTable;
+  ledger_accounts: LedgerAccountsTable;
+  ledger_journals: LedgerJournalsTable;
+  ledger_postings: LedgerPostingsTable;
 }

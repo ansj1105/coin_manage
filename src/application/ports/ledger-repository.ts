@@ -27,6 +27,7 @@ export interface LedgerRepository {
     blockNumber: number;
     nowIso?: string;
   }): Promise<DepositApplyResult>;
+  completeDeposit(depositId: string, nowIso?: string): Promise<DepositApplyResult['deposit']>;
   transfer(input: {
     fromUserId: string;
     toUserId: string;
@@ -47,6 +48,11 @@ export interface LedgerRepository {
     deviceId?: string;
     nowIso?: string;
   }): Promise<WithdrawalRequestResult>;
+  confirmWithdrawalExternalAuth(
+    withdrawalId: string,
+    input: { provider: string; requestId: string },
+    nowIso?: string
+  ): Promise<Withdrawal>;
   markWithdrawalReviewRequired(withdrawalId: string, note: string, nowIso?: string): Promise<Withdrawal>;
   approveWithdrawal(
     withdrawalId: string,
@@ -96,4 +102,5 @@ export interface LedgerRepository {
   confirmSweep(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   failSweep(sweepId: string, reason: string, nowIso?: string): Promise<SweepRecord>;
   getLedgerSummary(): Promise<LedgerSummary>;
+  rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
 }

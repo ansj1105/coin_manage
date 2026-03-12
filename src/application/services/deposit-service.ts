@@ -1,4 +1,5 @@
 import { parseKoriAmount } from '../../domain/value-objects/money.js';
+import { buildDepositStateChangedContract } from '../../contracts/ledger-contracts.js';
 import { DomainError } from '../../domain/errors/domain-error.js';
 import type { DepositApplyResult } from '../../domain/ledger/types.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
@@ -55,13 +56,20 @@ export class DepositService {
     });
 
     if (!result.duplicated) {
-      this.eventPublisher.publish('deposit.detected', {
-        depositId: result.deposit.depositId,
-        userId: result.deposit.userId,
-        walletAddress: input.walletAddress,
-        txHash: result.deposit.txHash,
-        toAddress: normalizedToAddress
-      });
+      this.eventPublisher.publish(
+        'deposit.state.changed',
+        buildDepositStateChangedContract({
+          depositId: result.deposit.depositId,
+          userId: result.deposit.userId,
+          walletAddress: input.walletAddress ?? normalizedToAddress,
+          txHash: result.deposit.txHash,
+          toAddress: normalizedToAddress,
+          status: result.deposit.status,
+          amount: result.deposit.amount,
+          blockNumber: result.deposit.blockNumber,
+          occurredAt: result.deposit.createdAt
+        })
+      );
     }
 
     return {

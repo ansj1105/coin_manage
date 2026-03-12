@@ -46,6 +46,7 @@ describe('withdraw flow (service-level)', () => {
     });
 
     expect(first.duplicated).toBe(false);
+    expect(first.withdrawal.status).toBe('LEDGER_RESERVED');
     expect(second.duplicated).toBe(true);
     expect(second.withdrawal.withdrawalId).toBe(first.withdrawal.withdrawalId);
   });
@@ -132,6 +133,28 @@ describe('withdraw flow (service-level)', () => {
     expect(withdrawal.withdrawal.userId).toBe('user-1');
   });
 
+  it('requires external auth confirmation before admin approval flow begins', async () => {
+    const request = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 100,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'wd-external-auth-1'
+    });
+
+    expect(request.withdrawal.status).toBe('LEDGER_RESERVED');
+    expect(await deps.withdrawService.listPendingApprovals()).toHaveLength(0);
+
+    const confirmed = await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'cloud-auth-1'
+    });
+
+    expect(confirmed.status).toBe('PENDING_ADMIN');
+    expect(confirmed.externalAuthProvider).toBe('coin_cloud_system');
+    expect(confirmed.externalAuthRequestId).toBe('cloud-auth-1');
+    expect(await deps.withdrawService.listPendingApprovals()).toHaveLength(1);
+  });
+
   it('reconciles pending broadcast in scheduler timeout path', async () => {
     const oldTime = new Date(Date.now() - 120_000).toISOString();
     const requestResult = await deps.ledger.requestWithdrawal({
@@ -142,7 +165,15 @@ describe('withdraw flow (service-level)', () => {
       nowIso: oldTime
     });
 
-    await deps.ledger.approveWithdrawal(requestResult.withdrawal.withdrawalId, oldTime);
+    await deps.ledger.confirmWithdrawalExternalAuth(
+      requestResult.withdrawal.withdrawalId,
+      { provider: 'coin_cloud_system', requestId: 'cloud-timeout-1' },
+      oldTime
+    );
+    await deps.ledger.approveWithdrawal(requestResult.withdrawal.withdrawalId, {
+      adminId: 'system-queue',
+      actorType: 'system'
+    }, oldTime);
     await deps.ledger.broadcastWithdrawal(requestResult.withdrawal.withdrawalId, 'pending-timeout-case', oldTime);
 
     const result = await deps.schedulerService.retryPending(60);

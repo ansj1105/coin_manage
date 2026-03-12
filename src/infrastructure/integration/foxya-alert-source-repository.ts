@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import type { FoxyaAlertEvent, FoxyaAlertSourceRepository, FoxyaAlertTable } from '../../application/ports/foxya-alert-source-repository.js';
+import { shouldExcludeFoxyaInternalTransferAlert } from '../../config/foxya-alert-filters.js';
 
 type QueryableRow = Record<string, unknown>;
 
@@ -87,33 +88,41 @@ export class PostgresFoxyaAlertSourceRepository implements FoxyaAlertSourceRepos
       [afterId, limit]
     );
 
-    return result.rows.map((row) => {
-      const lines: string[] = [];
-      pushLine(lines, 'transferId', row.transfer_id);
-      pushLine(lines, 'status', row.status);
-      pushLine(lines, 'transferType', row.transfer_type);
-      pushLine(lines, 'transactionType', row.transaction_type);
-      pushLine(lines, 'currency', [row.currency_code, row.currency_name, row.currency_chain].filter(Boolean).join(' / '));
-      pushLine(lines, 'amount', row.amount);
-      pushLine(lines, 'fee', row.fee);
-      pushLine(lines, 'sender', formatUser(row, 'sender'));
-      pushLine(lines, 'senderWallet', row.sender_address);
-      pushLine(lines, 'receiver', formatUser(row, 'receiver'));
-      pushLine(lines, 'receiverWallet', row.receiver_address);
-      pushLine(lines, 'orderNumber', row.order_number);
-      pushLine(lines, 'memo', row.memo);
-      pushLine(lines, 'requestIp', row.request_ip);
-      pushLine(lines, 'createdAt', row.created_at);
+    return result.rows
+      .filter(
+        (row) =>
+          !shouldExcludeFoxyaInternalTransferAlert({
+            transferType: typeof row.transfer_type === 'string' ? row.transfer_type : null,
+            transactionType: typeof row.transaction_type === 'string' ? row.transaction_type : null
+          })
+      )
+      .map((row) => {
+        const lines: string[] = [];
+        pushLine(lines, 'transferId', row.transfer_id);
+        pushLine(lines, 'status', row.status);
+        pushLine(lines, 'transferType', row.transfer_type);
+        pushLine(lines, 'transactionType', row.transaction_type);
+        pushLine(lines, 'currency', [row.currency_code, row.currency_name, row.currency_chain].filter(Boolean).join(' / '));
+        pushLine(lines, 'amount', row.amount);
+        pushLine(lines, 'fee', row.fee);
+        pushLine(lines, 'sender', formatUser(row, 'sender'));
+        pushLine(lines, 'senderWallet', row.sender_address);
+        pushLine(lines, 'receiver', formatUser(row, 'receiver'));
+        pushLine(lines, 'receiverWallet', row.receiver_address);
+        pushLine(lines, 'orderNumber', row.order_number);
+        pushLine(lines, 'memo', row.memo);
+        pushLine(lines, 'requestIp', row.request_ip);
+        pushLine(lines, 'createdAt', row.created_at);
 
-      return {
-        table: 'internal_transfers',
-        id: Number(row.id),
-        eventId: String(row.transfer_id),
-        occurredAt: String(row.created_at),
-        title: `[FOXYA] Internal Transfer ${row.status ?? ''}`.trim(),
-        lines
-      };
-    });
+        return {
+          table: 'internal_transfers',
+          id: Number(row.id),
+          eventId: String(row.transfer_id),
+          occurredAt: String(row.created_at),
+          title: `[FOXYA] Internal Transfer ${row.status ?? ''}`.trim(),
+          lines
+        };
+      });
   }
 
   private async listExternalTransfers(afterId: number, limit: number): Promise<FoxyaAlertEvent[]> {

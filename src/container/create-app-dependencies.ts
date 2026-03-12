@@ -157,7 +157,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
           })
         )
       : undefined;
-  const depositMonitorService = new DepositMonitorService(depositMonitorRepository, foxyaClient, trc20EventReader);
+  const depositMonitorService = new DepositMonitorService(depositMonitorRepository, foxyaClient, trc20EventReader, ledger);
   const depositMonitorWorker = new DepositMonitorWorker(
     depositMonitorService,
     alertService,

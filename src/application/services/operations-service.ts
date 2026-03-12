@@ -120,6 +120,21 @@ export class OperationsService {
     return this.ledger.listSweepRecords(limit);
   }
 
+  async rebuildLedgerProjections() {
+    const result = await this.ledger.rebuildAccountProjections();
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'ledger-projection',
+      action: 'ledger.projection.rebuilt',
+      actorType: 'system',
+      actorId: 'operations-service',
+      metadata: {
+        accountCount: result.accountCount.toString()
+      }
+    });
+    return result;
+  }
+
   async markSweepBroadcasted(sweepId: string, txHash: string, note?: string) {
     const sweep = await this.ledger.markSweepBroadcasted(sweepId, txHash, note);
     await this.ledger.appendAuditLog({

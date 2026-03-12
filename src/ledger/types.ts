@@ -38,19 +38,19 @@ export interface Deposit {
   userId: string;
   txHash: string;
   amount: bigint;
-  status: 'confirmed';
+  status: 'DETECTED' | 'CONFIRMED' | 'CREDITED' | 'COMPLETED';
   blockNumber: number;
   createdAt: string;
 }
 
 export type WithdrawalStatus =
-  | 'requested'
-  | 'review_required'
-  | 'approved'
-  | 'broadcasted'
-  | 'confirmed'
-  | 'failed'
-  | 'rejected';
+  | 'LEDGER_RESERVED'
+  | 'PENDING_ADMIN'
+  | 'ADMIN_APPROVED'
+  | 'TX_BROADCASTED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'REJECTED';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 
@@ -77,6 +77,9 @@ export interface Withdrawal {
   clientIp?: string;
   deviceId?: string;
   reviewRequiredAt?: string;
+  externalAuthProvider?: string;
+  externalAuthRequestId?: string;
+  externalAuthConfirmedAt?: string;
 }
 
 export interface TxJob {

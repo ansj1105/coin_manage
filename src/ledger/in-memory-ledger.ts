@@ -30,11 +30,11 @@ interface TransferIdempotencyRecord {
 }
 
 const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
-  'requested',
-  'review_required',
-  'approved',
-  'broadcasted',
-  'confirmed'
+  'LEDGER_RESERVED',
+  'PENDING_ADMIN',
+  'ADMIN_APPROVED',
+  'TX_BROADCASTED',
+  'COMPLETED'
 ];
 
 export class InMemoryLedger {
@@ -173,13 +173,27 @@ export class InMemoryLedger {
         userId: input.userId,
         txHash: input.txHash,
         amount: input.amount,
-        status: 'confirmed',
+        status: 'CREDITED',
         blockNumber: input.blockNumber,
         createdAt: nowIso
       };
 
       this.depositsByTxHash.set(input.txHash, deposit);
       return { deposit: { ...deposit }, duplicated: false };
+    });
+  }
+
+  async completeDeposit(depositId: string, _nowIso = new Date().toISOString()): Promise<Deposit> {
+    return this.withLock(() => {
+      const deposit = Array.from(this.depositsByTxHash.values()).find((item) => item.depositId === depositId);
+      if (!deposit) {
+        throw new DomainError(404, 'NOT_FOUND', 'deposit not found');
+      }
+      if (deposit.status === 'COMPLETED') {
+        return { ...deposit };
+      }
+      deposit.status = 'COMPLETED';
+      return { ...deposit };
     });
   }
 
@@ -307,7 +321,7 @@ export class InMemoryLedger {
         userId: input.userId,
         amount: input.amount,
         toAddress: input.toAddress,
-        status: 'requested',
+        status: 'LEDGER_RESERVED',
         idempotencyKey: input.idempotencyKey,
         ledgerTxId,
         createdAt: nowIso,
@@ -328,13 +342,35 @@ export class InMemoryLedger {
     });
   }
 
+  async confirmWithdrawalExternalAuth(
+    withdrawalId: string,
+    input: { provider: string; requestId: string },
+    nowIso = new Date().toISOString()
+  ): Promise<Withdrawal> {
+    return this.withLock(() => {
+      const withdrawal = this.getMutableWithdrawal(withdrawalId);
+      if (withdrawal.status === 'LEDGER_RESERVED') {
+        withdrawal.status = 'PENDING_ADMIN';
+        withdrawal.externalAuthProvider = input.provider;
+        withdrawal.externalAuthRequestId = input.requestId;
+        withdrawal.externalAuthConfirmedAt = nowIso;
+        return this.cloneWithdrawal(withdrawal);
+      }
+
+      if (withdrawal.externalAuthRequestId === input.requestId && withdrawal.externalAuthProvider === input.provider) {
+        return this.cloneWithdrawal(withdrawal);
+      }
+
+      throw new DomainError(409, 'INVALID_STATE', 'withdrawal external auth cannot be confirmed in current state');
+    });
+  }
+
   async markWithdrawalReviewRequired(withdrawalId: string, _note: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (withdrawal.status !== 'requested') {
+      if (withdrawal.status !== 'PENDING_ADMIN') {
         return this.cloneWithdrawal(withdrawal);
       }
-      withdrawal.status = 'review_required';
       withdrawal.reviewRequiredAt = nowIso;
       return this.cloneWithdrawal(withdrawal);
     });
@@ -347,8 +383,8 @@ export class InMemoryLedger {
   ): Promise<ApprovalDecisionResult> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (!['requested', 'review_required'].includes(withdrawal.status)) {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested or review_required');
+      if (withdrawal.status !== 'PENDING_ADMIN') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be pending admin approval');
       }
 
       const approvals = this.approvalsByWithdrawalId.get(withdrawalId) ?? [];
@@ -371,7 +407,7 @@ export class InMemoryLedger {
       withdrawal.approvalCount = approvals.length;
       const finalized = approvals.length >= withdrawal.requiredApprovals;
       if (finalized) {
-        withdrawal.status = 'approved';
+        withdrawal.status = 'ADMIN_APPROVED';
         withdrawal.approvedAt = nowIso;
       }
 
@@ -386,10 +422,10 @@ export class InMemoryLedger {
   async broadcastWithdrawal(withdrawalId: string, txHash: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (withdrawal.status !== 'approved') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be approved');
+      if (withdrawal.status !== 'ADMIN_APPROVED') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be admin approved');
       }
-      withdrawal.status = 'broadcasted';
+      withdrawal.status = 'TX_BROADCASTED';
       withdrawal.txHash = txHash;
       withdrawal.broadcastedAt = nowIso;
       return this.cloneWithdrawal(withdrawal);
@@ -399,8 +435,8 @@ export class InMemoryLedger {
   async confirmWithdrawal(withdrawalId: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (withdrawal.status !== 'broadcasted') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be broadcasted');
+      if (withdrawal.status !== 'TX_BROADCASTED') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be tx broadcasted');
       }
 
       const account = this.getMutableAccount(withdrawal.userId, nowIso);
@@ -418,7 +454,7 @@ export class InMemoryLedger {
       tx.status = 'confirmed';
       tx.blockTx = withdrawal.txHash;
 
-      withdrawal.status = 'confirmed';
+      withdrawal.status = 'COMPLETED';
       withdrawal.confirmedAt = nowIso;
       return this.cloneWithdrawal(withdrawal);
     });
@@ -427,7 +463,7 @@ export class InMemoryLedger {
   async failWithdrawal(withdrawalId: string, reason: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
-      if (!['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status)) {
+      if (!['LEDGER_RESERVED', 'PENDING_ADMIN', 'ADMIN_APPROVED', 'TX_BROADCASTED'].includes(withdrawal.status)) {
         throw new DomainError(409, 'INVALID_STATE', 'withdrawal cannot be failed in current state');
       }
 
@@ -446,7 +482,7 @@ export class InMemoryLedger {
       }
       tx.status = 'failed';
 
-      withdrawal.status = 'failed';
+      withdrawal.status = 'FAILED';
       withdrawal.failedAt = nowIso;
       withdrawal.failReason = reason;
       return this.cloneWithdrawal(withdrawal);
@@ -467,7 +503,7 @@ export class InMemoryLedger {
 
   async listPendingApprovalWithdrawals(): Promise<Withdrawal[]> {
     return Array.from(this.withdrawals.values())
-      .filter((withdrawal) => ['requested', 'review_required'].includes(withdrawal.status))
+      .filter((withdrawal) => withdrawal.status === 'PENDING_ADMIN')
       .filter((withdrawal) => withdrawal.approvalCount < withdrawal.requiredApprovals)
       .map((withdrawal) => this.cloneWithdrawal(withdrawal));
   }
@@ -479,7 +515,9 @@ export class InMemoryLedger {
   async listStuckWithdrawals(timeoutSec: number, nowIso = new Date().toISOString()): Promise<Withdrawal[]> {
     const threshold = new Date(nowIso).getTime() - timeoutSec * 1000;
     return Array.from(this.withdrawals.values())
-      .filter((withdrawal) => ['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status))
+      .filter((withdrawal) =>
+        ['LEDGER_RESERVED', 'PENDING_ADMIN', 'ADMIN_APPROVED', 'TX_BROADCASTED'].includes(withdrawal.status)
+      )
       .filter((withdrawal) => new Date(withdrawal.createdAt).getTime() <= threshold)
       .map((withdrawal) => this.cloneWithdrawal(withdrawal));
   }
@@ -673,6 +711,12 @@ export class InMemoryLedger {
       activeWithdrawalCount: Array.from(this.withdrawals.values()).filter((withdrawal) =>
         ACTIVE_WITHDRAWAL_STATUSES.includes(withdrawal.status)
       ).length
+    };
+  }
+
+  async rebuildAccountProjections(): Promise<{ accountCount: number }> {
+    return {
+      accountCount: this.accounts.size
     };
   }
 

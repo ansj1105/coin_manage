@@ -24,14 +24,21 @@ import type { WithdrawalLimitConfig } from '../../../ledger/in-memory-ledger.js'
 import type { KorionDatabase } from './db-schema.js';
 
 const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
-  'requested',
-  'review_required',
-  'approved',
-  'broadcasted',
-  'confirmed'
+  'LEDGER_RESERVED',
+  'PENDING_ADMIN',
+  'ADMIN_APPROVED',
+  'TX_BROADCASTED',
+  'COMPLETED'
 ];
 
 type DbExecutor = Kysely<KorionDatabase> | Transaction<KorionDatabase>;
+
+type LedgerPostingInput = {
+  ledgerAccountCode: string;
+  accountType: KorionDatabase['ledger_accounts']['account_type'];
+  entrySide: KorionDatabase['ledger_postings']['entry_side'];
+  amount: string;
+};
 
 export class PostgresLedgerRepository implements LedgerRepository {
   constructor(
@@ -41,11 +48,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
   async getAccount(userId: string): Promise<Account> {
     await this.ensureAccount(this.db, userId);
-    const row = await this.db.selectFrom('accounts').selectAll().where('user_id', '=', userId).executeTakeFirst();
+    const [row, binding, projected] = await Promise.all([
+      this.db.selectFrom('accounts').selectAll().where('user_id', '=', userId).executeTakeFirst(),
+      this.findWalletBindingByUserId(this.db, userId),
+      this.getProjectedUserBalances(this.db, userId)
+    ]);
     if (!row) {
       throw new DomainError(500, 'STATE_CORRUPTED', 'account not found');
     }
-    return this.mapAccount(row, await this.findWalletBindingByUserId(this.db, userId));
+    return this.mapAccount(row, binding, projected);
   }
 
   async getAccountByWalletAddress(walletAddress: string): Promise<Account> {
@@ -160,15 +171,6 @@ export class PostgresLedgerRepository implements LedgerRepository {
       const depositId = randomUUID();
 
       await trx
-        .updateTable('accounts')
-        .set({
-          balance: sql<string>`balance + ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', input.userId)
-        .execute();
-
-      await trx
         .insertInto('transactions')
         .values({
           tx_id: txId,
@@ -190,11 +192,35 @@ export class PostgresLedgerRepository implements LedgerRepository {
           user_id: input.userId,
           tx_hash: input.txHash,
           amount: amountValue,
-          status: 'confirmed',
+          status: 'CREDITED',
           block_number: input.blockNumber,
           created_at: nowIso
         })
         .execute();
+
+      await this.appendJournal(trx, {
+        journalType: 'deposit_confirmed',
+        referenceType: 'deposit',
+        referenceId: depositId,
+        description: `deposit ${input.txHash}`,
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: 'system:asset:deposit_clearing',
+            accountType: 'asset',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
 
       return {
         deposit: {
@@ -202,13 +228,40 @@ export class PostgresLedgerRepository implements LedgerRepository {
           userId: input.userId,
           txHash: input.txHash,
           amount: input.amount,
-          status: 'confirmed',
+          status: 'CREDITED',
           blockNumber: input.blockNumber,
           createdAt: nowIso
         },
         duplicated: false
       };
     });
+  }
+
+  async completeDeposit(depositId: string, nowIso = new Date().toISOString()): Promise<Deposit> {
+    const existing = await this.db
+      .selectFrom('deposits')
+      .selectAll()
+      .where('deposit_id', '=', depositId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'deposit not found');
+    }
+
+    if (existing.status === 'COMPLETED') {
+      return this.mapDeposit(existing);
+    }
+
+    const row = await this.db
+      .updateTable('deposits')
+      .set({
+        status: 'COMPLETED'
+      })
+      .where('deposit_id', '=', depositId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapDeposit(row);
   }
 
   async transfer(input: {
@@ -254,30 +307,14 @@ export class PostgresLedgerRepository implements LedgerRepository {
       const fromAccount = await this.getAccountForUpdate(trx, input.fromUserId);
       await this.getAccountForUpdate(trx, input.toUserId);
 
-      if (parseStoredKoriAmount(fromAccount.balance) < input.amount) {
+      const fromProjected = await this.getProjectedUserBalances(trx, input.fromUserId);
+      const fromAvailable = fromProjected.hasPostings ? fromProjected.balance : parseStoredKoriAmount(fromAccount.balance);
+      if (fromAvailable < input.amount) {
         throw new DomainError(400, 'INSUFFICIENT_BALANCE', 'insufficient balance for transfer');
       }
 
       const fromTxId = randomUUID();
       const toTxId = randomUUID();
-
-      await trx
-        .updateTable('accounts')
-        .set({
-          balance: sql<string>`balance - ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', input.fromUserId)
-        .execute();
-
-      await trx
-        .updateTable('accounts')
-        .set({
-          balance: sql<string>`balance + ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', input.toUserId)
-        .execute();
 
       await trx
         .insertInto('transactions')
@@ -306,6 +343,30 @@ export class PostgresLedgerRepository implements LedgerRepository {
           }
         ])
         .execute();
+
+      await this.appendJournal(trx, {
+        journalType: 'internal_transfer',
+        referenceType: 'transfer',
+        referenceId: input.idempotencyKey,
+        description: `internal transfer ${input.fromUserId} -> ${input.toUserId}`,
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${input.fromUserId}:available`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.toUserId}:available`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.fromUserId, input.toUserId], nowIso);
 
       return {
         fromTx: {
@@ -372,7 +433,9 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
       await this.ensureAccount(trx, input.userId, nowIso);
       const account = await this.getAccountForUpdate(trx, input.userId);
-      if (parseStoredKoriAmount(account.balance) < input.amount) {
+      const projected = await this.getProjectedUserBalances(trx, input.userId);
+      const availableBalance = projected.hasPostings ? projected.balance : parseStoredKoriAmount(account.balance);
+      if (availableBalance < input.amount) {
         throw new DomainError(400, 'INSUFFICIENT_BALANCE', 'insufficient balance for withdrawal');
       }
 
@@ -383,16 +446,6 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
       const ledgerTxId = randomUUID();
       const withdrawalId = randomUUID();
-
-      await trx
-        .updateTable('accounts')
-        .set({
-          balance: sql<string>`balance - ${amountValue}::numeric`,
-          locked_balance: sql<string>`locked_balance + ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', input.userId)
-        .execute();
 
       await trx
         .insertInto('transactions')
@@ -416,7 +469,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           user_id: input.userId,
           amount: amountValue,
           to_address: input.toAddress,
-          status: 'requested',
+          status: 'LEDGER_RESERVED',
           tx_hash: null,
           idempotency_key: input.idempotencyKey,
           ledger_tx_id: ledgerTxId,
@@ -432,9 +485,36 @@ export class PostgresLedgerRepository implements LedgerRepository {
           required_approvals: input.requiredApprovals ?? 1,
           client_ip: input.clientIp ?? null,
           device_id: input.deviceId ?? null,
-          review_required_at: null
+          review_required_at: null,
+          external_auth_provider: null,
+          external_auth_request_id: null,
+          external_auth_confirmed_at: null
         })
         .execute();
+
+      await this.appendJournal(trx, {
+        journalType: 'withdraw_reserved',
+        referenceType: 'withdrawal',
+        referenceId: withdrawalId,
+        description: `withdraw reserve ${input.userId}`,
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${input.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.userId}:withdraw_pending`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
 
       const inserted = await trx
         .selectFrom('withdrawals')
@@ -449,18 +529,53 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async confirmWithdrawalExternalAuth(
+    withdrawalId: string,
+    input: { provider: string; requestId: string },
+    nowIso = new Date().toISOString()
+  ): Promise<Withdrawal> {
+    return this.withTransaction(async (trx) => {
+      await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
+      const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      if (withdrawal.status === 'LEDGER_RESERVED') {
+        await trx
+          .updateTable('withdrawals')
+          .set({
+            status: 'PENDING_ADMIN',
+            external_auth_provider: input.provider,
+            external_auth_request_id: input.requestId,
+            external_auth_confirmed_at: nowIso
+          })
+          .where('withdraw_id', '=', withdrawalId)
+          .execute();
+
+        const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+        return this.hydrateWithdrawal(trx, updated);
+      }
+
+      if (
+        withdrawal.external_auth_provider === input.provider &&
+        withdrawal.external_auth_request_id === input.requestId &&
+        withdrawal.external_auth_confirmed_at
+      ) {
+        return this.hydrateWithdrawal(trx, withdrawal);
+      }
+
+      throw new DomainError(409, 'INVALID_STATE', 'withdrawal external auth cannot be confirmed in current state');
+    });
+  }
+
   async markWithdrawalReviewRequired(withdrawalId: string, _note: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (withdrawal.status !== 'requested') {
+      if (withdrawal.status !== 'PENDING_ADMIN') {
         return this.hydrateWithdrawal(trx, withdrawal);
       }
 
       await trx
         .updateTable('withdrawals')
         .set({
-          status: 'review_required',
           review_required_at: nowIso
         })
         .where('withdraw_id', '=', withdrawalId)
@@ -479,8 +594,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (!['requested', 'review_required'].includes(withdrawal.status)) {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be requested or review_required');
+      if (withdrawal.status !== 'PENDING_ADMIN') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be pending admin approval');
       }
 
       const existingApproval = await trx
@@ -513,7 +628,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         await trx
           .updateTable('withdrawals')
           .set({
-            status: 'approved',
+            status: 'ADMIN_APPROVED',
             approved_at: nowIso
           })
           .where('withdraw_id', '=', withdrawalId)
@@ -540,14 +655,14 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (withdrawal.status !== 'approved') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be approved');
+      if (withdrawal.status !== 'ADMIN_APPROVED') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be admin approved');
       }
 
       await trx
         .updateTable('withdrawals')
         .set({
-          status: 'broadcasted',
+          status: 'TX_BROADCASTED',
           tx_hash: txHash,
           broadcasted_at: nowIso
         })
@@ -563,27 +678,20 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (withdrawal.status !== 'broadcasted') {
-        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be broadcasted');
+      if (withdrawal.status !== 'TX_BROADCASTED') {
+        throw new DomainError(409, 'INVALID_STATE', 'withdrawal must be tx broadcasted');
       }
 
       const mapped = await this.hydrateWithdrawal(trx, withdrawal);
       await this.lockUsers(trx, [mapped.userId]);
       const account = await this.getAccountForUpdate(trx, mapped.userId);
-      if (parseStoredKoriAmount(account.locked_balance) < mapped.amount) {
+      const projected = await this.getProjectedUserBalances(trx, mapped.userId);
+      const lockedBalance = projected.hasPostings ? projected.lockedBalance : parseStoredKoriAmount(account.locked_balance);
+      if (lockedBalance < mapped.amount) {
         throw new DomainError(500, 'STATE_CORRUPTED', 'locked balance underflow');
       }
 
       const amountValue = formatKoriAmount(mapped.amount);
-
-      await trx
-        .updateTable('accounts')
-        .set({
-          locked_balance: sql<string>`locked_balance - ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', mapped.userId)
-        .execute();
 
       await trx
         .updateTable('transactions')
@@ -597,11 +705,35 @@ export class PostgresLedgerRepository implements LedgerRepository {
       await trx
         .updateTable('withdrawals')
         .set({
-          status: 'confirmed',
+          status: 'COMPLETED',
           confirmed_at: nowIso
         })
         .where('withdraw_id', '=', withdrawalId)
         .execute();
+
+      await this.appendJournal(trx, {
+        journalType: 'withdraw_completed',
+        referenceType: 'withdrawal',
+        referenceId: withdrawalId,
+        description: `withdraw complete ${mapped.txHash ?? ''}`.trim(),
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${mapped.userId}:withdraw_pending`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: 'system:asset:hot_wallet',
+            accountType: 'asset',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [mapped.userId], nowIso);
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
       return this.hydrateWithdrawal(trx, updated);
@@ -612,28 +744,20 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      if (!['requested', 'review_required', 'approved', 'broadcasted'].includes(withdrawal.status)) {
+      if (!['LEDGER_RESERVED', 'PENDING_ADMIN', 'ADMIN_APPROVED', 'TX_BROADCASTED'].includes(withdrawal.status)) {
         throw new DomainError(409, 'INVALID_STATE', 'withdrawal cannot be failed in current state');
       }
 
       const mapped = await this.hydrateWithdrawal(trx, withdrawal);
       await this.lockUsers(trx, [mapped.userId]);
       const account = await this.getAccountForUpdate(trx, mapped.userId);
-      if (parseStoredKoriAmount(account.locked_balance) < mapped.amount) {
+      const projected = await this.getProjectedUserBalances(trx, mapped.userId);
+      const lockedBalance = projected.hasPostings ? projected.lockedBalance : parseStoredKoriAmount(account.locked_balance);
+      if (lockedBalance < mapped.amount) {
         throw new DomainError(500, 'STATE_CORRUPTED', 'locked balance underflow');
       }
 
       const amountValue = formatKoriAmount(mapped.amount);
-
-      await trx
-        .updateTable('accounts')
-        .set({
-          locked_balance: sql<string>`locked_balance - ${amountValue}::numeric`,
-          balance: sql<string>`balance + ${amountValue}::numeric`,
-          updated_at: nowIso
-        })
-        .where('user_id', '=', mapped.userId)
-        .execute();
 
       await trx
         .updateTable('transactions')
@@ -644,12 +768,36 @@ export class PostgresLedgerRepository implements LedgerRepository {
       await trx
         .updateTable('withdrawals')
         .set({
-          status: 'failed',
+          status: 'FAILED',
           failed_at: nowIso,
           fail_reason: reason
         })
         .where('withdraw_id', '=', withdrawalId)
         .execute();
+
+      await this.appendJournal(trx, {
+        journalType: 'withdraw_released',
+        referenceType: 'withdrawal',
+        referenceId: withdrawalId,
+        description: reason,
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${mapped.userId}:withdraw_pending`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${mapped.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [mapped.userId], nowIso);
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
       return this.hydrateWithdrawal(trx, updated);
@@ -685,7 +833,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     const rows = await this.db
       .selectFrom('withdrawals')
       .selectAll()
-      .where('status', 'in', ['requested', 'review_required'])
+      .where('status', '=', 'PENDING_ADMIN')
       .orderBy('created_at asc')
       .execute();
 
@@ -709,7 +857,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     const rows = await this.db
       .selectFrom('withdrawals')
       .selectAll()
-      .where('status', 'in', ['requested', 'review_required', 'approved', 'broadcasted'])
+      .where('status', 'in', ['LEDGER_RESERVED', 'PENDING_ADMIN', 'ADMIN_APPROVED', 'TX_BROADCASTED'])
       .where('created_at', '<=', thresholdIso)
       .orderBy('created_at asc')
       .execute();
@@ -1009,18 +1157,22 @@ export class PostgresLedgerRepository implements LedgerRepository {
   }
 
   async getLedgerSummary(): Promise<LedgerSummary> {
-    const accountSummary = await this.db
-      .selectFrom('accounts')
-      .select((eb) => [
-        sql<string>`count(*)::text`.as('account_count'),
-        sql<string>`coalesce(sum(balance)::text, '0')`.as('available_balance'),
-        sql<string>`coalesce(sum(locked_balance)::text, '0')`.as('locked_balance')
-      ])
-      .executeTakeFirstOrThrow();
+    const [accountSummary, projectedSummary] = await Promise.all([
+      this.db
+        .selectFrom('accounts')
+        .select((eb) => [
+          sql<string>`count(*)::text`.as('account_count'),
+          sql<string>`coalesce(sum(balance)::text, '0')`.as('available_balance'),
+          sql<string>`coalesce(sum(locked_balance)::text, '0')`.as('locked_balance')
+        ])
+        .executeTakeFirstOrThrow(),
+      this.getProjectedLedgerSummary(this.db)
+    ]);
 
     const depositSummary = await this.db
       .selectFrom('deposits')
       .select(sql<string>`count(*)::text`.as('deposit_count'))
+      .where('status', 'in', ['CREDITED', 'COMPLETED'])
       .executeTakeFirstOrThrow();
 
     const activeSummary = await this.db
@@ -1029,8 +1181,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .where('status', 'in', ACTIVE_WITHDRAWAL_STATUSES)
       .executeTakeFirstOrThrow();
 
-    const availableBalance = parseStoredKoriAmount(accountSummary.available_balance);
-    const lockedBalance = parseStoredKoriAmount(accountSummary.locked_balance);
+    const availableBalance = projectedSummary.hasPostings
+      ? projectedSummary.availableBalance
+      : parseStoredKoriAmount(accountSummary.available_balance);
+    const lockedBalance = projectedSummary.hasPostings
+      ? projectedSummary.lockedBalance
+      : parseStoredKoriAmount(accountSummary.locked_balance);
 
     return {
       accountCount: Number(accountSummary.account_count),
@@ -1039,6 +1195,19 @@ export class PostgresLedgerRepository implements LedgerRepository {
       liabilityBalance: availableBalance + lockedBalance,
       confirmedDepositCount: Number(depositSummary.deposit_count),
       activeWithdrawalCount: Number(activeSummary.active_count)
+    };
+  }
+
+  async rebuildAccountProjections(nowIso = new Date().toISOString()): Promise<{ accountCount: number }> {
+    const rows = await this.db.selectFrom('accounts').select(['user_id']).execute();
+    await this.withTransaction(async (trx) => {
+      for (const row of rows) {
+        await this.syncUserAccountProjection(trx, [row.user_id], nowIso);
+      }
+    });
+
+    return {
+      accountCount: rows.length
     };
   }
 
@@ -1129,6 +1298,162 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return Number(row?.count ?? '0');
   }
 
+  private async appendJournal(
+    db: DbExecutor,
+    input: {
+      journalType: string;
+      referenceType: string;
+      referenceId: string;
+      description?: string;
+      nowIso: string;
+      postings: LedgerPostingInput[];
+    }
+  ): Promise<void> {
+    const journalId = randomUUID();
+    await db
+      .insertInto('ledger_journals')
+      .values({
+        journal_id: journalId,
+        journal_type: input.journalType,
+        reference_type: input.referenceType,
+        reference_id: input.referenceId,
+        description: input.description ?? null,
+        created_at: input.nowIso
+      })
+      .execute();
+
+    for (const posting of input.postings) {
+      await this.ensureLedgerAccount(db, posting.ledgerAccountCode, posting.accountType, input.nowIso);
+    }
+
+    await db
+      .insertInto('ledger_postings')
+      .values(
+        input.postings.map((posting) => ({
+          posting_id: randomUUID(),
+          journal_id: journalId,
+          ledger_account_code: posting.ledgerAccountCode,
+          entry_side: posting.entrySide,
+          amount: posting.amount,
+          created_at: input.nowIso
+        }))
+      )
+      .execute();
+  }
+
+  private async ensureLedgerAccount(
+    db: DbExecutor,
+    ledgerAccountCode: string,
+    accountType: KorionDatabase['ledger_accounts']['account_type'],
+    nowIso = new Date().toISOString()
+  ): Promise<void> {
+    await db
+      .insertInto('ledger_accounts')
+      .values({
+        ledger_account_code: ledgerAccountCode,
+        account_type: accountType,
+        currency_code: 'KORI',
+        created_at: nowIso
+      })
+      .onConflict((oc) => oc.column('ledger_account_code').doNothing())
+      .execute();
+  }
+
+  private async getProjectedUserBalances(
+    db: DbExecutor,
+    userId: string
+  ): Promise<{ balance: bigint; lockedBalance: bigint; updatedAt?: string; hasPostings: boolean }> {
+    const availableCode = `user:${userId}:available`;
+    const pendingCode = `user:${userId}:withdraw_pending`;
+    const row = await db
+      .selectFrom('ledger_postings')
+      .select((eb) => [
+        sql<string>`count(*)::text`.as('posting_count'),
+        sql<string>`
+          coalesce(sum(
+            case
+              when ledger_account_code = ${availableCode} and entry_side = 'credit' then amount
+              when ledger_account_code = ${availableCode} and entry_side = 'debit' then -amount
+              else 0
+            end
+          )::text, '0')
+        `.as('available_balance'),
+        sql<string>`
+          coalesce(sum(
+            case
+              when ledger_account_code = ${pendingCode} and entry_side = 'credit' then amount
+              when ledger_account_code = ${pendingCode} and entry_side = 'debit' then -amount
+              else 0
+            end
+          )::text, '0')
+        `.as('locked_balance'),
+        sql<string | null>`max(created_at)::text`.as('updated_at')
+      ])
+      .where('ledger_account_code', 'in', [availableCode, pendingCode])
+      .executeTakeFirstOrThrow();
+
+    return {
+      balance: parseStoredKoriAmount(row.available_balance),
+      lockedBalance: parseStoredKoriAmount(row.locked_balance),
+      updatedAt: row.updated_at ?? undefined,
+      hasPostings: Number(row.posting_count) > 0
+    };
+  }
+
+  private async getProjectedLedgerSummary(
+    db: DbExecutor
+  ): Promise<{ availableBalance: bigint; lockedBalance: bigint; hasPostings: boolean }> {
+    const row = await db
+      .selectFrom('ledger_postings')
+      .select((eb) => [
+        sql<string>`count(*)::text`.as('posting_count'),
+        sql<string>`
+          coalesce(sum(
+            case
+              when ledger_account_code like 'user:%:available' and entry_side = 'credit' then amount
+              when ledger_account_code like 'user:%:available' and entry_side = 'debit' then -amount
+              else 0
+            end
+          )::text, '0')
+        `.as('available_balance'),
+        sql<string>`
+          coalesce(sum(
+            case
+              when ledger_account_code like 'user:%:withdraw_pending' and entry_side = 'credit' then amount
+              when ledger_account_code like 'user:%:withdraw_pending' and entry_side = 'debit' then -amount
+              else 0
+            end
+          )::text, '0')
+        `.as('locked_balance')
+      ])
+      .executeTakeFirstOrThrow();
+
+    return {
+      availableBalance: parseStoredKoriAmount(row.available_balance),
+      lockedBalance: parseStoredKoriAmount(row.locked_balance),
+      hasPostings: Number(row.posting_count) > 0
+    };
+  }
+
+  private async syncUserAccountProjection(db: DbExecutor, userIds: string[], nowIso: string): Promise<void> {
+    for (const userId of [...new Set(userIds)]) {
+      const projected = await this.getProjectedUserBalances(db, userId);
+      if (!projected.hasPostings) {
+        continue;
+      }
+
+      await db
+        .updateTable('accounts')
+        .set({
+          balance: formatKoriAmount(projected.balance),
+          locked_balance: formatKoriAmount(projected.lockedBalance),
+          updated_at: projected.updatedAt ?? nowIso
+        })
+        .where('user_id', '=', userId)
+        .execute();
+    }
+  }
+
   private async hydrateWithdrawal(db: DbExecutor, row: KorionDatabase['withdrawals']): Promise<Withdrawal> {
     const count = await this.getApprovalCount(db, row.withdraw_id);
     return this.mapWithdrawal(row, count);
@@ -1186,14 +1511,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
   private mapAccount(
     row: KorionDatabase['accounts'],
-    binding?: KorionDatabase['wallet_address_bindings']
+    binding?: KorionDatabase['wallet_address_bindings'],
+    projected?: { balance: bigint; lockedBalance: bigint; updatedAt?: string; hasPostings: boolean }
   ): Account {
     return {
       userId: row.user_id,
       walletAddress: binding?.wallet_address,
-      balance: parseStoredKoriAmount(row.balance),
-      lockedBalance: parseStoredKoriAmount(row.locked_balance),
-      updatedAt: row.updated_at
+      balance: projected?.hasPostings ? projected.balance : parseStoredKoriAmount(row.balance),
+      lockedBalance: projected?.hasPostings ? projected.lockedBalance : parseStoredKoriAmount(row.locked_balance),
+      updatedAt: projected?.hasPostings ? projected.updatedAt ?? row.updated_at : row.updated_at
     };
   }
 
@@ -1254,7 +1580,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
       approvalCount,
       clientIp: row.client_ip ?? undefined,
       deviceId: row.device_id ?? undefined,
-      reviewRequiredAt: row.review_required_at ?? undefined
+      reviewRequiredAt: row.review_required_at ?? undefined,
+      externalAuthProvider: row.external_auth_provider ?? undefined,
+      externalAuthRequestId: row.external_auth_request_id ?? undefined,
+      externalAuthConfirmedAt: row.external_auth_confirmed_at ?? undefined
     };
   }
 

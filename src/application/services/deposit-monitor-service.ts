@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { DepositMonitorRepository } from '../ports/deposit-monitor-repository.js';
 import type { ExternalDepositClient } from '../ports/external-deposit-client.js';
+import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { Trc20EventReader } from '../ports/trc20-event-reader.js';
 import { getBlockchainNetworkConfig } from '../../config/blockchain-networks.js';
 import { env } from '../../config/env.js';
+import { parseKoriAmount } from '../../domain/value-objects/money.js';
 import type {
   DepositMonitorCycleResult,
   DepositMonitorStatus,
@@ -27,7 +29,8 @@ export class DepositMonitorService {
   constructor(
     private readonly repository: DepositMonitorRepository,
     private readonly foxyaClient: ExternalDepositClient | undefined,
-    private readonly eventReader: Trc20EventReader
+    private readonly eventReader: Trc20EventReader,
+    private readonly ledger: LedgerRepository
   ) {}
 
   async runCycle(): Promise<DepositMonitorCycleResult | { skipped: true; reason: string }> {
@@ -252,6 +255,14 @@ export class DepositMonitorService {
       return false;
     }
 
+    const applied = await this.ledger.applyDeposit({
+      userId: event.userId,
+      amount: parseKoriAmount(Number(event.amountDecimal)),
+      txHash: event.txHash,
+      blockNumber: event.blockNumber
+    });
+
+    await this.ledger.completeDeposit(applied.deposit.depositId);
     await this.foxyaClient.completeDeposit(event.depositId);
     await this.repository.markEventStatus(event.eventKey, 'completed', {
       foxyaCompletedAt: new Date().toISOString()

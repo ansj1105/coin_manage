@@ -25,7 +25,7 @@ export class SchedulerService {
         continue;
       }
 
-      if (withdrawal.status === 'requested') {
+      if (withdrawal.status === 'PENDING_ADMIN') {
         await this.ledger.markWithdrawalReviewRequired(withdrawal.withdrawalId, 'manual review required');
         await this.ledger.enqueueJob('withdraw_manual_review', {
           withdrawalId: withdrawal.withdrawalId,
@@ -63,7 +63,7 @@ export class SchedulerService {
     const stuck = await this.ledger.listStuckWithdrawals(timeoutSec);
 
     for (const withdrawal of stuck) {
-      if (withdrawal.status === 'broadcasted') {
+      if (withdrawal.status === 'TX_BROADCASTED') {
         continue;
       }
       await this.ledger.enqueueJob('withdraw_manual_review', {
@@ -81,7 +81,7 @@ export class SchedulerService {
 
     return {
       stuckCount: stuck.length,
-      queuedManualReview: stuck.filter((item) => item.status !== 'broadcasted').length,
+      queuedManualReview: stuck.filter((item) => item.status !== 'TX_BROADCASTED').length,
       reconcile
     };
   }

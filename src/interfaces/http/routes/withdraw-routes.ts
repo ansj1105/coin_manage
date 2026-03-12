@@ -22,6 +22,12 @@ const approveSchema = z.object({
   note: z.string().max(500).optional()
 });
 
+const externalAuthConfirmSchema = z.object({
+  provider: z.string().min(1).max(64),
+  requestId: z.string().min(1).max(128),
+  actorId: z.string().min(1).max(64).optional()
+});
+
 export const createWithdrawRoutes = (withdrawService: WithdrawService): Router => {
   const router = Router();
 
@@ -87,6 +93,25 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
           amount: formatKoriAmount(result.withdrawal.amount)
         },
         finalized: result.finalized
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/:withdrawalId/external-auth/confirm', async (req, res, next) => {
+    try {
+      const parsed = externalAuthConfirmSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const withdrawal = await withdrawService.confirmExternalAuth(req.params.withdrawalId, parsed.data);
+      res.json({
+        withdrawal: {
+          ...withdrawal,
+          amount: formatKoriAmount(withdrawal.amount)
+        }
       });
     } catch (error) {
       next(error);
