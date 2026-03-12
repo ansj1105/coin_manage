@@ -564,6 +564,7 @@ export class InMemoryLedger {
         status: 'planned',
         externalRef: input.externalRef,
         note: input.note,
+        attemptCount: 0,
         createdAt: input.nowIso ?? new Date().toISOString()
       };
       this.sweepRecords.set(sweep.sweepId, sweep);
@@ -599,6 +600,20 @@ export class InMemoryLedger {
         throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned');
       }
       sweep.status = 'queued';
+      sweep.note = note ?? sweep.note;
+      sweep.queuedAt = sweep.queuedAt ?? _nowIso;
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async recordSweepAttempt(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep = this.getMutableSweep(sweepId);
+      if (sweep.status !== 'queued') {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be queued');
+      }
+      sweep.attemptCount += 1;
+      sweep.lastAttemptAt = nowIso;
       sweep.note = note ?? sweep.note;
       return this.cloneSweep(sweep);
     });

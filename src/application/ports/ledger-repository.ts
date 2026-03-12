@@ -91,6 +91,7 @@ export interface LedgerRepository {
   listSweepRecordsByStatuses(statuses: SweepRecord['status'][], limit?: number): Promise<SweepRecord[]>;
   findSweepByExternalRef(externalRef: string): Promise<SweepRecord | undefined>;
   markSweepQueued(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
+  recordSweepAttempt(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   confirmSweep(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   failSweep(sweepId: string, reason: string, nowIso?: string): Promise<SweepRecord>;

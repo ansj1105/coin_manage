@@ -16,5 +16,8 @@ alter table sweep_records
   drop constraint if exists ck_sweep_records_network;
 
 alter table sweep_records
+  drop column if exists last_attempt_at,
+  drop column if exists queued_at,
+  drop column if exists attempt_count,
   drop column if exists network,
   drop column if exists currency_id;

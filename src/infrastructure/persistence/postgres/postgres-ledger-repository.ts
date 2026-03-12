@@ -820,7 +820,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
           external_ref: input.externalRef ?? null,
           tx_hash: null,
           note: input.note ?? null,
+          attempt_count: 0,
           created_at: nowIso,
+          queued_at: null,
+          last_attempt_at: null,
           broadcasted_at: null,
           confirmed_at: null
         })
@@ -882,6 +885,35 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .updateTable('sweep_records')
       .set({
         status: 'queued',
+        note: note ?? existing.note,
+        queued_at: existing.queued_at ?? new Date().toISOString()
+      })
+      .where('sweep_id', '=', sweepId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async recordSweepAttempt(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    const existing = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('sweep_id', '=', sweepId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    if (existing.status !== 'queued') {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be queued');
+    }
+
+    const row = await this.db
+      .updateTable('sweep_records')
+      .set({
+        attempt_count: existing.attempt_count + 1,
+        last_attempt_at: nowIso,
         note: note ?? existing.note
       })
       .where('sweep_id', '=', sweepId)
@@ -1263,7 +1295,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
       externalRef: row.external_ref ?? undefined,
       txHash: row.tx_hash ?? undefined,
       note: row.note ?? undefined,
+      attemptCount: row.attempt_count,
       createdAt: row.created_at,
+      queuedAt: row.queued_at ?? undefined,
+      lastAttemptAt: row.last_attempt_at ?? undefined,
       broadcastedAt: row.broadcasted_at ?? undefined,
       confirmedAt: row.confirmed_at ?? undefined
     };

@@ -115,7 +115,10 @@ export interface SweepRecordsTable {
   external_ref: string | null;
   tx_hash: string | null;
   note: string | null;
+  attempt_count: number;
   created_at: string;
+  queued_at: string | null;
+  last_attempt_at: string | null;
   broadcasted_at: string | null;
   confirmed_at: string | null;
 }

@@ -128,7 +128,10 @@ export interface SweepRecord {
   externalRef?: string;
   txHash?: string;
   note?: string;
+  attemptCount: number;
   createdAt: string;
+  queuedAt?: string;
+  lastAttemptAt?: string;
   broadcastedAt?: string;
   confirmedAt?: string;
 }

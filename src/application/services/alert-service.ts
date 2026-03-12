@@ -37,6 +37,50 @@ export class AlertService {
     });
   }
 
+  async notifySweepResourceLow(input: {
+    depositId: string;
+    sourceAddress: string;
+    network: 'mainnet' | 'testnet';
+    trxBalance: string;
+    availableEnergy: number;
+    availableBandwidth: number;
+    attemptCount: number;
+  }) {
+    await this.send({
+      title: '[KORION] Sweep Resource Low',
+      body: [
+        `depositId=${input.depositId}`,
+        `source=${input.sourceAddress}`,
+        `network=${input.network}`,
+        `trx=${input.trxBalance}`,
+        `availableEnergy=${input.availableEnergy}`,
+        `availableBandwidth=${input.availableBandwidth}`,
+        `attemptCount=${input.attemptCount}`
+      ].join('\n'),
+      dedupeKey: `sweep-resource-low:${input.sourceAddress}`
+    });
+  }
+
+  async notifySweepQueueTimeout(input: {
+    depositId: string;
+    sourceAddress: string;
+    queuedAt?: string;
+    attemptCount: number;
+    timeoutSec: number;
+  }) {
+    await this.send({
+      title: '[KORION] Sweep Queue Timeout',
+      body: [
+        `depositId=${input.depositId}`,
+        `source=${input.sourceAddress}`,
+        `queuedAt=${input.queuedAt ?? 'unknown'}`,
+        `attemptCount=${input.attemptCount}`,
+        `timeoutSec=${input.timeoutSec}`
+      ].join('\n'),
+      dedupeKey: `sweep-queue-timeout:${input.sourceAddress}:${input.depositId}`
+    });
+  }
+
   async notifyDepositMonitorFailure(message: string) {
     await this.send({
       title: '[KORION] Deposit Monitor Failed',

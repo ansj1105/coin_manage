@@ -265,12 +265,40 @@ export class SweepBotService {
     }
 
     const network = sweep.network ?? 'mainnet';
+    const attemptedSweep = await this.ledger.recordSweepAttempt(sweep.sweepId, 'attempted by sweep executor');
     const resources = await this.tronGateway.getAccountResources(signer.address, network);
     const availableEnergy = Math.max(resources.energyLimit - resources.energyUsed, 0);
     const availableBandwidth = Math.max(resources.bandwidthLimit - resources.bandwidthUsed, 0);
     const trxBalance = Number(resources.trxBalanceSun) / 1_000_000;
+    const queueAgeSec = attemptedSweep.queuedAt
+      ? Math.floor((Date.now() - new Date(attemptedSweep.queuedAt).getTime()) / 1000)
+      : 0;
 
     if (trxBalance < env.sweepSourceMinTrx || availableEnergy < env.sweepSourceMinEnergy || availableBandwidth <= 0) {
+      await this.alertService.notifySweepResourceLow({
+        depositId,
+        sourceAddress: sweep.sourceAddress,
+        network,
+        trxBalance: trxBalance.toFixed(6),
+        availableEnergy,
+        availableBandwidth,
+        attemptCount: attemptedSweep.attemptCount
+      });
+
+      if (queueAgeSec >= env.sweepQueueTimeoutSec || attemptedSweep.attemptCount >= env.sweepMaxRetryCount) {
+        const reason = `sweep resource low timeout: trx=${trxBalance.toFixed(6)}, energy=${availableEnergy}, bandwidth=${availableBandwidth}`;
+        await this.ledger.failSweep(sweep.sweepId, reason);
+        await this.foxyaClient.failSweep(depositId, reason);
+        await this.alertService.notifySweepQueueTimeout({
+          depositId,
+          sourceAddress: sweep.sourceAddress,
+          queuedAt: attemptedSweep.queuedAt,
+          attemptCount: attemptedSweep.attemptCount,
+          timeoutSec: env.sweepQueueTimeoutSec
+        });
+        return 'failed';
+      }
+
       return 'skipped';
     }
 

@@ -1,6 +1,9 @@
 alter table sweep_records
   add column if not exists currency_id integer,
-  add column if not exists network varchar(20);
+  add column if not exists network varchar(20),
+  add column if not exists attempt_count integer not null default 0,
+  add column if not exists queued_at timestamp,
+  add column if not exists last_attempt_at timestamp;
 
 update sweep_records
 set network = 'mainnet'
