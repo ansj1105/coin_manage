@@ -15,4 +15,20 @@ export class MockTronClient implements TronClient {
     }
     return 'confirmed';
   }
+
+  async getAccountResources(): Promise<{
+    trxBalanceSun: bigint;
+    energyLimit: number;
+    energyUsed: number;
+    bandwidthLimit: number;
+    bandwidthUsed: number;
+  }> {
+    return {
+      trxBalanceSun: 100_000_000n,
+      energyLimit: 100_000,
+      energyUsed: 0,
+      bandwidthLimit: 10_000,
+      bandwidthUsed: 0
+    };
+  }
 }

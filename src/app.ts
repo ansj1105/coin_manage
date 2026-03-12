@@ -10,6 +10,7 @@ import { createSchedulerRoutes } from './interfaces/http/routes/scheduler-routes
 import { createSystemRoutes } from './interfaces/http/routes/system-routes.js';
 import { createWalletRoutes } from './interfaces/http/routes/wallet-routes.js';
 import { createWithdrawRoutes } from './interfaces/http/routes/withdraw-routes.js';
+import { createVirtualWalletRoutes } from './interfaces/http/routes/virtual-wallet-routes.js';
 
 export const createApp = (deps: AppDependencies): express.Express => {
   const app = express();
@@ -45,6 +46,7 @@ export const createApp = (deps: AppDependencies): express.Express => {
   );
   app.use('/api/onchain', createOnchainRoutes(deps.onchainService));
   app.use('/api/deposits', createDepositRoutes(deps.depositService));
+  app.use('/api/virtual-wallets', createVirtualWalletRoutes(deps.virtualWalletService));
   app.use('/api/wallets', createWalletRoutes(deps.walletService));
   app.use('/api/withdrawals', createWithdrawRoutes(deps.withdrawService));
   app.use('/api/scheduler', createSchedulerRoutes(deps.schedulerService));

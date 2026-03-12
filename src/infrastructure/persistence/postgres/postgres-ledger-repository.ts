@@ -784,37 +784,69 @@ export class PostgresLedgerRepository implements LedgerRepository {
     sourceWalletCode: string;
     sourceAddress: string;
     targetAddress: string;
+    currencyId?: number;
+    network?: 'mainnet' | 'testnet';
     amount: bigint;
     externalRef?: string;
     note?: string;
     nowIso?: string;
   }): Promise<SweepRecord> {
-    const row = await this.db
-      .insertInto('sweep_records')
-      .values({
-        sweep_id: randomUUID(),
-        source_wallet_code: input.sourceWalletCode,
-        source_address: input.sourceAddress,
-        target_address: input.targetAddress,
-        amount: formatKoriAmount(input.amount),
-        status: 'planned',
-        external_ref: input.externalRef ?? null,
-        tx_hash: null,
-        note: input.note ?? null,
-        created_at: input.nowIso ?? new Date().toISOString(),
-        broadcasted_at: null,
-        confirmed_at: null
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      await this.lockKey(trx, `sweep-source:${input.sourceAddress}`);
+      if (input.externalRef) {
+        await this.lockKey(trx, `sweep-external-ref:${input.externalRef}`);
+        const duplicated = await trx
+          .selectFrom('sweep_records')
+          .selectAll()
+          .where('external_ref', '=', input.externalRef)
+          .executeTakeFirst();
+        if (duplicated) {
+          return this.mapSweep(duplicated);
+        }
+      }
 
-    return this.mapSweep(row);
+      const row = await trx
+        .insertInto('sweep_records')
+        .values({
+          sweep_id: randomUUID(),
+          source_wallet_code: input.sourceWalletCode,
+          source_address: input.sourceAddress,
+          target_address: input.targetAddress,
+          currency_id: input.currencyId ?? null,
+          network: input.network ?? null,
+          amount: formatKoriAmount(input.amount),
+          status: 'planned',
+          external_ref: input.externalRef ?? null,
+          tx_hash: null,
+          note: input.note ?? null,
+          created_at: nowIso,
+          broadcasted_at: null,
+          confirmed_at: null
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      return this.mapSweep(row);
+    });
   }
 
   async listSweepRecords(limit = 100): Promise<SweepRecord[]> {
     const rows = await this.db
       .selectFrom('sweep_records')
       .selectAll()
+      .orderBy('created_at desc')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => this.mapSweep(row));
+  }
+
+  async listSweepRecordsByStatuses(statuses: SweepRecord['status'][], limit = 100): Promise<SweepRecord[]> {
+    const rows = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('status', 'in', statuses)
       .orderBy('created_at desc')
       .limit(limit)
       .execute();
@@ -832,7 +864,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return row ? this.mapSweep(row) : undefined;
   }
 
-  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+  async markSweepQueued(sweepId: string, note?: string): Promise<SweepRecord> {
     const existing = await this.db
       .selectFrom('sweep_records')
       .selectAll()
@@ -844,6 +876,33 @@ export class PostgresLedgerRepository implements LedgerRepository {
     }
     if (existing.status !== 'planned') {
       throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned');
+    }
+
+    const row = await this.db
+      .updateTable('sweep_records')
+      .set({
+        status: 'queued',
+        note: note ?? existing.note
+      })
+      .where('sweep_id', '=', sweepId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapSweep(row);
+  }
+
+  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    const existing = await this.db
+      .selectFrom('sweep_records')
+      .selectAll()
+      .where('sweep_id', '=', sweepId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
+    }
+    if (!['planned', 'queued'].includes(existing.status)) {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or queued');
     }
 
     const row = await this.db
@@ -899,8 +958,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
     if (!existing) {
       throw new DomainError(404, 'NOT_FOUND', 'sweep not found');
     }
-    if (!['planned', 'broadcasted'].includes(existing.status)) {
-      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+    if (!['planned', 'queued', 'broadcasted'].includes(existing.status)) {
+      throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned, queued or broadcasted');
     }
 
     const row = await this.db
@@ -1197,6 +1256,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
       sourceWalletCode: row.source_wallet_code,
       sourceAddress: row.source_address,
       targetAddress: row.target_address,
+      currencyId: row.currency_id ?? undefined,
+      network: row.network ?? undefined,
       amount: parseStoredKoriAmount(row.amount),
       status: row.status,
       externalRef: row.external_ref ?? undefined,

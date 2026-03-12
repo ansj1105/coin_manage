@@ -76,7 +76,14 @@ describe('sweep bot service', () => {
     };
     const tronGateway = {
       broadcastTransfer: vi.fn(async () => ({ txHash: 'mock-sweep-tx-1' })),
-      getTransactionReceipt: vi.fn(async () => 'confirmed' as const)
+      getTransactionReceipt: vi.fn(async () => 'confirmed' as const),
+      getAccountResources: vi.fn(async () => ({
+        trxBalanceSun: 100_000_000n,
+        energyLimit: 100_000,
+        energyUsed: 0,
+        bandwidthLimit: 10_000,
+        bandwidthUsed: 0
+      }))
     };
     const ledger = new InMemoryLedgerRepository({
       singleLimit: 1_000_000n,
@@ -94,14 +101,100 @@ describe('sweep bot service', () => {
     );
 
     const firstRun = await service.runCycle();
+    expect((firstRun as any).planned).toBe(1);
+    expect((firstRun as any).queued).toBe(1);
     expect((firstRun as any).broadcasted).toBe(1);
+    expect((firstRun as any).confirmed).toBe(1);
     expect(foxyaClient.submitSweep).toHaveBeenCalledOnce();
 
     const secondRun = await service.runCycle();
-    expect((secondRun as any).confirmed).toBe(1);
+    expect((secondRun as any).confirmed).toBe(0);
 
     const stored = await ledger.findSweepByExternalRef('foxya-deposit:deposit-1');
     expect(stored?.status).toBe('confirmed');
     expect(stored?.txHash).toBe('mock-sweep-tx-1');
+  });
+
+  it('keeps sweep queued when source wallet lacks trx or energy', async () => {
+    const { InMemoryDepositMonitorRepository } = await import(
+      '../src/infrastructure/persistence/in-memory-deposit-monitor-repository.js'
+    );
+    const { InMemoryLedgerRepository } = await import('../src/infrastructure/persistence/in-memory-ledger-repository.js');
+    const { AlertService } = await import('../src/application/services/alert-service.js');
+    const { SweepBotService } = await import('../src/application/services/sweep-bot-service.js');
+
+    const depositMonitorRepository = new InMemoryDepositMonitorRepository();
+    await depositMonitorRepository.recordDiscoveredEvent({
+      eventKey: 'mainnet:3:deposit-2:0',
+      depositId: 'deposit-2',
+      userId: 'user-2',
+      currencyId: 3,
+      network: 'TRON',
+      fromAddress: 'T1111111111111111111111111111111112',
+      toAddress: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9j',
+      txHash: 'deposit-tx-2',
+      eventIndex: 0,
+      blockNumber: 101,
+      blockTimestampMs: Date.now(),
+      amountRaw: '1500000',
+      amountDecimal: '1.500000',
+      status: 'completed',
+      foxyaRegisteredAt: new Date().toISOString(),
+      foxyaCompletedAt: new Date().toISOString()
+    });
+
+    const foxyaClient = {
+      getDeposit: vi.fn(async () => ({
+        depositId: 'deposit-2',
+        status: 'COMPLETED'
+      })),
+      submitSweep: vi.fn(),
+      failSweep: vi.fn(),
+      listWatchAddresses: vi.fn(),
+      registerDeposit: vi.fn(),
+      completeDeposit: vi.fn()
+    };
+    const foxyaWalletRepository = {
+      getWalletSignerByAddress: vi.fn(async () => ({
+        userId: 'user-2',
+        currencyId: 3,
+        address: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9j',
+        privateKey: 'test-deposit-wallet-private-key-2'
+      }))
+    };
+    const tronGateway = {
+      broadcastTransfer: vi.fn(async () => ({ txHash: 'should-not-broadcast' })),
+      getTransactionReceipt: vi.fn(async () => 'pending' as const),
+      getAccountResources: vi.fn(async () => ({
+        trxBalanceSun: 1_000_000n,
+        energyLimit: 1000,
+        energyUsed: 500,
+        bandwidthLimit: 1000,
+        bandwidthUsed: 0
+      }))
+    };
+    const ledger = new InMemoryLedgerRepository({
+      singleLimit: 1_000_000n,
+      dailyLimit: 10_000_000n
+    });
+
+    const service = new SweepBotService(
+      depositMonitorRepository,
+      foxyaClient as any,
+      foxyaWalletRepository as any,
+      ledger,
+      tronGateway as any,
+      new AlertService(),
+      true
+    );
+
+    const run = await service.runCycle();
+    expect((run as any).planned).toBe(1);
+    expect((run as any).queued).toBe(1);
+    expect((run as any).broadcasted).toBe(0);
+    expect(foxyaClient.submitSweep).not.toHaveBeenCalled();
+
+    const stored = await ledger.findSweepByExternalRef('foxya-deposit:deposit-2');
+    expect(stored?.status).toBe('queued');
   });
 });

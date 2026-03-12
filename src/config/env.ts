@@ -50,6 +50,8 @@ const schema = z.object({
   HOT_WALLET_PRIVATE_KEY: z.string().optional(),
   HOT_WALLET_ALERT_MIN_KORI: z.coerce.number().positive().default(1000),
   HOT_WALLET_ALERT_MIN_TRX: z.coerce.number().positive().default(100),
+  SWEEP_SOURCE_MIN_TRX: z.coerce.number().nonnegative().default(25),
+  SWEEP_SOURCE_MIN_ENERGY: z.coerce.number().int().nonnegative().default(15000),
   SWEEP_PLAN_MIN_KORI: z.coerce.number().positive().default(1),
   SWEEP_BOT_ENABLED: optionalBooleanString,
   SWEEP_BOT_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
@@ -64,12 +66,14 @@ const schema = z.object({
   DEPOSIT_MONITOR_CURRENCY_IDS: z.string().optional(),
   FOXYA_INTERNAL_API_URL: optionalUrlString,
   FOXYA_INTERNAL_API_KEY: z.string().optional(),
+  FOXYA_INTERNAL_WALLET_API_URL: optionalUrlString,
   FOXYA_DB_HOST: z.string().optional(),
   FOXYA_DB_PORT: z.coerce.number().int().positive().default(5432),
   FOXYA_DB_NAME: z.string().optional(),
   FOXYA_DB_USER: z.string().optional(),
   FOXYA_DB_PASSWORD: z.string().optional(),
   FOXYA_ENCRYPTION_KEY: z.string().optional(),
+  VIRTUAL_WALLET_ENCRYPTION_KEY: z.string().optional(),
   ALERT_MONITOR_ENABLED: optionalBooleanString,
   ALERT_MONITOR_POLL_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
   ALERT_MONITOR_EVENT_LIMIT: z.coerce.number().int().positive().max(500).default(100),
@@ -134,6 +138,12 @@ if (parsed.NODE_ENV === 'production') {
   if (!parsed.HOT_WALLET_PRIVATE_KEY || PLACEHOLDER_SECRETS.has(parsed.HOT_WALLET_PRIVATE_KEY)) {
     throw new Error('HOT_WALLET_PRIVATE_KEY is required in production');
   }
+  if (
+    !parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ||
+    PLACEHOLDER_SECRETS.has(parsed.VIRTUAL_WALLET_ENCRYPTION_KEY)
+  ) {
+    throw new Error('VIRTUAL_WALLET_ENCRYPTION_KEY is required in production');
+  }
 }
 
 if (parsed.TRON_GATEWAY_MODE === 'trc20' && !parsed.KORI_TOKEN_CONTRACT_ADDRESS) {
@@ -178,6 +188,8 @@ export const env = Object.freeze({
   hotWalletPrivateKey: parsed.HOT_WALLET_PRIVATE_KEY ?? 'dev-only-private-key-change-me',
   hotWalletAlertMinKori: parsed.HOT_WALLET_ALERT_MIN_KORI,
   hotWalletAlertMinTrx: parsed.HOT_WALLET_ALERT_MIN_TRX,
+  sweepSourceMinTrx: parsed.SWEEP_SOURCE_MIN_TRX,
+  sweepSourceMinEnergy: parsed.SWEEP_SOURCE_MIN_ENERGY,
   sweepPlanMinKori: parsed.SWEEP_PLAN_MIN_KORI,
   sweepBotEnabled: parsed.SWEEP_BOT_ENABLED !== undefined ? parsed.SWEEP_BOT_ENABLED === 'true' : false,
   sweepBotPollIntervalSec: parsed.SWEEP_BOT_POLL_INTERVAL_SEC,
@@ -198,6 +210,7 @@ export const env = Object.freeze({
     .filter((item) => Number.isInteger(item) && item > 0),
   foxyaInternalApiUrl: parsed.FOXYA_INTERNAL_API_URL,
   foxyaInternalApiKey: parsed.FOXYA_INTERNAL_API_KEY,
+  foxyaInternalWalletApiUrl: parsed.FOXYA_INTERNAL_WALLET_API_URL,
   foxyaDb:
     parsed.FOXYA_DB_HOST && parsed.FOXYA_DB_NAME && parsed.FOXYA_DB_USER
       ? {
@@ -209,6 +222,7 @@ export const env = Object.freeze({
           encryptionKey: parsed.FOXYA_ENCRYPTION_KEY
         }
       : undefined,
+  virtualWalletEncryptionKey: parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ?? 'dev-only-secret-change-me',
   alertMonitor: {
     enabled: parsed.ALERT_MONITOR_ENABLED !== undefined ? parsed.ALERT_MONITOR_ENABLED === 'true' : false,
     pollIntervalSec: parsed.ALERT_MONITOR_POLL_INTERVAL_SEC,

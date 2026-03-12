@@ -545,6 +545,8 @@ export class InMemoryLedger {
     sourceWalletCode: string;
     sourceAddress: string;
     targetAddress: string;
+    currencyId?: number;
+    network?: 'mainnet' | 'testnet';
     amount: bigint;
     externalRef?: string;
     note?: string;
@@ -556,6 +558,8 @@ export class InMemoryLedger {
         sourceWalletCode: input.sourceWalletCode,
         sourceAddress: input.sourceAddress,
         targetAddress: input.targetAddress,
+        currencyId: input.currencyId,
+        network: input.network,
         amount: input.amount,
         status: 'planned',
         externalRef: input.externalRef,
@@ -574,16 +578,37 @@ export class InMemoryLedger {
       .map((sweep) => this.cloneSweep(sweep));
   }
 
+  async listSweepRecordsByStatuses(statuses: SweepRecord['status'][], limit = 100): Promise<SweepRecord[]> {
+    const statusSet = new Set(statuses);
+    return Array.from(this.sweepRecords.values())
+      .filter((sweep) => statusSet.has(sweep.status))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit)
+      .map((sweep) => this.cloneSweep(sweep));
+  }
+
   async findSweepByExternalRef(externalRef: string): Promise<SweepRecord | undefined> {
     const found = Array.from(this.sweepRecords.values()).find((sweep) => sweep.externalRef === externalRef);
     return found ? this.cloneSweep(found) : undefined;
   }
 
-  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+  async markSweepQueued(sweepId: string, note?: string, _nowIso = new Date().toISOString()): Promise<SweepRecord> {
     return this.withLock(() => {
       const sweep = this.getMutableSweep(sweepId);
       if (sweep.status !== 'planned') {
         throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned');
+      }
+      sweep.status = 'queued';
+      sweep.note = note ?? sweep.note;
+      return this.cloneSweep(sweep);
+    });
+  }
+
+  async markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+    return this.withLock(() => {
+      const sweep = this.getMutableSweep(sweepId);
+      if (!['planned', 'queued'].includes(sweep.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or queued');
       }
       sweep.status = 'broadcasted';
       sweep.txHash = txHash;
@@ -609,8 +634,8 @@ export class InMemoryLedger {
   async failSweep(sweepId: string, reason: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
     return this.withLock(() => {
       const sweep = this.getMutableSweep(sweepId);
-      if (!['planned', 'broadcasted'].includes(sweep.status)) {
-        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
+      if (!['planned', 'queued', 'broadcasted'].includes(sweep.status)) {
+        throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned, queued or broadcasted');
       }
       sweep.status = 'failed';
       sweep.note = reason;

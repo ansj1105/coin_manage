@@ -11,6 +11,23 @@ export interface WalletAddressBindingsTable {
   created_at: string;
 }
 
+export interface VirtualWalletBindingsTable {
+  virtual_wallet_id: string;
+  user_id: string;
+  currency_id: number;
+  network: 'mainnet' | 'testnet';
+  wallet_address: string;
+  encrypted_private_key: string;
+  sweep_target_address: string;
+  issued_by: 'hot_wallet';
+  idempotency_key: string;
+  status: 'active' | 'retired' | 'disabled';
+  created_at: string;
+  retired_at: string | null;
+  disabled_at: string | null;
+  replaced_by_virtual_wallet_id: string | null;
+}
+
 export interface TransactionsTable {
   tx_id: string;
   user_id: string;
@@ -91,8 +108,10 @@ export interface SweepRecordsTable {
   source_wallet_code: string;
   source_address: string;
   target_address: string;
+  currency_id: number | null;
+  network: 'mainnet' | 'testnet' | null;
   amount: string;
-  status: 'planned' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
+  status: 'planned' | 'queued' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
   external_ref: string | null;
   tx_hash: string | null;
   note: string | null;
@@ -201,6 +220,7 @@ export interface HealthCheckStatesTable {
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
+  virtual_wallet_bindings: VirtualWalletBindingsTable;
   transactions: TransactionsTable;
   deposits: DepositsTable;
   withdrawals: WithdrawalsTable;

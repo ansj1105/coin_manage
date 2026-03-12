@@ -67,6 +67,30 @@ export class TronWebTrc20Gateway implements TronGateway {
     return 'confirmed';
   }
 
+  async getAccountResources(address: string, network?: 'mainnet' | 'testnet'): Promise<{
+    trxBalanceSun: bigint;
+    energyLimit: number;
+    energyUsed: number;
+    bandwidthLimit: number;
+    bandwidthUsed: number;
+  }> {
+    const apiUrl = network ? getBlockchainNetworkConfig(network).tronApiUrl : getEffectiveTronApiUrl();
+    const tronWeb = this.createTronWeb(apiUrl);
+    const [balance, rawResources] = await Promise.all([
+      tronWeb.trx.getBalance(address),
+      tronWeb.trx.getAccountResources(address).catch(() => ({}))
+    ]);
+    const resources = rawResources as Record<string, number | string | undefined>;
+
+    return {
+      trxBalanceSun: BigInt(balance ?? 0),
+      energyLimit: Number(resources.EnergyLimit ?? 0),
+      energyUsed: Number(resources.EnergyUsed ?? 0),
+      bandwidthLimit: Number(resources.freeNetLimit ?? resources.NetLimit ?? 0),
+      bandwidthUsed: Number(resources.freeNetUsed ?? resources.NetUsed ?? 0)
+    };
+  }
+
   private createTronWeb(fullHost: string, privateKey = env.hotWalletPrivateKey, fromAddress = env.hotWalletAddress) {
     const tronWeb = new TronWeb({
       fullHost,

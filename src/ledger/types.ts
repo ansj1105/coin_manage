@@ -114,13 +114,15 @@ export interface AuditLog {
   createdAt: string;
 }
 
-export type SweepStatus = 'planned' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
+export type SweepStatus = 'planned' | 'queued' | 'broadcasted' | 'confirmed' | 'failed' | 'skipped';
 
 export interface SweepRecord {
   sweepId: string;
   sourceWalletCode: string;
   sourceAddress: string;
   targetAddress: string;
+  currencyId?: number;
+  network?: 'mainnet' | 'testnet';
   amount: bigint;
   status: SweepStatus;
   externalRef?: string;

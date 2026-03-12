@@ -15,6 +15,7 @@ import { OperationsService } from '../application/services/operations-service.js
 import { SchedulerService } from '../application/services/scheduler-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
 import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
+import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
@@ -23,6 +24,7 @@ import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-ev
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
 import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-internal-deposit-client.js';
+import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
 import { PostgresFoxyaAlertSourceRepository } from '../infrastructure/integration/foxya-alert-source-repository.js';
 import { PostgresFoxyaWalletRepository } from '../infrastructure/integration/foxya-wallet-repository.js';
 import { TelegramAlertNotifier } from '../infrastructure/notifications/telegram-alert-notifier.js';
@@ -30,11 +32,14 @@ import { InMemoryAlertMonitorStateRepository } from '../infrastructure/persisten
 import { InMemoryDepositMonitorRepository } from '../infrastructure/persistence/in-memory-deposit-monitor-repository.js';
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
 import { InMemoryMonitoringRepository } from '../infrastructure/persistence/in-memory-monitoring-repository.js';
+import { InMemoryVirtualWalletRepository } from '../infrastructure/persistence/in-memory-virtual-wallet-repository.js';
 import { PostgresAlertMonitorStateRepository } from '../infrastructure/persistence/postgres/postgres-alert-monitor-state-repository.js';
 import { PostgresDepositMonitorRepository } from '../infrastructure/persistence/postgres/postgres-deposit-monitor-repository.js';
 import { PostgresMonitoringRepository } from '../infrastructure/persistence/postgres/postgres-monitoring-repository.js';
 import { PostgresLedgerRepository } from '../infrastructure/persistence/postgres/postgres-ledger-repository.js';
+import { PostgresVirtualWalletRepository } from '../infrastructure/persistence/postgres/postgres-virtual-wallet-repository.js';
 import { createPostgresDb, createPostgresPool } from '../infrastructure/persistence/postgres/postgres-pool.js';
+import { AesGcmVirtualWalletKeyCipher } from '../infrastructure/security/virtual-wallet-key-cipher.js';
 import type { BlockchainReader } from '../application/ports/blockchain-reader.js';
 import type { TronGateway } from '../application/ports/tron-gateway.js';
 import type { AppDependencies } from './app-dependencies.js';
@@ -56,14 +61,17 @@ const createPersistence = () => {
     const db = createPostgresDb(pool);
     return {
       ledger: new PostgresLedgerRepository(db, limits),
+      virtualWalletRepository: new PostgresVirtualWalletRepository(db, env.virtualWalletEncryptionKey),
       monitoringRepository: new PostgresMonitoringRepository(db),
       depositMonitorRepository: new PostgresDepositMonitorRepository(db),
       alertMonitorStateRepository: new PostgresAlertMonitorStateRepository(db)
     };
   }
 
+  const ledger = new InMemoryLedgerRepository(limits);
   return {
-    ledger: new InMemoryLedgerRepository(limits),
+    ledger,
+    virtualWalletRepository: new InMemoryVirtualWalletRepository(ledger),
     monitoringRepository: new InMemoryMonitoringRepository(),
     depositMonitorRepository: new InMemoryDepositMonitorRepository(),
     alertMonitorStateRepository: new InMemoryAlertMonitorStateRepository()
@@ -74,9 +82,22 @@ const createTronGateway = () => {
   return env.tronGatewayMode === 'trc20' ? new TronWebTrc20Gateway() : new MockTronGateway();
 };
 
+const resolveFoxyaInternalWalletApiUrl = () => {
+  if (env.foxyaInternalWalletApiUrl) {
+    return env.foxyaInternalWalletApiUrl;
+  }
+
+  if (!env.foxyaInternalApiUrl) {
+    return undefined;
+  }
+
+  return env.foxyaInternalApiUrl.replace(/\/deposits\/?$/, '/wallets');
+};
+
 export const createAppDependencies = (overrides: AppDependencyOverrides = {}): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
-  const { ledger, monitoringRepository, depositMonitorRepository, alertMonitorStateRepository } = createPersistence();
+  const { ledger, virtualWalletRepository, monitoringRepository, depositMonitorRepository, alertMonitorStateRepository } =
+    createPersistence();
   const tronGateway = overrides.tronGateway ?? createTronGateway();
   const blockchainReader = overrides.blockchainReader ?? new TronWalletReader();
   const alertNotifier = env.telegram ? new TelegramAlertNotifier(env.telegram.botToken, env.telegram.chatId) : undefined;
@@ -104,6 +125,10 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const foxyaClient =
     env.foxyaInternalApiUrl && env.foxyaInternalApiKey
       ? new FoxyaInternalDepositClient(env.foxyaInternalApiUrl, env.foxyaInternalApiKey)
+      : undefined;
+  const foxyaWalletSyncClient =
+    resolveFoxyaInternalWalletApiUrl() && env.foxyaInternalApiKey
+      ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
   const foxyaWalletRepository =
     env.foxyaDb?.encryptionKey && env.foxyaDb.host && env.foxyaDb.name && env.foxyaDb.user
@@ -137,6 +162,13 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     depositMonitorService,
     alertService,
     env.depositMonitorPollIntervalSec * 1000
+  );
+  const virtualWalletService = new VirtualWalletService(
+    virtualWalletRepository,
+    new AesGcmVirtualWalletKeyCipher(env.virtualWalletEncryptionKey),
+    env.hotWalletAddress,
+    undefined,
+    foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
   const withdrawService = new WithdrawService(ledger, eventPublisher, tronGateway);
@@ -186,6 +218,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     monitoringWorker,
     alertWorker,
     depositService,
+    virtualWalletService,
     walletService,
     withdrawService,
     schedulerService,

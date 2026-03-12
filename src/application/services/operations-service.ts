@@ -71,7 +71,7 @@ export class OperationsService {
 
     const activeSources = new Set(
       existingSweeps
-        .filter((sweep) => ['planned', 'broadcasted'].includes(sweep.status))
+        .filter((sweep) => ['planned', 'queued', 'broadcasted'].includes(sweep.status))
         .map((sweep) => sweep.sourceWalletCode)
     );
     const minAmount = parseKoriAmount(env.sweepPlanMinKori);

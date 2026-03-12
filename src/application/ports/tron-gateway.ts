@@ -12,7 +12,16 @@ export interface BroadcastRequest {
 
 export type TronReceiptStatus = 'pending' | 'confirmed' | 'failed';
 
+export interface TronAccountResources {
+  trxBalanceSun: bigint;
+  energyLimit: number;
+  energyUsed: number;
+  bandwidthLimit: number;
+  bandwidthUsed: number;
+}
+
 export interface TronGateway {
   broadcastTransfer(request: BroadcastRequest): Promise<{ txHash: string }>;
   getTransactionReceipt(txHash: string): Promise<TronReceiptStatus>;
+  getAccountResources(address: string, network?: BlockchainNetwork): Promise<TronAccountResources>;
 }
