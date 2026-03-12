@@ -1,7 +1,8 @@
+import { env } from '../../config/env.js';
 import type { AlertNotifier } from '../ports/alert-notifier.js';
 
 export class AlertService {
-  private readonly lastSentByKey = new Map<string, string>();
+  private readonly lastSentByKey = new Map<string, { signature: string; sentAtMs: number }>();
 
   constructor(private readonly notifier?: AlertNotifier) {}
 
@@ -25,7 +26,8 @@ export class AlertService {
     await this.send({
       title: '[KORION] Hot Wallet Alert',
       body: [`alerts=${input.alerts.join(',')}`, `kori=${input.hotWalletBalance}`, `trx=${input.hotWalletTrx}`].join('\n'),
-      dedupeKey: 'reconciliation'
+      dedupeKey: 'reconciliation',
+      cooldownSec: env.hotWalletAlertCooldownSec
     });
   }
 
@@ -126,14 +128,26 @@ export class AlertService {
     });
   }
 
-  private async send(input: { title: string; body: string; dedupeKey?: string }) {
+  private async send(input: { title: string; body: string; dedupeKey?: string; cooldownSec?: number }) {
     if (!this.notifier) {
       return;
     }
 
     const signature = `${input.title}\n${input.body}`;
-    if (input.dedupeKey && this.lastSentByKey.get(input.dedupeKey) === signature) {
-      return;
+    const nowMs = Date.now();
+    if (input.dedupeKey) {
+      const previous = this.lastSentByKey.get(input.dedupeKey);
+      if (
+        previous &&
+        previous.signature === signature &&
+        input.cooldownSec !== undefined &&
+        nowMs - previous.sentAtMs < input.cooldownSec * 1000
+      ) {
+        return;
+      }
+      if (previous && previous.signature === signature && input.cooldownSec === undefined) {
+        return;
+      }
     }
 
     await this.notifier.sendMessage({
@@ -143,7 +157,10 @@ export class AlertService {
     });
 
     if (input.dedupeKey) {
-      this.lastSentByKey.set(input.dedupeKey, signature);
+      this.lastSentByKey.set(input.dedupeKey, {
+        signature,
+        sentAtMs: nowMs
+      });
     }
   }
 }

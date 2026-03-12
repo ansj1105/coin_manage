@@ -16,7 +16,7 @@ beforeEach(() => {
 describe('OnchainService', () => {
   it('looks up address balances on the selected network', async () => {
     reader.getWalletMonitoringSnapshot.mockResolvedValue({
-      address: 'TYKL8DPoR99bccujHXxcyBewCV1NimdRc8',
+      address: 'TEcBR2zfPGCLGsoGpMFLpGTEwsC8jB72Hf',
       tokenSymbol: 'KORI',
       tokenContractAddress: 'TPKZnRjJngnxVgxw52pMPSrCp2wGm7iT9W',
       tokenBalance: '10',
@@ -31,11 +31,11 @@ describe('OnchainService', () => {
     const service = new OnchainService(reader as any, gateway as any);
     const payload = await service.lookupBalance({
       network: 'testnet',
-      address: 'TYKL8DPoR99bccujHXxcyBewCV1NimdRc8'
+      address: 'TEcBR2zfPGCLGsoGpMFLpGTEwsC8jB72Hf'
     });
 
     expect(payload.network).toBe('testnet');
-    expect(payload.wallet.address).toBe('TYKL8DPoR99bccujHXxcyBewCV1NimdRc8');
+    expect(payload.wallet.address).toBe('TEcBR2zfPGCLGsoGpMFLpGTEwsC8jB72Hf');
     expect(reader.getWalletMonitoringSnapshot).toHaveBeenCalledOnce();
   });
 
