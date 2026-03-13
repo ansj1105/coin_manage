@@ -166,7 +166,12 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
         )
       : undefined;
   const virtualWalletLifecyclePolicy = new VirtualWalletLifecyclePolicyService(virtualWalletRepository);
-  const activationGrantService = new ActivationGrantService(virtualWalletRepository, tronGateway, alertService);
+  const activationGrantService = new ActivationGrantService(
+    virtualWalletRepository,
+    tronGateway,
+    alertService,
+    foxyaWalletSyncClient
+  );
   const activationGrantWorker = new ActivationGrantWorker(
     activationGrantService,
     alertService,

@@ -129,7 +129,8 @@ export class VirtualWalletService {
         currencyId: issued.binding.currencyId,
         network: issued.binding.network,
         address: signer.address,
-        privateKey: signer.privateKey
+        privateKey: signer.privateKey,
+        verified: false
       });
     }
 

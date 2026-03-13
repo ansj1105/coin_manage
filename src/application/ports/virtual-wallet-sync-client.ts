@@ -4,6 +4,7 @@ export interface VirtualWalletSyncClient {
     currencyId: number;
     network: 'mainnet' | 'testnet';
     address: string;
-    privateKey: string;
+    privateKey?: string;
+    verified?: boolean;
   }): Promise<void>;
 }

@@ -1,6 +1,7 @@
 import { env } from '../../config/env.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
 import type { VirtualWalletRepository } from '../ports/virtual-wallet-repository.js';
+import type { VirtualWalletSyncClient } from '../ports/virtual-wallet-sync-client.js';
 import { AlertService } from './alert-service.js';
 
 const TRX_SUN = 1_000_000n;
@@ -16,6 +17,7 @@ export class ActivationGrantService {
     private readonly virtualWalletRepository: VirtualWalletRepository,
     private readonly tronGateway: TronGateway,
     private readonly alertService: AlertService,
+    private readonly syncClient?: VirtualWalletSyncClient,
     private readonly options: ActivationGrantOptions = {
       enabled: env.activationGrantEnabled,
       cycleLimit: env.activationGrantCycleLimit,
@@ -47,6 +49,22 @@ export class ActivationGrantService {
           virtualWalletId: binding.virtualWalletId,
           txHash
         });
+        if (this.syncClient) {
+          this.syncClient
+            .syncVirtualWallet({
+              userId: binding.userId,
+              currencyId: binding.currencyId,
+              network: binding.network,
+              address: binding.walletAddress,
+              verified: true
+            })
+            .catch((syncError) => {
+              const message = syncError instanceof Error ? syncError.message : 'wallet verification sync failed';
+              void this.alertService.notifyExternalMonitorFailure(
+                `wallet verification sync failed for ${binding.walletAddress}: ${message}`
+              );
+            });
+        }
         granted.push(binding.virtualWalletId);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'activation grant failed';

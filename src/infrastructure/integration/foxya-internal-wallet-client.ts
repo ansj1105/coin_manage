@@ -20,7 +20,8 @@ export class FoxyaInternalWalletClient implements VirtualWalletSyncClient {
         userId: Number(input.userId),
         currencyId: input.currencyId,
         address: input.address,
-        privateKey: input.privateKey,
+        ...(input.privateKey ? { privateKey: input.privateKey } : {}),
+        ...(input.verified !== undefined ? { verified: input.verified } : {}),
         network: input.network
       }),
       signal: AbortSignal.timeout(15000)
