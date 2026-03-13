@@ -4,6 +4,7 @@ import { DepositMonitorService } from '../application/services/deposit-monitor-s
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
@@ -39,6 +40,7 @@ export interface AppDependencies {
   depositService: DepositService;
   virtualWalletService: VirtualWalletService;
   walletService: WalletService;
+  accountReconciliationService: AccountReconciliationService;
   withdrawService: WithdrawService;
   schedulerService: SchedulerService;
   operationsService: OperationsService;

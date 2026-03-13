@@ -1,5 +1,6 @@
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
+import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
@@ -172,6 +173,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   );
   const walletService = new WalletService(ledger, eventPublisher);
   const withdrawService = new WithdrawService(ledger, eventPublisher, tronGateway);
+  const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
   const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher);
   const operationsService = new OperationsService(ledger, systemMonitoringService);
   const sweepBotService = new SweepBotService(
@@ -220,6 +222,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     depositService,
     virtualWalletService,
     walletService,
+    accountReconciliationService,
     withdrawService,
     schedulerService,
     operationsService

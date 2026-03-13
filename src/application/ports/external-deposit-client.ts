@@ -2,7 +2,7 @@ import type { DepositWatchAddress, ExternalDepositRecord } from '../../domain/de
 
 export interface RegisterExternalDepositRequest {
   depositId: string;
-  userId: string;
+  userId: string | number;
   currencyId: number;
   amount: string;
   network: string;

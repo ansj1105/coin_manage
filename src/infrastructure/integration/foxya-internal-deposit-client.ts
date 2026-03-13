@@ -30,7 +30,10 @@ export class FoxyaInternalDepositClient implements ExternalDepositClient {
       return await this.request<ExternalDepositRecord>({
         method: 'POST',
         path: '/register',
-        body: input
+        body: {
+          ...input,
+          userId: Number(input.userId)
+        }
       });
     } catch (error) {
       const existing = await this.getDeposit(input.depositId);

@@ -47,7 +47,7 @@ export const createApp = (deps: AppDependencies): express.Express => {
   app.use('/api/onchain', createOnchainRoutes(deps.onchainService));
   app.use('/api/deposits', createDepositRoutes(deps.depositService));
   app.use('/api/virtual-wallets', createVirtualWalletRoutes(deps.virtualWalletService));
-  app.use('/api/wallets', createWalletRoutes(deps.walletService));
+  app.use('/api/wallets', createWalletRoutes(deps.walletService, deps.accountReconciliationService));
   app.use('/api/withdrawals', createWithdrawRoutes(deps.withdrawService));
   app.use('/api/scheduler', createSchedulerRoutes(deps.schedulerService));
 

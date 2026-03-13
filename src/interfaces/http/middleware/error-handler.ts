@@ -20,6 +20,11 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
   } else if (isDomainError(error)) {
     targetError = error;
   } else {
+    console.error('Unhandled request error', {
+      method: _req.method,
+      path: _req.originalUrl,
+      error
+    });
     targetError = new DomainError(500, 'INTERNAL_ERROR', 'internal server error');
   }
 
