@@ -14,6 +14,8 @@ import { ActivationGrantService } from '../application/services/activation-grant
 import { ActivationGrantWorker } from '../application/services/activation-grant-worker.js';
 import { ActivationReclaimService } from '../application/services/activation-reclaim-service.js';
 import { ActivationReclaimWorker } from '../application/services/activation-reclaim-worker.js';
+import { ResourceDelegationService } from '../application/services/resource-delegation-service.js';
+import { ResourceDelegationWorker } from '../application/services/resource-delegation-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
 import { OperationsService } from '../application/services/operations-service.js';
@@ -176,6 +178,17 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertService,
     env.activationReclaimIntervalSec * 1000
   );
+  const resourceDelegationService = new ResourceDelegationService(
+    ledger,
+    virtualWalletRepository,
+    tronGateway,
+    alertService
+  );
+  const resourceDelegationWorker = new ResourceDelegationWorker(
+    resourceDelegationService,
+    alertService,
+    env.resourceDelegationIntervalSec * 1000
+  );
   const depositMonitorService = new DepositMonitorService(
     depositMonitorRepository,
     foxyaClient,
@@ -238,6 +251,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     activationGrantWorker,
     activationReclaimService,
     activationReclaimWorker,
+    resourceDelegationService,
+    resourceDelegationWorker,
     externalAlertMonitorService,
     externalAlertMonitorWorker,
     systemMonitoringService,

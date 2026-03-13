@@ -155,6 +155,50 @@ export class AlertService {
     });
   }
 
+  async notifyResourceDelegationWaiting(input: {
+    userId: string;
+    walletAddress: string;
+    resource: 'BANDWIDTH' | 'ENERGY';
+    requiredSun: string;
+    availableSun: string;
+  }) {
+    await this.send({
+      title: '[KORION] Resource Delegation Waiting',
+      body: [
+        `userId=${input.userId}`,
+        `walletAddress=${input.walletAddress}`,
+        `resource=${input.resource}`,
+        `requiredSun=${input.requiredSun}`,
+        `availableSun=${input.availableSun}`
+      ].join('\n'),
+      dedupeKey: `resource-delegation-waiting:${input.userId}:${input.walletAddress}:${input.resource}`
+    });
+  }
+
+  async notifyResourceDelegationFailure(input: {
+    userId: string;
+    walletAddress: string;
+    message: string;
+  }) {
+    await this.send({
+      title: '[KORION] Resource Delegation Failed',
+      body: [`userId=${input.userId}`, `walletAddress=${input.walletAddress}`, `error=${input.message}`].join('\n'),
+      dedupeKey: `resource-delegation-failed:${input.userId}:${input.walletAddress}:${input.message}`
+    });
+  }
+
+  async notifyResourceReleaseFailure(input: {
+    userId: string;
+    walletAddress: string;
+    message: string;
+  }) {
+    await this.send({
+      title: '[KORION] Resource Release Failed',
+      body: [`userId=${input.userId}`, `walletAddress=${input.walletAddress}`, `error=${input.message}`].join('\n'),
+      dedupeKey: `resource-release-failed:${input.userId}:${input.walletAddress}:${input.message}`
+    });
+  }
+
   async notifyExternalEvent(input: { title: string; bodyLines: string[]; dedupeKey: string }) {
     await this.send({
       title: input.title,

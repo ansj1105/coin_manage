@@ -21,6 +21,10 @@ if (env.activationReclaimEnabled) {
   deps.activationReclaimWorker.start();
 }
 
+if (env.resourceDelegationEnabled) {
+  deps.resourceDelegationWorker.start();
+}
+
 if (env.sweepBotEnabled) {
   deps.sweepBotWorker.start();
 }

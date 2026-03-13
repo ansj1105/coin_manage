@@ -30,6 +30,7 @@ export interface VirtualWalletRepository {
     status: VirtualWalletBinding['activationStatus'],
     limit?: number
   ): Promise<VirtualWalletBinding[]>;
+  markResourceDelegatePending(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   markActivationGranted(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   markActivationReclaimed(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;

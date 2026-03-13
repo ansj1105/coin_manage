@@ -372,6 +372,13 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
     });
   }
 
+  async markResourceDelegatePending(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      resource_status: 'delegate_pending',
+      resource_last_error: null
+    });
+  }
+
   async markResourceDelegated(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding> {
     return this.updateLifecycle(input.virtualWalletId, {
       resource_status: 'delegated',

@@ -208,6 +208,13 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
     return this.toPublicBinding(binding);
   }
 
+  async markResourceDelegatePending(input: { virtualWalletId: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.resourceStatus = 'delegate_pending';
+    binding.resourceLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
   async markResourceDelegated(input: { virtualWalletId: string; nowIso?: string }) {
     const binding = this.requireBinding(input.virtualWalletId);
     binding.resourceStatus = 'delegated';

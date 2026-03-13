@@ -69,6 +69,10 @@ export class VirtualWalletService {
     return this.repository.markActivationFailed(input);
   }
 
+  async markResourceDelegatePending(input: { virtualWalletId: string }) {
+    return this.repository.markResourceDelegatePending(input);
+  }
+
   async markResourceDelegated(input: { virtualWalletId: string }) {
     return this.repository.markResourceDelegated(input);
   }
