@@ -101,6 +101,10 @@ export class FoxyaInternalDepositClient implements ExternalDepositClient {
       throw new DomainError(response.status, 'FOXYA_INTERNAL_API_ERROR', message || 'foxya internal api request failed');
     }
 
-    return (await response.json()) as T;
+    const payload = (await response.json()) as T | { data?: T };
+    if (payload && typeof payload === 'object' && 'data' in payload) {
+      return payload.data as T;
+    }
+    return payload as T;
   }
 }
