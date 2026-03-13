@@ -4,6 +4,8 @@ import { DepositMonitorService } from '../application/services/deposit-monitor-s
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
 import { ActivationGrantService } from '../application/services/activation-grant-service.js';
 import { ActivationGrantWorker } from '../application/services/activation-grant-worker.js';
+import { ActivationReclaimService } from '../application/services/activation-reclaim-service.js';
+import { ActivationReclaimWorker } from '../application/services/activation-reclaim-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
@@ -32,6 +34,8 @@ export interface AppDependencies {
   alertService: AlertService;
   activationGrantService: ActivationGrantService;
   activationGrantWorker: ActivationGrantWorker;
+  activationReclaimService: ActivationReclaimService;
+  activationReclaimWorker: ActivationReclaimWorker;
   externalAlertMonitorService: ExternalAlertMonitorService;
   externalAlertMonitorWorker: ExternalAlertMonitorWorker;
   systemMonitoringService: SystemMonitoringService;

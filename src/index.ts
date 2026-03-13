@@ -17,6 +17,10 @@ if (env.activationGrantEnabled) {
   deps.activationGrantWorker.start();
 }
 
+if (env.activationReclaimEnabled) {
+  deps.activationReclaimWorker.start();
+}
+
 if (env.sweepBotEnabled) {
   deps.sweepBotWorker.start();
 }

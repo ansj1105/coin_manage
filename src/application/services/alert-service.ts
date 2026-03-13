@@ -121,6 +121,40 @@ export class AlertService {
     });
   }
 
+  async notifyActivationReclaimWaiting(input: {
+    userId: string;
+    walletAddress: string;
+    availableBandwidth: number;
+    trxBalanceSun: string;
+    requiredBandwidth: number;
+    requiredTrxSun: string;
+  }) {
+    await this.send({
+      title: '[KORION] Activation Reclaim Waiting',
+      body: [
+        `userId=${input.userId}`,
+        `walletAddress=${input.walletAddress}`,
+        `availableBandwidth=${input.availableBandwidth}`,
+        `trxBalanceSun=${input.trxBalanceSun}`,
+        `requiredBandwidth=${input.requiredBandwidth}`,
+        `requiredTrxSun=${input.requiredTrxSun}`
+      ].join('\n'),
+      dedupeKey: `activation-reclaim-waiting:${input.userId}:${input.walletAddress}`
+    });
+  }
+
+  async notifyActivationReclaimFailure(input: {
+    userId: string;
+    walletAddress: string;
+    message: string;
+  }) {
+    await this.send({
+      title: '[KORION] Activation Reclaim Failed',
+      body: [`userId=${input.userId}`, `walletAddress=${input.walletAddress}`, `error=${input.message}`].join('\n'),
+      dedupeKey: `activation-reclaim-failed:${input.userId}:${input.walletAddress}:${input.message}`
+    });
+  }
+
   async notifyExternalEvent(input: { title: string; bodyLines: string[]; dedupeKey: string }) {
     await this.send({
       title: input.title,
