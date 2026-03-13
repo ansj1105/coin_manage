@@ -81,10 +81,9 @@ foxya 백엔드와 자동 입금 연동을 사용하려면:
 APP_DEPOSIT_MONITOR_ENABLED=true
 APP_DEPOSIT_MONITOR_NETWORK=mainnet
 APP_DEPOSIT_MONITOR_CONFIRMATIONS=20
-APP_DEPOSIT_MONITOR_CURRENCY_IDS=101
-FOXYA_INTERNAL_API_URL=http://foxya-coin-api:8080/api/v1/internal/deposits
+APP_DEPOSIT_MONITOR_CURRENCY_IDS=3
+FOXYA_INTERNAL_API_URL=http://54.210.92.221:8080/api/v1/internal/deposits
 FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
-SHARED_DOCKER_NETWORK_NAME=fox_coin_foxya-network
 ```
 
 foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면:
@@ -92,8 +91,8 @@ foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면
 SWEEP_BOT_ENABLED=true
 SWEEP_BOT_POLL_INTERVAL_SEC=30
 SWEEP_BOT_CYCLE_LIMIT=100
-FOXYA_DB_HOST=foxya-postgres
-FOXYA_DB_PORT=5432
+FOXYA_DB_HOST=54.210.92.221
+FOXYA_DB_PORT=15432
 FOXYA_DB_NAME=foxya
 FOXYA_DB_USER=foxya
 FOXYA_DB_PASSWORD=replace-with-password
@@ -107,9 +106,9 @@ TELEGRAM_CHAT_ID=replace-with-chat-id
 ```
 
 주의:
-- foxya `docker-compose.yml`은 현재 네트워크 `name:`이 고정돼 있지 않습니다. 두 프로젝트를 별도 compose 프로젝트로 띄우면 실제 네트워크명이 prefix 포함 값일 수 있으니 `docker network ls`로 확인해서 `SHARED_DOCKER_NETWORK_NAME`에 넣어야 합니다.
-- `watch-addresses` 응답에는 통화 코드가 없어서, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS`로 KORI currency id만 제한해야 합니다.
-- 같은 Docker 네트워크가 아니어도 됩니다. `FOXYA_INTERNAL_API_URL`과 `FOXYA_DB_HOST`가 이 서비스에서 도달 가능한 주소면 외부 서버 연동도 가능합니다.
+- `watch-addresses` 응답에는 통화 코드가 있어도 체인 이벤트 자체는 계약 기준이라, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS=3`처럼 KORI currency id만 제한해야 합니다.
+- `coin_manage`와 `foxya`가 다른 EC2면 container service name(`foxya-api`, `foxya-postgres`)을 쓰면 안 됩니다. `FOXYA_INTERNAL_API_URL`과 `FOXYA_DB_HOST`는 실제 라우팅 가능한 IP/도메인으로 넣어야 합니다.
+- `foxya db-proxy`를 원격에서 직접 쓸 때는 `DB_PROXY_BIND_ADDRESS=0.0.0.0`와 SG 제한을 같이 적용해야 합니다.
 - sweep bot은 source wallet에 TRX gas가 없으면 브로드캐스트 실패할 수 있습니다. 이 경우 foxya deposit `sweep_failed`와 텔레그램 알림으로 남깁니다.
 
 `TRON_API_KEY`를 안 넣으면 지금까지는 public `TRON_API_URL`만으로 동작했습니다.
