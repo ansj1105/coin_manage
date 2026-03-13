@@ -19,13 +19,6 @@ const TRC20_ABI = [
 ] as const;
 
 export class TronWebTrc20Gateway implements TronGateway {
-  constructor() {
-    const derivedAddress = TronWeb.address.fromPrivateKey(env.hotWalletPrivateKey);
-    if (!derivedAddress || derivedAddress !== env.hotWalletAddress) {
-      throw new Error('HOT_WALLET_PRIVATE_KEY does not match HOT_WALLET_ADDRESS');
-    }
-  }
-
   async broadcastTransfer(request: BroadcastRequest): Promise<{ txHash: string }> {
     const privateKey = request.fromPrivateKey ?? env.hotWalletPrivateKey;
     const fromAddress = request.fromAddress ?? env.hotWalletAddress;
@@ -91,7 +84,7 @@ export class TronWebTrc20Gateway implements TronGateway {
     };
   }
 
-  private createTronWeb(fullHost: string, privateKey = env.hotWalletPrivateKey, fromAddress = env.hotWalletAddress) {
+  private createTronWeb(fullHost: string, privateKey?: string, fromAddress?: string) {
     const tronWeb = new TronWeb({
       fullHost,
       headers: env.tronApiKey
@@ -101,7 +94,9 @@ export class TronWebTrc20Gateway implements TronGateway {
         : undefined,
       privateKey
     });
-    tronWeb.setAddress(fromAddress);
+    if (fromAddress) {
+      tronWeb.setAddress(fromAddress);
+    }
     return tronWeb;
   }
 }
