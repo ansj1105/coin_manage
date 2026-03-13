@@ -2,6 +2,8 @@ import type { EventPublisher } from '../application/ports/event-publisher.js';
 import type { DepositMonitorRepository } from '../application/ports/deposit-monitor-repository.js';
 import { DepositMonitorService } from '../application/services/deposit-monitor-service.js';
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
+import { ActivationGrantService } from '../application/services/activation-grant-service.js';
+import { ActivationGrantWorker } from '../application/services/activation-grant-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
@@ -28,6 +30,8 @@ export interface AppDependencies {
   alertMonitorStateRepository: AlertMonitorStateRepository;
   eventPublisher: EventPublisher;
   alertService: AlertService;
+  activationGrantService: ActivationGrantService;
+  activationGrantWorker: ActivationGrantWorker;
   externalAlertMonitorService: ExternalAlertMonitorService;
   externalAlertMonitorWorker: ExternalAlertMonitorWorker;
   systemMonitoringService: SystemMonitoringService;

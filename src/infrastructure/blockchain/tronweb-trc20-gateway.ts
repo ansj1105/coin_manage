@@ -49,6 +49,34 @@ export class TronWebTrc20Gateway implements TronGateway {
     return { txHash };
   }
 
+  async broadcastNativeTransfer(request: BroadcastRequest): Promise<{ txHash: string }> {
+    const privateKey = request.fromPrivateKey ?? env.hotWalletPrivateKey;
+    const fromAddress = request.fromAddress ?? env.hotWalletAddress;
+    const derivedAddress = TronWeb.address.fromPrivateKey(privateKey);
+    if (!derivedAddress || derivedAddress !== fromAddress) {
+      throw new DomainError(500, 'CONFIG_ERROR', 'broadcast signer private key does not match source address');
+    }
+
+    const tronWeb = this.createTronWeb(
+      request.apiUrl ??
+        (request.network ? getBlockchainNetworkConfig(request.network).tronApiUrl : getEffectiveTronApiUrl()),
+      privateKey,
+      fromAddress
+    );
+
+    const tx = await tronWeb.transactionBuilder.sendTrx(request.toAddress, Number(request.amount), fromAddress);
+    const signed = await tronWeb.trx.sign(tx, privateKey);
+    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
+    if (!broadcast.result || !broadcast.txid) {
+      throw new DomainError(
+        502,
+        'TRON_NATIVE_BROADCAST_FAILED',
+        broadcast.code ? String(broadcast.code) : 'native transfer broadcast failed'
+      );
+    }
+    return { txHash: broadcast.txid };
+  }
+
   async getTransactionReceipt(txHash: string): Promise<'pending' | 'confirmed' | 'failed'> {
     const info = await this.createTronWeb(getEffectiveTronApiUrl()).trx.getTransactionInfo(txHash);
     if (!info || Object.keys(info).length === 0) {

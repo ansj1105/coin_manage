@@ -13,6 +13,10 @@ if (env.depositMonitorEnabled) {
   deps.depositMonitorWorker.start();
 }
 
+if (env.activationGrantEnabled) {
+  deps.activationGrantWorker.start();
+}
+
 if (env.sweepBotEnabled) {
   deps.sweepBotWorker.start();
 }

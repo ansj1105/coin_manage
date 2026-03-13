@@ -6,6 +6,10 @@ export class MockTronClient implements TronClient {
     return { txHash: `mock-${randomUUID()}` };
   }
 
+  async broadcastNativeTransfer(_request: BroadcastRequest): Promise<{ txHash: string }> {
+    return { txHash: `mock-native-${randomUUID()}` };
+  }
+
   async getTransactionReceipt(txHash: string): Promise<TronReceiptStatus> {
     if (txHash.startsWith('pending-')) {
       return 'pending';

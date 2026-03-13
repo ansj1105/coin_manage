@@ -10,6 +10,8 @@ import { parseKoriAmount } from '../domain/value-objects/money.js';
 import { DepositService } from '../application/services/deposit-service.js';
 import { DepositMonitorService } from '../application/services/deposit-monitor-service.js';
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
+import { ActivationGrantService } from '../application/services/activation-grant-service.js';
+import { ActivationGrantWorker } from '../application/services/activation-grant-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
 import { OperationsService } from '../application/services/operations-service.js';
@@ -160,6 +162,12 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
         )
       : undefined;
   const virtualWalletLifecyclePolicy = new VirtualWalletLifecyclePolicyService(virtualWalletRepository);
+  const activationGrantService = new ActivationGrantService(virtualWalletRepository, tronGateway, alertService);
+  const activationGrantWorker = new ActivationGrantWorker(
+    activationGrantService,
+    alertService,
+    env.activationGrantIntervalSec * 1000
+  );
   const depositMonitorService = new DepositMonitorService(
     depositMonitorRepository,
     foxyaClient,
@@ -218,6 +226,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertMonitorStateRepository,
     eventPublisher,
     alertService,
+    activationGrantService,
+    activationGrantWorker,
     externalAlertMonitorService,
     externalAlertMonitorWorker,
     systemMonitoringService,

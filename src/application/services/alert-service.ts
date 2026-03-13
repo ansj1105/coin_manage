@@ -109,6 +109,18 @@ export class AlertService {
     });
   }
 
+  async notifyActivationGrantFailure(input: {
+    userId: string;
+    walletAddress: string;
+    message: string;
+  }) {
+    await this.send({
+      title: '[KORION] Activation Grant Failed',
+      body: [`userId=${input.userId}`, `walletAddress=${input.walletAddress}`, `error=${input.message}`].join('\n'),
+      dedupeKey: `activation-grant-failed:${input.userId}:${input.walletAddress}:${input.message}`
+    });
+  }
+
   async notifyExternalEvent(input: { title: string; bodyLines: string[]; dedupeKey: string }) {
     await this.send({
       title: input.title,

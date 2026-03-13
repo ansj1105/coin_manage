@@ -26,6 +26,10 @@ export interface VirtualWalletRepository {
     nowIso?: string;
   }): Promise<VirtualWalletIssueResult>;
   getVirtualWallet(input: { userId?: string; walletAddress?: string }): Promise<VirtualWalletBinding | undefined>;
+  listVirtualWalletsByActivationStatus(
+    status: VirtualWalletBinding['activationStatus'],
+    limit?: number
+  ): Promise<VirtualWalletBinding[]>;
   markActivationGranted(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   markActivationReclaimed(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;

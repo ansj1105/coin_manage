@@ -22,6 +22,7 @@ export interface TronAccountResources {
 
 export interface TronGateway {
   broadcastTransfer(request: BroadcastRequest): Promise<{ txHash: string }>;
+  broadcastNativeTransfer(request: BroadcastRequest): Promise<{ txHash: string }>;
   getTransactionReceipt(txHash: string): Promise<TronReceiptStatus>;
   getAccountResources(address: string, network?: BlockchainNetwork): Promise<TronAccountResources>;
 }

@@ -269,6 +269,21 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
     throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
   }
 
+  async listVirtualWalletsByActivationStatus(
+    status: VirtualWalletBinding['activationStatus'],
+    limit = 100
+  ): Promise<VirtualWalletBinding[]> {
+    const rows = await this.db
+      .selectFrom('virtual_wallet_bindings')
+      .selectAll()
+      .where('status', '=', 'active')
+      .where('activation_status', '=', status)
+      .orderBy('created_at asc')
+      .limit(Math.max(1, Math.min(limit, 500)))
+      .execute();
+    return rows.map((row) => this.mapBinding(row));
+  }
+
   async retireVirtualWallet(input: {
     virtualWalletId: string;
     replacedByVirtualWalletId?: string;

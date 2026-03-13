@@ -101,6 +101,17 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
     throw new DomainError(400, 'VALIDATION_ERROR', 'userId or walletAddress is required');
   }
 
+  async listVirtualWalletsByActivationStatus(
+    status: VirtualWalletBinding['activationStatus'],
+    limit = 100
+  ): Promise<VirtualWalletBinding[]> {
+    return [...this.walletByAddress.values()]
+      .filter((binding) => binding.status === 'active' && binding.activationStatus === status)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, limit)
+      .map((binding) => this.toPublicBinding(binding));
+  }
+
   async listWatchAddresses(network: 'mainnet' | 'testnet'): Promise<DepositWatchAddress[]> {
     return [...this.walletByAddress.values()]
       .filter((binding) => binding.network === network && binding.status === 'active')
