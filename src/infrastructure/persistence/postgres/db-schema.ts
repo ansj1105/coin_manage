@@ -22,6 +22,16 @@ export interface VirtualWalletBindingsTable {
   issued_by: 'hot_wallet';
   idempotency_key: string;
   status: 'active' | 'retired' | 'disabled';
+  activation_status: 'pending_trx_grant' | 'trx_granted' | 'reclaim_pending' | 'reclaimed' | 'failed';
+  activation_grant_tx_hash: string | null;
+  activation_granted_at: string | null;
+  activation_reclaim_tx_hash: string | null;
+  activation_reclaimed_at: string | null;
+  activation_last_error: string | null;
+  resource_status: 'idle' | 'delegate_pending' | 'delegated' | 'release_pending' | 'released' | 'failed';
+  resource_delegated_at: string | null;
+  resource_released_at: string | null;
+  resource_last_error: string | null;
   created_at: string;
   retired_at: string | null;
   disabled_at: string | null;

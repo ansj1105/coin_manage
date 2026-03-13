@@ -26,6 +26,14 @@ export interface VirtualWalletRepository {
     nowIso?: string;
   }): Promise<VirtualWalletIssueResult>;
   getVirtualWallet(input: { userId?: string; walletAddress?: string }): Promise<VirtualWalletBinding | undefined>;
+  markActivationGranted(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markActivationReclaimed(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markActivationFailed(input: { virtualWalletId: string; message: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markResourceDelegated(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markResourceReleasePending(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markResourceReleased(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding>;
+  markResourceFailed(input: { virtualWalletId: string; message: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   retireVirtualWallet(input: { virtualWalletId: string; replacedByVirtualWalletId?: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   disableVirtualWallet(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding>;
   listWatchAddresses(network: 'mainnet' | 'testnet'): Promise<DepositWatchAddress[]>;

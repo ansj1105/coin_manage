@@ -17,6 +17,7 @@ import { SchedulerService } from '../application/services/scheduler-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
 import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
+import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
@@ -158,7 +159,15 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
           })
         )
       : undefined;
-  const depositMonitorService = new DepositMonitorService(depositMonitorRepository, foxyaClient, trc20EventReader, ledger);
+  const virtualWalletLifecyclePolicy = new VirtualWalletLifecyclePolicyService(virtualWalletRepository);
+  const depositMonitorService = new DepositMonitorService(
+    depositMonitorRepository,
+    foxyaClient,
+    trc20EventReader,
+    ledger,
+    virtualWalletLifecyclePolicy,
+    alertService
+  );
   const depositMonitorWorker = new DepositMonitorWorker(
     depositMonitorService,
     alertService,
@@ -172,7 +181,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
-  const withdrawService = new WithdrawService(ledger, eventPublisher, tronGateway);
+  const withdrawService = new WithdrawService(ledger, eventPublisher, tronGateway, virtualWalletLifecyclePolicy);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
   const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher);
   const operationsService = new OperationsService(ledger, systemMonitoringService);
@@ -221,6 +230,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertWorker,
     depositService,
     virtualWalletService,
+    virtualWalletLifecyclePolicy,
     walletService,
     accountReconciliationService,
     withdrawService,

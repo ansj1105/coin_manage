@@ -91,6 +91,24 @@ export class AlertService {
     });
   }
 
+  async notifyWalletLifecycleGateBlocked(input: {
+    userId: string;
+    walletAddress?: string;
+    operation: 'deposit' | 'withdraw';
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Wallet Lifecycle Gate Blocked',
+      body: [
+        `userId=${input.userId}`,
+        `walletAddress=${input.walletAddress ?? '-'}`,
+        `operation=${input.operation}`,
+        `reason=${input.reason}`
+      ].join('\n'),
+      dedupeKey: `wallet-lifecycle-gate:${input.operation}:${input.userId}:${input.reason}`
+    });
+  }
+
   async notifyExternalEvent(input: { title: string; bodyLines: string[]; dedupeKey: string }) {
     await this.send({
       title: input.title,

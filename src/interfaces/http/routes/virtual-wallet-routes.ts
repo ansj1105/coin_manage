@@ -14,6 +14,16 @@ const transitionSchema = z.object({
   virtualWalletId: z.string().uuid()
 });
 
+const transitionWithTxSchema = z.object({
+  virtualWalletId: z.string().uuid(),
+  txHash: z.string().min(1).optional()
+});
+
+const failureSchema = z.object({
+  virtualWalletId: z.string().uuid(),
+  message: z.string().min(1)
+});
+
 const virtualWalletLookupSchema = z
   .object({
     userId: z.string().min(1).optional(),
@@ -83,6 +93,102 @@ export const createVirtualWalletRoutes = (virtualWalletService: VirtualWalletSer
         throw zodToDomainError(parsed.error);
       }
       res.json({ binding: await virtualWalletService.disable(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/activation/granted', async (req, res, next) => {
+    try {
+      const parsed = transitionWithTxSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markActivationGranted(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/activation/reclaim-pending', async (req, res, next) => {
+    try {
+      const parsed = transitionWithTxSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markActivationReclaimPending(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/activation/reclaimed', async (req, res, next) => {
+    try {
+      const parsed = transitionWithTxSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markActivationReclaimed(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/activation/failed', async (req, res, next) => {
+    try {
+      const parsed = failureSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markActivationFailed(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/resource/delegated', async (req, res, next) => {
+    try {
+      const parsed = transitionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markResourceDelegated(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/resource/release-pending', async (req, res, next) => {
+    try {
+      const parsed = transitionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markResourceReleasePending(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/resource/released', async (req, res, next) => {
+    try {
+      const parsed = transitionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markResourceReleased(parsed.data) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/resource/failed', async (req, res, next) => {
+    try {
+      const parsed = failureSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      res.json({ binding: await virtualWalletService.markResourceFailed(parsed.data) });
     } catch (error) {
       next(error);
     }

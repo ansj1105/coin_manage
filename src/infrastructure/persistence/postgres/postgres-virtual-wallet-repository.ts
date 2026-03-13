@@ -104,6 +104,16 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
           issued_by: 'hot_wallet',
           idempotency_key: input.idempotencyKey,
           status: 'active',
+          activation_status: 'pending_trx_grant',
+          activation_grant_tx_hash: null,
+          activation_granted_at: null,
+          activation_reclaim_tx_hash: null,
+          activation_reclaimed_at: null,
+          activation_last_error: null,
+          resource_status: 'idle',
+          resource_delegated_at: null,
+          resource_released_at: null,
+          resource_last_error: null,
           created_at: nowIso,
           retired_at: null,
           disabled_at: null,
@@ -178,6 +188,16 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
           issued_by: 'hot_wallet',
           idempotency_key: input.idempotencyKey,
           status: 'active',
+          activation_status: 'pending_trx_grant',
+          activation_grant_tx_hash: null,
+          activation_granted_at: null,
+          activation_reclaim_tx_hash: null,
+          activation_reclaimed_at: null,
+          activation_last_error: null,
+          resource_status: 'idle',
+          resource_delegated_at: null,
+          resource_released_at: null,
+          resource_last_error: null,
           created_at: nowIso,
           retired_at: null,
           disabled_at: null,
@@ -304,6 +324,69 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
     return this.mapBinding(row);
   }
 
+  async markActivationGranted(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      activation_status: 'trx_granted',
+      activation_grant_tx_hash: input.txHash ?? null,
+      activation_granted_at: input.nowIso ?? new Date().toISOString(),
+      activation_last_error: null
+    });
+  }
+
+  async markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      activation_status: 'reclaim_pending',
+      activation_reclaim_tx_hash: input.txHash ?? null,
+      activation_last_error: null
+    });
+  }
+
+  async markActivationReclaimed(input: { virtualWalletId: string; txHash?: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      activation_status: 'reclaimed',
+      activation_reclaim_tx_hash: input.txHash ?? null,
+      activation_reclaimed_at: input.nowIso ?? new Date().toISOString(),
+      activation_last_error: null
+    });
+  }
+
+  async markActivationFailed(input: { virtualWalletId: string; message: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      activation_status: 'failed',
+      activation_last_error: input.message
+    });
+  }
+
+  async markResourceDelegated(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      resource_status: 'delegated',
+      resource_delegated_at: input.nowIso ?? new Date().toISOString(),
+      resource_last_error: null
+    });
+  }
+
+  async markResourceReleasePending(input: { virtualWalletId: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      resource_status: 'release_pending',
+      resource_last_error: null
+    });
+  }
+
+  async markResourceReleased(input: { virtualWalletId: string; nowIso?: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      resource_status: 'released',
+      resource_released_at: input.nowIso ?? new Date().toISOString(),
+      resource_last_error: null
+    });
+  }
+
+  async markResourceFailed(input: { virtualWalletId: string; message: string }): Promise<VirtualWalletBinding> {
+    return this.updateLifecycle(input.virtualWalletId, {
+      resource_status: 'failed',
+      resource_last_error: input.message
+    });
+  }
+
   async listWatchAddresses(network: 'mainnet' | 'testnet'): Promise<DepositWatchAddress[]> {
     const rows = await this.db
       .selectFrom('virtual_wallet_bindings')
@@ -353,6 +436,22 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
     await sql`select pg_advisory_xact_lock(hashtext(${value}))`.execute(db);
   }
 
+  private async updateLifecycle(
+    virtualWalletId: string,
+    values: Partial<KorionDatabase['virtual_wallet_bindings']>
+  ): Promise<VirtualWalletBinding> {
+    const row = await this.db
+      .updateTable('virtual_wallet_bindings')
+      .set(values)
+      .where('virtual_wallet_id', '=', virtualWalletId)
+      .returningAll()
+      .executeTakeFirst();
+    if (!row) {
+      throw new DomainError(404, 'NOT_FOUND', 'virtual wallet not found');
+    }
+    return this.mapBinding(row);
+  }
+
   private mapBinding(row: KorionDatabase['virtual_wallet_bindings']): VirtualWalletBinding {
     return {
       virtualWalletId: row.virtual_wallet_id,
@@ -363,6 +462,16 @@ export class PostgresVirtualWalletRepository implements VirtualWalletRepository 
       sweepTargetAddress: row.sweep_target_address,
       issuedBy: row.issued_by,
       status: row.status,
+      activationStatus: row.activation_status,
+      activationGrantTxHash: row.activation_grant_tx_hash ?? undefined,
+      activationGrantedAt: row.activation_granted_at ?? undefined,
+      activationReclaimTxHash: row.activation_reclaim_tx_hash ?? undefined,
+      activationReclaimedAt: row.activation_reclaimed_at ?? undefined,
+      activationLastError: row.activation_last_error ?? undefined,
+      resourceStatus: row.resource_status,
+      resourceDelegatedAt: row.resource_delegated_at ?? undefined,
+      resourceReleasedAt: row.resource_released_at ?? undefined,
+      resourceLastError: row.resource_last_error ?? undefined,
       createdAt: row.created_at,
       retiredAt: row.retired_at ?? undefined,
       disabledAt: row.disabled_at ?? undefined,

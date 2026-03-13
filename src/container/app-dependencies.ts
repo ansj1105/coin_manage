@@ -17,6 +17,7 @@ import { SchedulerService } from '../application/services/scheduler-service.js';
 import { OperationsService } from '../application/services/operations-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
 import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
+import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
@@ -39,6 +40,7 @@ export interface AppDependencies {
   alertWorker: AlertWorker;
   depositService: DepositService;
   virtualWalletService: VirtualWalletService;
+  virtualWalletLifecyclePolicy: VirtualWalletLifecyclePolicyService;
   walletService: WalletService;
   accountReconciliationService: AccountReconciliationService;
   withdrawService: WithdrawService;

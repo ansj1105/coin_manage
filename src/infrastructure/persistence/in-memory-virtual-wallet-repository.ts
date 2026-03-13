@@ -164,6 +164,69 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
     return this.toPublicBinding(binding);
   }
 
+  async markActivationGranted(input: { virtualWalletId: string; txHash?: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.activationStatus = 'trx_granted';
+    binding.activationGrantTxHash = input.txHash;
+    binding.activationGrantedAt = input.nowIso ?? new Date().toISOString();
+    binding.activationLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.activationStatus = 'reclaim_pending';
+    binding.activationReclaimTxHash = input.txHash;
+    binding.activationLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markActivationReclaimed(input: { virtualWalletId: string; txHash?: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.activationStatus = 'reclaimed';
+    binding.activationReclaimTxHash = input.txHash;
+    binding.activationReclaimedAt = input.nowIso ?? new Date().toISOString();
+    binding.activationLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markActivationFailed(input: { virtualWalletId: string; message: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.activationStatus = 'failed';
+    binding.activationLastError = input.message;
+    return this.toPublicBinding(binding);
+  }
+
+  async markResourceDelegated(input: { virtualWalletId: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.resourceStatus = 'delegated';
+    binding.resourceDelegatedAt = input.nowIso ?? new Date().toISOString();
+    binding.resourceLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markResourceReleasePending(input: { virtualWalletId: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.resourceStatus = 'release_pending';
+    binding.resourceLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markResourceReleased(input: { virtualWalletId: string; nowIso?: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.resourceStatus = 'released';
+    binding.resourceReleasedAt = input.nowIso ?? new Date().toISOString();
+    binding.resourceLastError = undefined;
+    return this.toPublicBinding(binding);
+  }
+
+  async markResourceFailed(input: { virtualWalletId: string; message: string }) {
+    const binding = this.requireBinding(input.virtualWalletId);
+    binding.resourceStatus = 'failed';
+    binding.resourceLastError = input.message;
+    return this.toPublicBinding(binding);
+  }
+
   private async createWallet(
     input: {
       userId: string;
@@ -189,6 +252,8 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
       sweepTargetAddress: input.sweepTargetAddress,
       issuedBy: 'hot_wallet',
       status: 'active',
+      activationStatus: 'pending_trx_grant',
+      resourceStatus: 'idle',
       createdAt: nowIso,
       encryptedPrivateKey: input.encryptedPrivateKey,
       idempotencyKey: input.idempotencyKey
@@ -229,6 +294,14 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
     );
   }
 
+  private requireBinding(virtualWalletId: string): StoredVirtualWalletBinding {
+    const binding = this.walletById.get(virtualWalletId);
+    if (!binding) {
+      throw new DomainError(404, 'NOT_FOUND', 'virtual wallet not found');
+    }
+    return binding;
+  }
+
   private toPublicBinding(binding: StoredVirtualWalletBinding): VirtualWalletBinding {
     return {
       virtualWalletId: binding.virtualWalletId,
@@ -239,6 +312,16 @@ export class InMemoryVirtualWalletRepository implements VirtualWalletRepository 
       sweepTargetAddress: binding.sweepTargetAddress,
       issuedBy: binding.issuedBy,
       status: binding.status,
+      activationStatus: binding.activationStatus,
+      activationGrantTxHash: binding.activationGrantTxHash,
+      activationGrantedAt: binding.activationGrantedAt,
+      activationReclaimTxHash: binding.activationReclaimTxHash,
+      activationReclaimedAt: binding.activationReclaimedAt,
+      activationLastError: binding.activationLastError,
+      resourceStatus: binding.resourceStatus,
+      resourceDelegatedAt: binding.resourceDelegatedAt,
+      resourceReleasedAt: binding.resourceReleasedAt,
+      resourceLastError: binding.resourceLastError,
       createdAt: binding.createdAt,
       retiredAt: binding.retiredAt,
       disabledAt: binding.disabledAt,

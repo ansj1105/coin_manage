@@ -53,6 +53,38 @@ export class VirtualWalletService {
     return this.repository.getVirtualWallet(input);
   }
 
+  async markActivationGranted(input: { virtualWalletId: string; txHash?: string }) {
+    return this.repository.markActivationGranted(input);
+  }
+
+  async markActivationReclaimPending(input: { virtualWalletId: string; txHash?: string }) {
+    return this.repository.markActivationReclaimPending(input);
+  }
+
+  async markActivationReclaimed(input: { virtualWalletId: string; txHash?: string }) {
+    return this.repository.markActivationReclaimed(input);
+  }
+
+  async markActivationFailed(input: { virtualWalletId: string; message: string }) {
+    return this.repository.markActivationFailed(input);
+  }
+
+  async markResourceDelegated(input: { virtualWalletId: string }) {
+    return this.repository.markResourceDelegated(input);
+  }
+
+  async markResourceReleasePending(input: { virtualWalletId: string }) {
+    return this.repository.markResourceReleasePending(input);
+  }
+
+  async markResourceReleased(input: { virtualWalletId: string }) {
+    return this.repository.markResourceReleased(input);
+  }
+
+  async markResourceFailed(input: { virtualWalletId: string; message: string }) {
+    return this.repository.markResourceFailed(input);
+  }
+
   private async issueInternal(
     input: { userId: string; currencyId: number; network: 'mainnet' | 'testnet'; idempotencyKey: string },
     reissue: boolean

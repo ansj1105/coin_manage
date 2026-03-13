@@ -4,12 +4,14 @@ import { env } from '../../config/env.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
+import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 
 export class WithdrawService {
   constructor(
     private readonly ledger: LedgerRepository,
     private readonly eventPublisher: EventPublisher,
-    private readonly tronGateway: TronGateway
+    private readonly tronGateway: TronGateway,
+    private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService
   ) {}
 
   async request(input: {
@@ -23,6 +25,10 @@ export class WithdrawService {
   }) {
     const userId = await this.ledger.resolveUserId({
       userId: input.userId,
+      walletAddress: input.walletAddress
+    });
+    await this.virtualWalletLifecyclePolicy?.assertWithdrawalAllowed({
+      userId,
       walletAddress: input.walletAddress
     });
     const riskAssessment = this.assessRisk(input);

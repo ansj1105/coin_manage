@@ -6,6 +6,8 @@ import type { Trc20EventReader } from '../ports/trc20-event-reader.js';
 import { getBlockchainNetworkConfig } from '../../config/blockchain-networks.js';
 import { env } from '../../config/env.js';
 import { parseKoriAmount } from '../../domain/value-objects/money.js';
+import type { AlertService } from './alert-service.js';
+import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 import type {
   DepositMonitorCycleResult,
   DepositMonitorStatus,
@@ -30,7 +32,9 @@ export class DepositMonitorService {
     private readonly repository: DepositMonitorRepository,
     private readonly foxyaClient: ExternalDepositClient | undefined,
     private readonly eventReader: Trc20EventReader,
-    private readonly ledger: LedgerRepository
+    private readonly ledger: LedgerRepository,
+    private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
+    private readonly alertService?: AlertService
   ) {}
 
   async runCycle(): Promise<DepositMonitorCycleResult | { skipped: true; reason: string }> {
@@ -301,6 +305,20 @@ export class DepositMonitorService {
   private async completeIfEligible(event: ExternalDepositEvent, currentBlockNumber: number): Promise<boolean> {
     const confirmations = currentBlockNumber - event.blockNumber + 1;
     if (confirmations < env.depositMonitorConfirmations || event.foxyaCompletedAt || !this.foxyaClient) {
+      return false;
+    }
+
+    const lifecycleStatus = await this.virtualWalletLifecyclePolicy?.canCreditDeposit({
+      userId: event.userId,
+      walletAddress: event.toAddress
+    });
+    if (lifecycleStatus && !lifecycleStatus.gate.depositAllowed) {
+      await this.alertService?.notifyWalletLifecycleGateBlocked({
+        userId: event.userId,
+        walletAddress: event.toAddress,
+        operation: 'deposit',
+        reason: lifecycleStatus.gate.reason
+      });
       return false;
     }
 
