@@ -75,6 +75,15 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
+  router.post('/reconcile', async (_req, res, next) => {
+    try {
+      const result = await withdrawService.reconcileBroadcasted();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/:withdrawalId/approve', async (req, res, next) => {
     try {
       const parsed = approveSchema.safeParse(req.body ?? {});

@@ -46,6 +46,12 @@ const ledgerContractVerifySchema = z.object({
   payload: z.record(z.string(), z.unknown())
 });
 
+const depositReconcileSchema = z.object({
+  lookbackMs: z.number().int().positive().max(30 * 24 * 60 * 60 * 1000).optional(),
+  addresses: z.array(z.string().regex(tronAddressPattern)).max(100).optional(),
+  txHashes: z.array(z.string().min(8).max(128)).max(100).optional()
+});
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
   collectorRuns: CollectorRunRecord[] = [],
@@ -197,6 +203,23 @@ export const createSystemRoutes = (
   router.post('/deposit-monitor/run', async (_req, res, next) => {
     try {
       const result = await depositMonitorService.runCycle();
+      res.json({
+        result,
+        status: await depositMonitorService.getStatus()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/deposit-monitor/reconcile', async (req, res, next) => {
+    try {
+      const parsed = depositReconcileSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid deposit reconcile payload', parsed.error.flatten());
+      }
+
+      const result = await depositMonitorService.reconcile(parsed.data);
       res.json({
         result,
         status: await depositMonitorService.getStatus()

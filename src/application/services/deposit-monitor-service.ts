@@ -34,6 +34,28 @@ export class DepositMonitorService {
   ) {}
 
   async runCycle(): Promise<DepositMonitorCycleResult | { skipped: true; reason: string }> {
+    return this.runCycleInternal();
+  }
+
+  async reconcile(input: {
+    lookbackMs?: number;
+    addresses?: string[];
+    txHashes?: string[];
+  }): Promise<DepositMonitorCycleResult | { skipped: true; reason: string }> {
+    return this.runCycleInternal({
+      overrideStartTimestampMs: Date.now() - (input.lookbackMs ?? env.depositMonitorLookbackMs),
+      addressFilter: new Set((input.addresses ?? []).map((value) => value.trim()).filter(Boolean)),
+      txHashFilter: new Set((input.txHashes ?? []).map((value) => value.trim()).filter(Boolean)),
+      persistCursor: false
+    });
+  }
+
+  private async runCycleInternal(options?: {
+    overrideStartTimestampMs?: number;
+    addressFilter?: Set<string>;
+    txHashFilter?: Set<string>;
+    persistCursor?: boolean;
+  }): Promise<DepositMonitorCycleResult | { skipped: true; reason: string }> {
     if (!env.depositMonitorEnabled) {
       return { skipped: true, reason: 'deposit monitor disabled' };
     }
@@ -59,6 +81,7 @@ export class DepositMonitorService {
       const currentBlockNumber = await this.eventReader.getCurrentBlockNumber(network);
       const cursor = await this.repository.getCursor(SCANNER_KEY);
       const startTimestampMs =
+        options?.overrideStartTimestampMs ??
         cursor?.cursorTimestampMs ??
         env.depositMonitorStartTimestampMs ??
         Date.now() - env.depositMonitorLookbackMs;
@@ -77,8 +100,9 @@ export class DepositMonitorService {
       savedLastSeenBlockNumber = lastSeenBlockNumber;
       savedLastSeenTxHash = lastSeenTxHash;
 
+      const effectiveWatchAddresses = this.filterAdhocWatchAddresses(watchAddresses, options?.addressFilter);
       const watchAddressesByAddress = new Map<string, DepositWatchAddress[]>();
-      for (const item of watchAddresses) {
+      for (const item of effectiveWatchAddresses) {
         const bucket = watchAddressesByAddress.get(item.address) ?? [];
         bucket.push(item);
         watchAddressesByAddress.set(item.address, bucket);
@@ -100,6 +124,11 @@ export class DepositMonitorService {
         scannedEvents += page.events.length;
 
         for (const chainEvent of page.events) {
+          if (options?.txHashFilter?.size && !options.txHashFilter.has(chainEvent.txHash)) {
+            skippedCount += 1;
+            continue;
+          }
+
           lastSeenTimestamp = Math.max(lastSeenTimestamp, chainEvent.blockTimestampMs);
           lastSeenBlockNumber = Math.max(lastSeenBlockNumber ?? 0, chainEvent.blockNumber);
           lastSeenTxHash = chainEvent.txHash;
@@ -177,20 +206,32 @@ export class DepositMonitorService {
         fingerprint = page.nextFingerprint;
       }
 
-      const savedCursor = await this.repository.saveCursor({
-        scannerKey: SCANNER_KEY,
-        network,
-        contractAddress,
-        cursorTimestampMs: lastSeenTimestamp,
-        lastScannedBlockNumber: currentBlockNumber,
-        lastSeenEventBlockNumber: lastSeenBlockNumber,
-        lastSeenTxHash: lastSeenTxHash,
-        lastError: undefined
-      });
+      const savedCursor = options?.persistCursor === false
+        ? {
+            scannerKey: SCANNER_KEY,
+            network,
+            contractAddress,
+            cursorTimestampMs: lastSeenTimestamp,
+            lastScannedBlockNumber: currentBlockNumber,
+            lastSeenEventBlockNumber: lastSeenBlockNumber,
+            lastSeenTxHash: lastSeenTxHash,
+            lastError: undefined,
+            updatedAt: new Date().toISOString()
+          }
+        : await this.repository.saveCursor({
+            scannerKey: SCANNER_KEY,
+            network,
+            contractAddress,
+            cursorTimestampMs: lastSeenTimestamp,
+            lastScannedBlockNumber: currentBlockNumber,
+            lastSeenEventBlockNumber: lastSeenBlockNumber,
+            lastSeenTxHash: lastSeenTxHash,
+            lastError: undefined
+          });
 
       return {
         scannedEvents,
-        watchedAddresses: watchAddresses.length,
+        watchedAddresses: effectiveWatchAddresses.length,
         matchedEvents,
         registeredCount,
         completedCount,
@@ -247,6 +288,14 @@ export class DepositMonitorService {
         userId: String(item.userId),
         address: item.address.trim()
       }));
+  }
+
+  private filterAdhocWatchAddresses(addresses: DepositWatchAddress[], addressFilter?: Set<string>) {
+    if (!addressFilter?.size) {
+      return addresses;
+    }
+
+    return addresses.filter((item) => addressFilter.has(item.address));
   }
 
   private async completeIfEligible(event: ExternalDepositEvent, currentBlockNumber: number): Promise<boolean> {

@@ -184,4 +184,95 @@ describe('DepositMonitorService', () => {
     expect(ledger.applyDeposit).toHaveBeenCalledTimes(1);
     expect(ledger.completeDeposit).toHaveBeenCalledTimes(1);
   });
+
+  it('can reconcile specific tx hashes without moving the saved cursor', async () => {
+    const { DepositMonitorService } = await import('../src/application/services/deposit-monitor-service.js');
+
+    const repository = new InMemoryDepositMonitorRepository();
+    await repository.saveCursor({
+      scannerKey: 'tron-kori-monitor',
+      network: 'mainnet',
+      contractAddress: 'TBJZD8RwQ1JcQvEP9BTbPbgBCGxUjxSXnn',
+      cursorTimestampMs: 1_700_000_000_000
+    });
+    const foxyaClient = {
+      listWatchAddresses: vi.fn(async () => [
+        { userId: '77', currencyId: 101, address: 'TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z', network: 'TRON' }
+      ]),
+      registerDeposit: vi.fn(async ({ depositId }) => ({ depositId, status: 'PENDING' })),
+      completeDeposit: vi.fn(async (depositId: string) => ({ depositId, status: 'COMPLETED' })),
+      getDeposit: vi.fn(async () => undefined)
+    };
+    const eventReader = {
+      getCurrentBlockNumber: vi.fn(async () => 150),
+      listTransfers: vi
+        .fn()
+        .mockResolvedValueOnce({
+          events: [
+            {
+              txHash: 'tx-not-target',
+              eventIndex: 0,
+              blockNumber: 120,
+              blockTimestampMs: 1_710_000_000_000,
+              fromAddress: 'TXfrom',
+              toAddress: 'TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z',
+              amountRaw: '1000000',
+              confirmed: true
+            },
+            {
+              txHash: 'tx-target',
+              eventIndex: 1,
+              blockNumber: 121,
+              blockTimestampMs: 1_710_000_010_000,
+              fromAddress: 'TXfrom',
+              toAddress: 'TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z',
+              amountRaw: '50000000',
+              confirmed: true
+            }
+          ]
+        })
+        .mockResolvedValueOnce({ events: [] })
+    };
+    const ledger = {
+      applyDeposit: vi.fn(async () => ({
+        deposit: {
+          depositId: 'ledger-dep-target',
+          userId: '77',
+          txHash: 'tx-target',
+          amount: 50_000_000n,
+          status: 'CREDITED',
+          blockNumber: 121,
+          createdAt: new Date().toISOString()
+        },
+        duplicated: false
+      })),
+      completeDeposit: vi.fn(async () => ({
+        depositId: 'ledger-dep-target',
+        userId: '77',
+        txHash: 'tx-target',
+        amount: 50_000_000n,
+        status: 'COMPLETED',
+        blockNumber: 121,
+        createdAt: new Date().toISOString()
+      }))
+    };
+
+    const service = new DepositMonitorService(repository, foxyaClient as any, eventReader as any, ledger as any);
+    const result = await service.reconcile({
+      txHashes: ['tx-target'],
+      addresses: ['TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z'],
+      lookbackMs: 60_000
+    });
+    const cursor = await repository.getCursor('tron-kori-monitor');
+
+    expect('skipped' in result).toBe(false);
+    if ('skipped' in result) {
+      return;
+    }
+    expect(result.matchedEvents).toBe(1);
+    expect(result.registeredCount).toBe(1);
+    expect(ledger.applyDeposit).toHaveBeenCalledOnce();
+    expect(foxyaClient.registerDeposit).toHaveBeenCalledOnce();
+    expect(cursor?.cursorTimestampMs).toBe(1_700_000_000_000);
+  });
 });
