@@ -9,9 +9,9 @@ export class ExternalAlertMonitorWorker {
   ) {}
 
   start() {
-    void this.service.runCycle();
+    void this.runCycle();
     this.timer = setInterval(() => {
-      void this.service.runCycle();
+      void this.runCycle();
     }, this.intervalMs);
   }
 
@@ -19,6 +19,14 @@ export class ExternalAlertMonitorWorker {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+    }
+  }
+
+  private async runCycle() {
+    try {
+      await this.service.runCycle();
+    } catch (error) {
+      console.error('ExternalAlertMonitorWorker cycle failed:', error);
     }
   }
 }
