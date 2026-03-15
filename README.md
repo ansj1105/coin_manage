@@ -23,6 +23,12 @@
 - Deposit Monitor Bot: foxya 내부 API watch-addresses 조회, TRON KORI 입금 감지/등록/확정 자동화
 - 주소 필터: 지정된 재단/입금/핫 지갑 주소로만 입금 반영
 
+## 출금 최종 책임 경계
+- `coin_manage`: 출금 요청 상태머신, 내부 원장 잠금/복구, BullMQ dispatch/reconcile, 운영 recovery
+- `coin_csms`: 관리자 승인/거절 UI, 관리자 API
+- `foxya_coin_service`: 사용자 요청 접수와 레거시 호환 상태 반영
+- `coin_publish`: 입금 감지와 백필 전용, 신규 운영 기준 출금 worker 소유권 없음
+
 ## 빠른 시작
 ```bash
 npm install
@@ -129,6 +135,11 @@ WITHDRAW_RETRY_BASE_DELAY_SEC=15
 - 출금 queue worker는 `app-withdraw-worker`만 여러 대로 확장
 - `app-ops`는 1대로 유지
 - PostgreSQL은 상태 원본, Redis/BullMQ는 출금 실행 제어와 재시도만 담당
+
+출금 모듈화 원칙:
+- 관리자 승인 전에는 절대 온체인 브로드캐스트하지 않음
+- 승인 이후 출금 실행/재시도/컨펌은 `coin_manage` worker만 담당
+- 레거시 시스템은 출금 본체가 아니라 입력/조회/호환 계층으로만 남긴다
 
 주의:
 - `watch-addresses` 응답에는 통화 코드가 있어도 체인 이벤트 자체는 계약 기준이라, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS=3`처럼 KORI currency id만 제한해야 합니다.
