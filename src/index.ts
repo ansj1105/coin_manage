@@ -3,40 +3,55 @@ import { env } from './config/env.js';
 import { createAppDependencies } from './container/create-app-dependencies.js';
 
 const deps = createAppDependencies();
-const app = createApp(deps);
 
-if (env.walletMonitorEnabled) {
-  deps.monitoringWorker.start();
+if (env.withdrawQueueWorkerEnabled && env.withdrawDispatchEnabled) {
+  deps.withdrawJobQueue.start();
+  void deps.operationsService.seedWithdrawalQueueRecovery();
 }
 
-if (env.depositMonitorEnabled) {
-  deps.depositMonitorWorker.start();
+if (env.singletonWorkersEnabled) {
+  if (env.walletMonitorEnabled) {
+    deps.monitoringWorker.start();
+  }
+
+  if (env.depositMonitorEnabled) {
+    deps.depositMonitorWorker.start();
+  }
+
+  if (env.activationGrantEnabled) {
+    deps.activationGrantWorker.start();
+  }
+
+  if (env.activationReclaimEnabled) {
+    deps.activationReclaimWorker.start();
+  }
+
+  if (env.resourceDelegationEnabled) {
+    deps.resourceDelegationWorker.start();
+  }
+
+  if (env.sweepBotEnabled) {
+    deps.sweepBotWorker.start();
+  }
+
+  if (deps.alertService.enabled) {
+    deps.alertWorker.start();
+  }
+
+  if (env.alertMonitor.enabled) {
+    deps.externalAlertMonitorWorker.start();
+  }
 }
 
-if (env.activationGrantEnabled) {
-  deps.activationGrantWorker.start();
+if (!env.httpEnabled && !env.singletonWorkersEnabled && !env.withdrawQueueWorkerEnabled) {
+  throw new Error('at least one runtime role must be enabled');
 }
 
-if (env.activationReclaimEnabled) {
-  deps.activationReclaimWorker.start();
+if (env.httpEnabled) {
+  const app = createApp(deps);
+  app.listen(env.port, () => {
+    console.log(`korion-kori-backend listening on port ${env.port}`);
+  });
+} else {
+  console.log('korion-kori-backend started in worker-only mode');
 }
-
-if (env.resourceDelegationEnabled) {
-  deps.resourceDelegationWorker.start();
-}
-
-if (env.sweepBotEnabled) {
-  deps.sweepBotWorker.start();
-}
-
-if (deps.alertService.enabled) {
-  deps.alertWorker.start();
-}
-
-if (env.alertMonitor.enabled) {
-  deps.externalAlertMonitorWorker.start();
-}
-
-app.listen(env.port, () => {
-  console.log(`korion-kori-backend listening on port ${env.port}`);
-});

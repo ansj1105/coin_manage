@@ -25,6 +25,7 @@ import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
+import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
@@ -41,15 +42,18 @@ import { InMemoryDepositMonitorRepository } from '../infrastructure/persistence/
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
 import { InMemoryMonitoringRepository } from '../infrastructure/persistence/in-memory-monitoring-repository.js';
 import { InMemoryVirtualWalletRepository } from '../infrastructure/persistence/in-memory-virtual-wallet-repository.js';
+import { InMemoryWithdrawJobQueue } from '../infrastructure/queue/in-memory-withdraw-job-queue.js';
 import { PostgresAlertMonitorStateRepository } from '../infrastructure/persistence/postgres/postgres-alert-monitor-state-repository.js';
 import { PostgresDepositMonitorRepository } from '../infrastructure/persistence/postgres/postgres-deposit-monitor-repository.js';
 import { PostgresMonitoringRepository } from '../infrastructure/persistence/postgres/postgres-monitoring-repository.js';
 import { PostgresLedgerRepository } from '../infrastructure/persistence/postgres/postgres-ledger-repository.js';
 import { PostgresVirtualWalletRepository } from '../infrastructure/persistence/postgres/postgres-virtual-wallet-repository.js';
 import { createPostgresDb, createPostgresPool } from '../infrastructure/persistence/postgres/postgres-pool.js';
+import { BullmqWithdrawJobQueue } from '../infrastructure/queue/bullmq-withdraw-job-queue.js';
 import { AesGcmVirtualWalletKeyCipher } from '../infrastructure/security/virtual-wallet-key-cipher.js';
 import type { BlockchainReader } from '../application/ports/blockchain-reader.js';
 import type { TronGateway } from '../application/ports/tron-gateway.js';
+import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
 import type { AppDependencies } from './app-dependencies.js';
 import { Pool } from 'pg';
 
@@ -215,10 +219,40 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
-  const withdrawService = new WithdrawService(ledger, eventPublisher, tronGateway, virtualWalletLifecyclePolicy);
+  const withdrawDispatchWorker = new WithdrawDispatchWorker(ledger, undefined, tronGateway, alertService);
+  let withdrawJobQueue: WithdrawJobQueue;
+  const queueHandlers = {
+    dispatch: async (withdrawalId: string, attempt: number) => {
+      await withdrawDispatchWorker.processDispatch(withdrawalId, attempt);
+      await withdrawJobQueue.enqueueReconcile(withdrawalId);
+    },
+    reconcile: (withdrawalId: string | undefined, attempt: number) =>
+      withdrawDispatchWorker.processReconcile(withdrawalId, attempt)
+  };
+  withdrawJobQueue = env.redisEnabled
+    ? new BullmqWithdrawJobQueue(
+        queueHandlers,
+        {
+          connection: { url: env.redisUrl },
+          queueName: `${env.redisKeyPrefix}:withdraw-jobs`,
+          dispatchAttempts: env.withdrawDispatchMaxRetryCount,
+          reconcileAttempts: env.withdrawDispatchMaxRetryCount,
+          backoffDelayMs: env.withdrawRetryBaseDelaySec * 1000
+        }
+      )
+    : new InMemoryWithdrawJobQueue(queueHandlers);
+  const withdrawService = new WithdrawService(
+    ledger,
+    eventPublisher,
+    tronGateway,
+    alertService,
+    withdrawJobQueue,
+    virtualWalletLifecyclePolicy
+  );
+  withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
-  const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher);
-  const operationsService = new OperationsService(ledger, systemMonitoringService);
+  const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher, withdrawJobQueue);
+  const operationsService = new OperationsService(ledger, systemMonitoringService, withdrawJobQueue);
   const sweepBotService = new SweepBotService(
     depositMonitorRepository,
     foxyaClient,
@@ -252,6 +286,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertMonitorStateRepository,
     eventPublisher,
     alertService,
+    withdrawJobQueue,
     activationGrantService,
     activationGrantWorker,
     activationReclaimService,
@@ -274,6 +309,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     walletService,
     accountReconciliationService,
     withdrawService,
+    withdrawDispatchWorker,
     schedulerService,
     operationsService
   };

@@ -39,6 +39,99 @@ export class AlertService {
     });
   }
 
+  async notifyWithdrawalRequested(input: {
+    withdrawalId: string;
+    userId: string;
+    amount: string;
+    toAddress: string;
+    riskLevel: 'low' | 'medium' | 'high';
+    requiredApprovals: number;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Requested',
+      body: [
+        `withdrawalId=${input.withdrawalId}`,
+        `userId=${input.userId}`,
+        `amount=${input.amount}`,
+        `toAddress=${input.toAddress}`,
+        `riskLevel=${input.riskLevel}`,
+        `requiredApprovals=${input.requiredApprovals}`
+      ].join('\n'),
+      dedupeKey: `withdraw-requested:${input.withdrawalId}`
+    });
+  }
+
+  async notifyWithdrawalApproved(input: {
+    withdrawalId: string;
+    adminId: string;
+    approvalCount: number;
+    requiredApprovals: number;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Approved',
+      body: [
+        `withdrawalId=${input.withdrawalId}`,
+        `adminId=${input.adminId}`,
+        `approvalCount=${input.approvalCount}`,
+        `requiredApprovals=${input.requiredApprovals}`
+      ].join('\n'),
+      dedupeKey: `withdraw-approved:${input.withdrawalId}:${input.approvalCount}`
+    });
+  }
+
+  async notifyWithdrawalDispatchRetry(input: {
+    withdrawalId: string;
+    retryCount: number;
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Dispatch Retry',
+      body: [
+        `withdrawalId=${input.withdrawalId}`,
+        `retryCount=${input.retryCount}`,
+        `reason=${input.reason}`
+      ].join('\n'),
+      dedupeKey: `withdraw-dispatch-retry:${input.withdrawalId}:${input.retryCount}:${input.reason}`
+    });
+  }
+
+  async notifyWithdrawalDispatchFailed(input: {
+    withdrawalId: string;
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Dispatch Failed',
+      body: [`withdrawalId=${input.withdrawalId}`, `reason=${input.reason}`].join('\n'),
+      dedupeKey: `withdraw-dispatch-failed:${input.withdrawalId}:${input.reason}`
+    });
+  }
+
+  async notifyWithdrawalResourceLow(input: {
+    withdrawalId: string;
+    hotWalletAddress: string;
+    trxBalanceSun: string;
+    availableBandwidth: number;
+    availableEnergy: number;
+    minTrxSun: string;
+    minBandwidth: number;
+    minEnergy: number;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Resource Low',
+      body: [
+        `withdrawalId=${input.withdrawalId}`,
+        `hotWallet=${input.hotWalletAddress}`,
+        `trxBalanceSun=${input.trxBalanceSun}`,
+        `availableBandwidth=${input.availableBandwidth}`,
+        `availableEnergy=${input.availableEnergy}`,
+        `minTrxSun=${input.minTrxSun}`,
+        `minBandwidth=${input.minBandwidth}`,
+        `minEnergy=${input.minEnergy}`
+      ].join('\n'),
+      dedupeKey: `withdraw-resource-low:${input.withdrawalId}:${input.hotWalletAddress}`
+    });
+  }
+
   async notifySweepResourceLow(input: {
     depositId: string;
     sourceAddress: string;

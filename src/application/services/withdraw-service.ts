@@ -1,9 +1,11 @@
-import { parseKoriAmount } from '../../domain/value-objects/money.js';
+import { formatKoriAmount, parseKoriAmount } from '../../domain/value-objects/money.js';
 import { buildWithdrawalStateChangedContract } from '../../contracts/ledger-contracts.js';
 import { env } from '../../config/env.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
+import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
+import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 
 export class WithdrawService {
@@ -11,6 +13,8 @@ export class WithdrawService {
     private readonly ledger: LedgerRepository,
     private readonly eventPublisher: EventPublisher,
     private readonly tronGateway: TronGateway,
+    private readonly alertService: AlertService,
+    private readonly withdrawJobQueue: WithdrawJobQueue,
     private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService
   ) {}
 
@@ -63,6 +67,14 @@ export class WithdrawService {
           clientIp: input.clientIp ?? '',
           deviceId: input.deviceId ?? ''
         }
+      });
+      await this.alertService.notifyWithdrawalRequested({
+        withdrawalId: result.withdrawal.withdrawalId,
+        userId,
+        amount: formatKoriAmount(result.withdrawal.amount),
+        toAddress: result.withdrawal.toAddress,
+        riskLevel: result.withdrawal.riskLevel,
+        requiredApprovals: result.withdrawal.requiredApprovals
       });
     }
 
@@ -117,6 +129,15 @@ export class WithdrawService {
         requiredApprovals: result.withdrawal.requiredApprovals.toString()
       }
     });
+    if (result.finalized) {
+      await this.withdrawJobQueue.enqueueDispatch(withdrawalId);
+      await this.alertService.notifyWithdrawalApproved({
+        withdrawalId,
+        adminId: input.adminId ?? 'admin-unknown',
+        approvalCount: result.withdrawal.approvalCount,
+        requiredApprovals: result.withdrawal.requiredApprovals
+      });
+    }
     return result;
   }
 

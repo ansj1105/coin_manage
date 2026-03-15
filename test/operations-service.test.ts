@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAppDependencies } from '../src/container/create-app-dependencies.js';
 import { MockTronGateway } from '../src/infrastructure/blockchain/mock-tron-gateway.js';
 import { InMemoryMonitoringRepository } from '../src/infrastructure/persistence/in-memory-monitoring-repository.js';
+import { InMemoryWithdrawJobQueue } from '../src/infrastructure/queue/in-memory-withdraw-job-queue.js';
 import { SystemMonitoringService } from '../src/application/services/system-monitoring-service.js';
 import { OperationsService } from '../src/application/services/operations-service.js';
 import { getConfiguredSystemWallets } from '../src/config/system-wallets.js';
@@ -31,7 +32,7 @@ describe('operations and control flows', () => {
     });
   });
 
-  it('auto-approves low-risk withdrawals through the scheduler queue and writes audit logs', async () => {
+  it('queues low-risk withdrawals for manual review and writes audit logs', async () => {
     const request = await deps.withdrawService.request({
       userId: 'user-1',
       amountKori: 10,
@@ -47,18 +48,20 @@ describe('operations and control flows', () => {
     });
 
     const processed = await deps.schedulerService.processWithdrawQueue();
-    expect(processed.autoApproved).toBe(1);
+    expect(processed.autoApproved).toBe(0);
+    expect(processed.reviewQueued).toBe(1);
 
     const stored = await deps.withdrawService.get(request.withdrawal.withdrawalId);
-    expect(stored?.status).toBe('ADMIN_APPROVED');
-    expect(stored?.approvalCount).toBe(1);
+    expect(stored?.status).toBe('PENDING_ADMIN');
+    expect(stored?.approvalCount).toBe(0);
+    expect(stored?.reviewRequiredAt).toBeTruthy();
 
     const logs = await deps.operationsService.listAuditLogs({
       entityType: 'withdrawal',
       entityId: request.withdrawal.withdrawalId
     });
     expect(logs.map((log) => log.action)).toContain('withdraw.requested');
-    expect(logs.map((log) => log.action)).toContain('withdraw.approved.finalized');
+    expect(logs.map((log) => log.action)).toContain('withdraw.review_required');
   });
 
   it('marks high-risk withdrawals for review and finalizes after dual admin approvals', async () => {
@@ -96,8 +99,45 @@ describe('operations and control flows', () => {
     expect(second.finalized).toBe(true);
     expect(second.withdrawal.status).toBe('ADMIN_APPROVED');
 
+    await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+    const completed = await deps.withdrawService.get(request.withdrawal.withdrawalId);
+    expect(completed?.status).toBe('COMPLETED');
+
     const approvals = await deps.withdrawService.listApprovals(request.withdrawal.withdrawalId);
     expect(approvals).toHaveLength(2);
+  });
+
+  it('reflects completed withdrawals in ledger summary without counting them as active', async () => {
+    const requested = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 100,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'ledger-summary-withdraw-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    let report = await deps.operationsService.getReconciliationReport();
+    expect(report.ledger.availableBalance).toBe('59900.000000');
+    expect(report.ledger.lockedBalance).toBe('100.000000');
+    expect(report.ledger.liabilityBalance).toBe('60000.000000');
+    expect(report.ledger.activeWithdrawalCount).toBe(1);
+
+    await deps.withdrawService.confirmExternalAuth(requested.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'ledger-summary-auth-1'
+    });
+    await deps.withdrawService.approve(requested.withdrawal.withdrawalId, {
+      adminId: 'admin-1',
+      note: 'approve for ledger summary'
+    });
+    await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+
+    report = await deps.operationsService.getReconciliationReport();
+    expect(report.ledger.availableBalance).toBe('59900.000000');
+    expect(report.ledger.lockedBalance).toBe('0.000000');
+    expect(report.ledger.liabilityBalance).toBe('59900.000000');
+    expect(report.ledger.activeWithdrawalCount).toBe(0);
   });
 
   it('creates sweep plans and reconciliation summary from stored monitoring snapshots', async () => {
@@ -133,5 +173,32 @@ describe('operations and control flows', () => {
     const reconciliation = await operationsService.getReconciliationReport();
     expect(reconciliation.onchain.trackedWalletCount).toBe(6);
     expect(reconciliation.ledger.accountCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('seeds withdrawal queue recovery from persisted withdrawal states', async () => {
+    const request = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 120,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'recovery-seed-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'recovery-seed-auth-1'
+    });
+    await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
+      adminId: 'admin-1',
+      note: 'approve for recovery'
+    });
+
+    const seeded = await deps.operationsService.seedWithdrawalQueueRecovery();
+    expect(seeded.approvedCount).toBeGreaterThanOrEqual(1);
+
+    await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+    const completed = await deps.withdrawService.get(request.withdrawal.withdrawalId);
+    expect(completed?.status).toBe('COMPLETED');
   });
 });

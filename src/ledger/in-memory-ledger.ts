@@ -33,7 +33,11 @@ const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
   'LEDGER_RESERVED',
   'PENDING_ADMIN',
   'ADMIN_APPROVED',
-  'TX_BROADCASTED',
+  'TX_BROADCASTED'
+];
+
+const DAILY_LIMIT_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
+  ...ACTIVE_WITHDRAWAL_STATUSES,
   'COMPLETED'
 ];
 
@@ -537,6 +541,55 @@ export class InMemoryLedger {
     });
   }
 
+  async claimPendingJobs(types: TxJob['type'][], limit: number): Promise<TxJob[]> {
+    return this.withLock(() => {
+      if (!types.length || limit <= 0) {
+        return [];
+      }
+
+      const claimed = Array.from(this.jobs.values())
+        .filter((job) => job.status === 'pending' && types.includes(job.type))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(0, limit);
+
+      for (const job of claimed) {
+        job.status = 'running';
+      }
+
+      return claimed.map((job) => ({ ...job, payload: { ...job.payload } }));
+    });
+  }
+
+  async markJobDone(jobId: string): Promise<void> {
+    this.withLock(() => {
+      const job = this.jobs.get(jobId);
+      if (job) {
+        job.status = 'done';
+      }
+    });
+  }
+
+  async markJobFailed(jobId: string): Promise<void> {
+    this.withLock(() => {
+      const job = this.jobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+      }
+    });
+  }
+
+  async retryJob(jobId: string): Promise<TxJob | undefined> {
+    return this.withLock(() => {
+      const job = this.jobs.get(jobId);
+      if (!job) {
+        return undefined;
+      }
+      job.retryCount += 1;
+      job.status = 'pending';
+      return { ...job, payload: { ...job.payload } };
+    });
+  }
+
   async appendAuditLog(input: {
     entityType: AuditLog['entityType'];
     entityId: string;
@@ -770,7 +823,7 @@ export class InMemoryLedger {
     const amounts = Array.from(this.withdrawals.values())
       .filter((withdrawal) => withdrawal.userId === userId)
       .filter((withdrawal) => withdrawal.createdAt.slice(0, 10) === day)
-      .filter((withdrawal) => ACTIVE_WITHDRAWAL_STATUSES.includes(withdrawal.status))
+      .filter((withdrawal) => DAILY_LIMIT_WITHDRAWAL_STATUSES.includes(withdrawal.status))
       .map((withdrawal) => withdrawal.amount);
 
     return sumBigInt(amounts);

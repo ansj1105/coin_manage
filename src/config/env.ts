@@ -26,6 +26,9 @@ const optionalString = z.preprocess((value) => (value === '' ? undefined : value
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
+  HTTP_ENABLED: optionalBooleanString,
+  SINGLETON_WORKERS_ENABLED: optionalBooleanString,
+  WITHDRAW_QUEUE_WORKER_ENABLED: optionalBooleanString,
   LEDGER_PROVIDER: z.enum(['memory', 'postgres']).default('memory'),
   TRON_GATEWAY_MODE: z.enum(['mock', 'trc20']).default('mock'),
   ALLOW_RUNTIME_PROFILE_SWITCHING: optionalBooleanString,
@@ -109,9 +112,20 @@ const schema = z.object({
   DB_USER: z.string().default('korion'),
   DB_PASSWORD: z.string().default('korion'),
   DB_SCHEMA: z.string().default('public'),
+  REDIS_ENABLED: optionalBooleanString,
+  REDIS_URL: z.string().url().default('redis://127.0.0.1:6379'),
+  REDIS_KEY_PREFIX: z.string().default('korion'),
   WITHDRAW_SINGLE_LIMIT_KORI: z.coerce.number().positive().default(10000),
   WITHDRAW_DAILY_LIMIT_KORI: z.coerce.number().positive().default(50000),
-  SCHEDULER_PENDING_TIMEOUT_SEC: z.coerce.number().int().positive().default(60)
+  SCHEDULER_PENDING_TIMEOUT_SEC: z.coerce.number().int().positive().default(60),
+  WITHDRAW_DISPATCH_ENABLED: optionalBooleanString,
+  WITHDRAW_DISPATCH_INTERVAL_SEC: z.coerce.number().int().positive().default(15),
+  WITHDRAW_DISPATCH_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(50),
+  WITHDRAW_DISPATCH_MAX_RETRY_COUNT: z.coerce.number().int().positive().default(20),
+  WITHDRAW_RETRY_BASE_DELAY_SEC: z.coerce.number().int().positive().default(15),
+  WITHDRAW_MIN_TRX_SUN: z.coerce.number().int().nonnegative().default(5_000_000),
+  WITHDRAW_MIN_BANDWIDTH: z.coerce.number().int().nonnegative().default(500),
+  WITHDRAW_MIN_ENERGY: z.coerce.number().int().nonnegative().default(10_000)
 });
 
 const parsed = schema.parse(process.env);
@@ -174,6 +188,11 @@ if (parsed.TRON_GATEWAY_MODE === 'trc20' && !parsed.KORI_TOKEN_CONTRACT_ADDRESS)
 export const env = Object.freeze({
   nodeEnv: parsed.NODE_ENV,
   port: parsed.PORT,
+  httpEnabled: parsed.HTTP_ENABLED !== undefined ? parsed.HTTP_ENABLED === 'true' : true,
+  singletonWorkersEnabled:
+    parsed.SINGLETON_WORKERS_ENABLED !== undefined ? parsed.SINGLETON_WORKERS_ENABLED === 'true' : true,
+  withdrawQueueWorkerEnabled:
+    parsed.WITHDRAW_QUEUE_WORKER_ENABLED !== undefined ? parsed.WITHDRAW_QUEUE_WORKER_ENABLED === 'true' : true,
   ledgerProvider: parsed.LEDGER_PROVIDER,
   tronGatewayMode: parsed.TRON_GATEWAY_MODE,
   runtimeProfileEditable:
@@ -293,7 +312,19 @@ export const env = Object.freeze({
     password: parsed.DB_PASSWORD,
     schema: parsed.DB_SCHEMA
   },
+  redisEnabled: parsed.REDIS_ENABLED !== undefined ? parsed.REDIS_ENABLED === 'true' : false,
+  redisUrl: parsed.REDIS_URL,
+  redisKeyPrefix: parsed.REDIS_KEY_PREFIX,
   withdrawSingleLimitKori: parsed.WITHDRAW_SINGLE_LIMIT_KORI,
   withdrawDailyLimitKori: parsed.WITHDRAW_DAILY_LIMIT_KORI,
-  schedulerPendingTimeoutSec: parsed.SCHEDULER_PENDING_TIMEOUT_SEC
+  schedulerPendingTimeoutSec: parsed.SCHEDULER_PENDING_TIMEOUT_SEC,
+  withdrawDispatchEnabled:
+    parsed.WITHDRAW_DISPATCH_ENABLED !== undefined ? parsed.WITHDRAW_DISPATCH_ENABLED === 'true' : true,
+  withdrawDispatchIntervalSec: parsed.WITHDRAW_DISPATCH_INTERVAL_SEC,
+  withdrawDispatchCycleLimit: parsed.WITHDRAW_DISPATCH_CYCLE_LIMIT,
+  withdrawDispatchMaxRetryCount: parsed.WITHDRAW_DISPATCH_MAX_RETRY_COUNT,
+  withdrawRetryBaseDelaySec: parsed.WITHDRAW_RETRY_BASE_DELAY_SEC,
+  withdrawMinTrxSun: BigInt(parsed.WITHDRAW_MIN_TRX_SUN),
+  withdrawMinBandwidth: parsed.WITHDRAW_MIN_BANDWIDTH,
+  withdrawMinEnergy: parsed.WITHDRAW_MIN_ENERGY
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createAppDependencies } from '../src/container/create-app-dependencies.js';
 import { isValidTronAddress } from '../src/domain/value-objects/tron-address.js';
 import { MockTronGateway } from '../src/infrastructure/blockchain/mock-tron-gateway.js';
+import { InMemoryWithdrawJobQueue } from '../src/infrastructure/queue/in-memory-withdraw-job-queue.js';
 
 const VALID_TRON_ADDRESS = 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const TRACKED_DEPOSIT_ADDRESS = 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa';
@@ -79,6 +80,43 @@ describe('withdraw flow (service-level)', () => {
         amountKori: 1,
         toAddress: VALID_TRON_ADDRESS,
         idempotencyKey: 'wd-daily-overflow'
+      })
+    ).rejects.toMatchObject({
+      code: 'LIMIT_EXCEEDED'
+    });
+  });
+
+  it('keeps completed withdrawals in daily limit accounting', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const request = await deps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 5000,
+        toAddress: VALID_TRON_ADDRESS,
+        idempotencyKey: `wd-daily-completed-${i}`,
+        clientIp: '127.0.0.1',
+        deviceId: `device-${i}`
+      });
+
+      await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+        provider: 'coin_cloud_system',
+        requestId: `cloud-daily-completed-${i}`
+      });
+      await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
+        adminId: `admin-${i}`,
+        note: 'complete for daily limit accounting'
+      });
+      await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+
+      const completed = await deps.withdrawService.get(request.withdrawal.withdrawalId);
+      expect(completed?.status).toBe('COMPLETED');
+    }
+
+    await expect(
+      deps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 1,
+        toAddress: VALID_TRON_ADDRESS,
+        idempotencyKey: 'wd-daily-completed-overflow'
       })
     ).rejects.toMatchObject({
       code: 'LIMIT_EXCEEDED'

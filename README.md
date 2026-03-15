@@ -53,6 +53,17 @@ EC2 운영 가이드는 [EC2_DEPLOYMENT.md](/Users/an/work/coin_manage/EC2_DEPLO
 APP_PORT=3001
 ```
 
+컨테이너 역할 분리:
+```env
+HTTP_ENABLED=true
+SINGLETON_WORKERS_ENABLED=true
+WITHDRAW_QUEUE_WORKER_ENABLED=true
+```
+
+- `app-api`: HTTP만 담당
+- `app-withdraw-worker`: BullMQ 출금 dispatch/reconcile 전용, `docker compose up -d --scale app-withdraw-worker=3` 식으로 수평 확장 가능
+- `app-ops`: 모니터링/입금감지/sweep/alert 같은 싱글턴 배치 담당
+
 운영 배포에서 PostgreSQL은 기본적으로 `127.0.0.1`에만 바인딩됩니다:
 ```env
 DB_BIND_ADDRESS=127.0.0.1
@@ -105,6 +116,20 @@ TELEGRAM_BOT_TOKEN=replace-with-bot-token
 TELEGRAM_CHAT_ID=replace-with-chat-id
 ```
 
+출금 재시도 큐를 Redis로 사용하려면:
+```env
+REDIS_ENABLED=true
+REDIS_URL=redis://127.0.0.1:6379
+REDIS_KEY_PREFIX=korion
+WITHDRAW_RETRY_BASE_DELAY_SEC=15
+```
+
+권장 클러스터링 전략:
+- API는 `app-api`를 여러 대로 확장
+- 출금 queue worker는 `app-withdraw-worker`만 여러 대로 확장
+- `app-ops`는 1대로 유지
+- PostgreSQL은 상태 원본, Redis/BullMQ는 출금 실행 제어와 재시도만 담당
+
 주의:
 - `watch-addresses` 응답에는 통화 코드가 있어도 체인 이벤트 자체는 계약 기준이라, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS=3`처럼 KORI currency id만 제한해야 합니다.
 - `coin_manage`와 `foxya`가 다른 EC2면 container service name(`foxya-api`, `foxya-postgres`)을 쓰면 안 됩니다. `FOXYA_INTERNAL_API_URL`과 `FOXYA_DB_HOST`는 실제 라우팅 가능한 IP/도메인으로 넣어야 합니다.
@@ -123,7 +148,11 @@ mainnet 직접 전송은 `ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=true`가 추
 
 내부 전송과 실제 온체인 전송은 분리되어 있습니다.
 - `POST /api/wallets/transfer`: 내부 원장 간 이동. private key 불필요.
-- `POST /api/withdrawals` -> `broadcast`: 외부 TRON 주소로 내보내는 출금 흐름. `TRON_GATEWAY_MODE=trc20`일 때만 실제 핫월렛 서명이 발생합니다.
+- `POST /api/withdrawals`: 요청 시 내부 원장 잠금과 출금 요청 알림을 생성합니다.
+- `POST /api/withdrawals/:withdrawalId/approve`: 관리자 수동 승인 후 `withdraw_dispatch` job을 생성합니다.
+- 출금 worker: `WITHDRAW_DISPATCH_ENABLED=true`일 때 승인된 출금을 BullMQ로 백그라운드 브로드캐스트/재대사합니다.
+- 앱 부팅 시 `ADMIN_APPROVED`, `TX_BROADCASTED` 상태 출금을 DB에서 다시 읽어 queue recovery seed를 수행합니다.
+- `TRON_GATEWAY_MODE=trc20`일 때만 실제 핫월렛 서명이 발생합니다.
 
 상태/로그:
 ```bash
@@ -149,6 +178,8 @@ npm run stack:down
 - `GET /api/system/external-alert-monitor`
 - `POST /api/system/external-alert-monitor/run`
 - `GET /api/system/audit-logs`
+- `GET /api/system/withdraw-jobs/failed`
+- `POST /api/system/withdraw-jobs/recover`
 - `GET /api/system/reconciliation`
 - `GET /api/system/sweeps`
 - `POST /api/system/sweeps/plan`

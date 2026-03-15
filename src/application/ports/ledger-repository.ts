@@ -68,6 +68,10 @@ export interface LedgerRepository {
   listWithdrawalApprovals(withdrawalId: string): Promise<WithdrawalApproval[]>;
   listStuckWithdrawals(timeoutSec: number, nowIso?: string): Promise<Withdrawal[]>;
   enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso?: string): Promise<TxJob>;
+  claimPendingJobs(types: TxJob['type'][], limit: number, nowIso?: string): Promise<TxJob[]>;
+  markJobDone(jobId: string): Promise<void>;
+  markJobFailed(jobId: string): Promise<void>;
+  retryJob(jobId: string): Promise<TxJob | undefined>;
   appendAuditLog(input: {
     entityType: AuditLog['entityType'];
     entityId: string;

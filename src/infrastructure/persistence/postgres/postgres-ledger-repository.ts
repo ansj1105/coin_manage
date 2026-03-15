@@ -27,7 +27,11 @@ const ACTIVE_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
   'LEDGER_RESERVED',
   'PENDING_ADMIN',
   'ADMIN_APPROVED',
-  'TX_BROADCASTED',
+  'TX_BROADCASTED'
+];
+
+const DAILY_LIMIT_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
+  ...ACTIVE_WITHDRAWAL_STATUSES,
   'COMPLETED'
 ];
 
@@ -883,6 +887,62 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.mapJob(row);
   }
 
+  async claimPendingJobs(types: TxJob['type'][], limit: number): Promise<TxJob[]> {
+    if (!types.length || limit <= 0) {
+      return [];
+    }
+
+    return this.withTransaction(async (trx) => {
+      const rows = await trx
+        .selectFrom('tx_jobs')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('type', 'in', types)
+        .orderBy('created_at asc')
+        .limit(limit)
+        .forUpdate()
+        .execute();
+
+      const claimed: TxJob[] = [];
+      for (const row of rows) {
+        const updated = await trx
+          .updateTable('tx_jobs')
+          .set({ status: 'running' })
+          .where('job_id', '=', row.job_id)
+          .where('status', '=', 'pending')
+          .returningAll()
+          .executeTakeFirst();
+        if (updated) {
+          claimed.push(this.mapJob(updated));
+        }
+      }
+
+      return claimed;
+    });
+  }
+
+  async markJobDone(jobId: string): Promise<void> {
+    await this.db.updateTable('tx_jobs').set({ status: 'done' }).where('job_id', '=', jobId).execute();
+  }
+
+  async markJobFailed(jobId: string): Promise<void> {
+    await this.db.updateTable('tx_jobs').set({ status: 'failed' }).where('job_id', '=', jobId).execute();
+  }
+
+  async retryJob(jobId: string): Promise<TxJob | undefined> {
+    const row = await this.db
+      .updateTable('tx_jobs')
+      .set({
+        status: 'pending',
+        retry_count: sql<number>`retry_count + 1`
+      })
+      .where('job_id', '=', jobId)
+      .returningAll()
+      .executeTakeFirst();
+
+    return row ? this.mapJob(row) : undefined;
+  }
+
   async appendAuditLog(input: {
     entityType: AuditLog['entityType'];
     entityId: string;
@@ -1282,7 +1342,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .where('user_id', '=', userId)
       .where(sql<boolean>`created_at >= date_trunc('day', ${nowIso}::timestamptz)`)
       .where(sql<boolean>`created_at < date_trunc('day', ${nowIso}::timestamptz) + interval '1 day'`)
-      .where('status', 'in', ACTIVE_WITHDRAWAL_STATUSES)
+      .where('status', 'in', DAILY_LIMIT_WITHDRAWAL_STATUSES)
       .executeTakeFirst();
 
     return parseStoredKoriAmount(row?.amount ?? '0');

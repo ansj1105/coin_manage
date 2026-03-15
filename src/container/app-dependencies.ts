@@ -10,6 +10,7 @@ import { ResourceDelegationService } from '../application/services/resource-dele
 import { ResourceDelegationWorker } from '../application/services/resource-delegation-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
@@ -26,6 +27,7 @@ import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
+import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 
 export interface AppDependencies {
@@ -34,6 +36,7 @@ export interface AppDependencies {
   alertMonitorStateRepository: AlertMonitorStateRepository;
   eventPublisher: EventPublisher;
   alertService: AlertService;
+  withdrawJobQueue: WithdrawJobQueue;
   activationGrantService: ActivationGrantService;
   activationGrantWorker: ActivationGrantWorker;
   activationReclaimService: ActivationReclaimService;
@@ -56,6 +59,7 @@ export interface AppDependencies {
   walletService: WalletService;
   accountReconciliationService: AccountReconciliationService;
   withdrawService: WithdrawService;
+  withdrawDispatchWorker: WithdrawDispatchWorker;
   schedulerService: SchedulerService;
   operationsService: OperationsService;
 }

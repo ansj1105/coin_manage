@@ -370,6 +370,27 @@ export const createSystemRoutes = (
     }
   });
 
+  router.get('/withdraw-jobs/failed', async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      res.json({
+        jobs: await operationsService.listFailedWithdrawJobs(limit)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/withdraw-jobs/recover', async (_req, res, next) => {
+    try {
+      res.json({
+        result: await operationsService.seedWithdrawalQueueRecovery()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get('/reconciliation', async (_req, res, next) => {
     try {
       res.json(await operationsService.getReconciliationReport());

@@ -1,13 +1,15 @@
 import { env } from '../../config/env.js';
 import { getConfiguredSystemWallets } from '../../config/system-wallets.js';
 import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../domain/value-objects/money.js';
+import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import { SystemMonitoringService } from './system-monitoring-service.js';
 
 export class OperationsService {
   constructor(
     private readonly ledger: LedgerRepository,
-    private readonly systemMonitoringService: SystemMonitoringService
+    private readonly systemMonitoringService: SystemMonitoringService,
+    private readonly withdrawJobQueue: WithdrawJobQueue
   ) {}
 
   async listAuditLogs(input?: { entityType?: 'withdrawal' | 'sweep' | 'system'; entityId?: string; limit?: number }) {
@@ -133,6 +135,41 @@ export class OperationsService {
       }
     });
     return result;
+  }
+
+  async listFailedWithdrawJobs(limit = 50) {
+    return this.withdrawJobQueue.listFailed(limit);
+  }
+
+  async seedWithdrawalQueueRecovery() {
+    const [approved, broadcasted] = await Promise.all([
+      this.ledger.listWithdrawalsByStatuses(['ADMIN_APPROVED']),
+      this.ledger.listWithdrawalsByStatuses(['TX_BROADCASTED'])
+    ]);
+
+    for (const withdrawal of approved) {
+      await this.withdrawJobQueue.enqueueDispatch(withdrawal.withdrawalId);
+    }
+    for (const withdrawal of broadcasted) {
+      await this.withdrawJobQueue.enqueueReconcile(withdrawal.withdrawalId);
+    }
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'withdraw-queue-recovery',
+      action: 'withdraw.queue.recovered',
+      actorType: 'system',
+      actorId: 'operations-service',
+      metadata: {
+        approvedCount: approved.length.toString(),
+        broadcastedCount: broadcasted.length.toString()
+      }
+    });
+
+    return {
+      approvedCount: approved.length,
+      broadcastedCount: broadcasted.length
+    };
   }
 
   async markSweepBroadcasted(sweepId: string, txHash: string, note?: string) {
