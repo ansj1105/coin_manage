@@ -485,7 +485,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           fail_reason: null,
           risk_level: input.riskLevel ?? 'low',
           risk_score: input.riskScore ?? 0,
-          risk_flags: input.riskFlags ?? [],
+          risk_flags: JSON.stringify(input.riskFlags ?? []) as unknown as KorionDatabase['withdrawals']['risk_flags'],
           required_approvals: input.requiredApprovals ?? 1,
           client_ip: input.clientIp ?? null,
           device_id: input.deviceId ?? null,
@@ -1635,7 +1635,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       failReason: row.fail_reason ?? undefined,
       riskLevel: row.risk_level,
       riskScore: row.risk_score,
-      riskFlags: row.risk_flags ?? [],
+      riskFlags: this.parseRiskFlags(row.risk_flags),
       requiredApprovals: row.required_approvals,
       approvalCount,
       clientIp: row.client_ip ?? undefined,
@@ -1702,5 +1702,21 @@ export class PostgresLedgerRepository implements LedgerRepository {
       retryCount: row.retry_count,
       createdAt: row.created_at
     };
+  }
+
+  private parseRiskFlags(value: KorionDatabase['withdrawals']['risk_flags'] | string[] | string | null): string[] {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (typeof value !== 'string' || value.trim() === '') {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
   }
 }
