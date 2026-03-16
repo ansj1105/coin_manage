@@ -1627,11 +1627,11 @@ export class PostgresLedgerRepository implements LedgerRepository {
       txHash: row.tx_hash ?? undefined,
       idempotencyKey: row.idempotency_key,
       ledgerTxId: row.ledger_tx_id,
-      createdAt: row.created_at,
-      approvedAt: row.approved_at ?? undefined,
-      broadcastedAt: row.broadcasted_at ?? undefined,
-      confirmedAt: row.confirmed_at ?? undefined,
-      failedAt: row.failed_at ?? undefined,
+      createdAt: this.normalizeDateTime(row.created_at) ?? '',
+      approvedAt: this.normalizeDateTime(row.approved_at) ?? undefined,
+      broadcastedAt: this.normalizeDateTime(row.broadcasted_at) ?? undefined,
+      confirmedAt: this.normalizeDateTime(row.confirmed_at) ?? undefined,
+      failedAt: this.normalizeDateTime(row.failed_at) ?? undefined,
       failReason: row.fail_reason ?? undefined,
       riskLevel: row.risk_level,
       riskScore: row.risk_score,
@@ -1640,10 +1640,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
       approvalCount,
       clientIp: row.client_ip ?? undefined,
       deviceId: row.device_id ?? undefined,
-      reviewRequiredAt: row.review_required_at ?? undefined,
+      reviewRequiredAt: this.normalizeDateTime(row.review_required_at) ?? undefined,
       externalAuthProvider: row.external_auth_provider ?? undefined,
       externalAuthRequestId: row.external_auth_request_id ?? undefined,
-      externalAuthConfirmedAt: row.external_auth_confirmed_at ?? undefined
+      externalAuthConfirmedAt: this.normalizeDateTime(row.external_auth_confirmed_at) ?? undefined
     };
   }
 
@@ -1718,5 +1718,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
     } catch {
       return [];
     }
+  }
+
+  private normalizeDateTime(value: Date | string | null | undefined): string | undefined {
+    if (value == null) {
+      return undefined;
+    }
+    return value instanceof Date ? value.toISOString() : value;
   }
 }
