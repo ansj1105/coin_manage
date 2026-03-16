@@ -351,11 +351,20 @@ export class AlertService {
       }
     }
 
-    await this.notifier.sendMessage({
-      title: input.title,
-      body: input.body,
-      dedupeKey: input.dedupeKey
-    });
+    try {
+      await this.notifier.sendMessage({
+        title: input.title,
+        body: input.body,
+        dedupeKey: input.dedupeKey
+      });
+    } catch (error) {
+      console.error('Alert delivery failed:', {
+        title: input.title,
+        dedupeKey: input.dedupeKey,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
 
     if (input.dedupeKey) {
       this.lastSentByKey.set(input.dedupeKey, {

@@ -65,4 +65,30 @@ describe('FoxyaInternalDepositClient', () => {
       currencyId: 3
     });
   });
+
+  it('retries once when the internal API fetch fails before succeeding', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [{ userId: '77', currencyId: 101, address: 'TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z', network: 'TRON' }]
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new FoxyaInternalDepositClient('http://foxya-api:8080/api/v1/internal/deposits', 'internal-key');
+    const addresses = await client.listWatchAddresses();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(addresses).toEqual([
+      { userId: '77', currencyId: 101, address: 'TYteNy9PWTg9U68dnjwNnosQC9FP1Hgs1Z', network: 'TRON' }
+    ]);
+  });
 });

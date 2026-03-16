@@ -26,7 +26,23 @@ export class TelegramAlertNotifier implements AlertNotifier {
 
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(message || `telegram sendMessage failed with status ${response.status}`);
+      let detail = message;
+
+      try {
+        const parsed = JSON.parse(message) as {
+          description?: string;
+          parameters?: { retry_after?: number };
+        };
+        const retryAfter = parsed.parameters?.retry_after;
+        detail = parsed.description ?? message;
+        if (retryAfter !== undefined) {
+          detail = `${detail} (retry_after=${retryAfter}s)`;
+        }
+      } catch {
+        // Keep the raw Telegram response body when it is not JSON.
+      }
+
+      throw new Error(detail || `telegram sendMessage failed with status ${response.status}`);
     }
   }
 }
