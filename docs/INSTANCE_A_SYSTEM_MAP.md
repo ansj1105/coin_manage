@@ -45,7 +45,9 @@
                                         | coin_publish workers        |
                                         | coin_system_flyway          |
                                         | db-proxy :15432             |
-                                        | local postgres standby      |
+                                        | local postgres primary      |
+                                        | rabbitmq / mysql            |
+                                        | prometheus / grafana        |
                                         +-----------------------------+
                                            |                |
                      admin / user api -----+                +----- db access via proxy
@@ -212,6 +214,10 @@ flowchart LR
 - host nginx
 - `db-proxy`
 - local postgres primary
+- `coin_csms`
+- `rabbitmq`
+- local `mysql`
+- `prometheus` / `grafana`
 - `db-proxy` 공개 포트 `15432`
 
 주요 포트
@@ -220,6 +226,10 @@ flowchart LR
 - `8080`: foxya api
 - `8081`: csms api
 - `15432`: db-proxy
+- `5672/15672`: rabbitmq
+- `127.0.0.1:5432`: local postgres
+- `127.0.0.1:6379`: local redis
+- `127.0.0.1:3001/9090`: grafana/prometheus
 
 ### 4.2 korion 서버
 
@@ -238,8 +248,15 @@ flowchart LR
 
 주요 포트
 
-- `80/443`: 외부 nginx 또는 직접 reverse proxy 경유
+- `80`: host nginx active
 - `3000`: 내부 app
+- `127.0.0.1:15432`: local postgres bind
+- `127.0.0.1:16379`: local redis bind
+
+현재 확인 기준
+
+- host nginx는 `80 -> 127.0.0.1:3000` reverse proxy
+- `443` 리슨은 현재 서버 자체에서는 확인되지 않음
 
 ## 4.3 서버 역할 비교
 
@@ -248,7 +265,8 @@ flowchart LR
 | 서버                 | 주요 책임                                    |
 +----------------------+---------------------------------------------+
 | Main Server          | 앱 API, 관리자 API, 웹 정적 파일, Flyway,   |
-| 52.200.97.155        | 레거시 워커, db-proxy, local primary        |
+| 52.200.97.155        | 레거시 워커, db-proxy, local primary,       |
+|                      | rabbitmq/mysql, 모니터링                    |
 +----------------------+---------------------------------------------+
 | Korion Server        | 신규 출금 서비스, 원장, withdraw worker,     |
 | 54.83.183.123        | ops worker, redis, 별도 postgres            |
@@ -305,6 +323,8 @@ flowchart LR
 - cross-host monitor는 `172.31.36.110:15432` 같은 private 경로를 기준으로 유지해야 함
 - `54.210.92.221` / `172.31.71.66`는 이제 레거시 기준값으로 보지 않음
 - `db-proxy`와 replication 경로 둘 다 SG/NACL에 영향을 받으므로 `172.31.21.248 -> 15432`, `172.31.31.109 -> 5432/15432` 규칙을 유지해야 함
+- 운영 문서의 포트/role 표기는 실제 리슨 상태와 주기적으로 대조해야 함
+- 2026-03-17 확인 기준으로 메인 서버는 postgres primary, korion 서버는 host nginx 80 포트만 직접 리슨 중
 
 ## 6. 요청 흐름
 
