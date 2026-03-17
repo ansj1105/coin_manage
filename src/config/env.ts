@@ -11,6 +11,11 @@ const PLACEHOLDER_SECRETS = new Set([
   'dev-only-private-key-change-me'
 ]);
 
+const hasAsmBinding = (name: string) => {
+  const value = process.env[`${name}_ASM_SECRET_ID`];
+  return typeof value === 'string' && value.trim() !== '';
+};
+
 const optionalBooleanString = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.enum(['true', 'false']).optional()
@@ -167,15 +172,18 @@ const parseHealthTargets = (value?: string) => {
 };
 
 if (parsed.NODE_ENV === 'production') {
-  if (!parsed.JWT_SECRET || PLACEHOLDER_SECRETS.has(parsed.JWT_SECRET)) {
+  if ((!parsed.JWT_SECRET || PLACEHOLDER_SECRETS.has(parsed.JWT_SECRET)) && !hasAsmBinding('JWT_SECRET')) {
     throw new Error('JWT_SECRET is required in production');
   }
-  if (!parsed.HOT_WALLET_PRIVATE_KEY || PLACEHOLDER_SECRETS.has(parsed.HOT_WALLET_PRIVATE_KEY)) {
+  if (
+    (!parsed.HOT_WALLET_PRIVATE_KEY || PLACEHOLDER_SECRETS.has(parsed.HOT_WALLET_PRIVATE_KEY)) &&
+    !hasAsmBinding('HOT_WALLET_PRIVATE_KEY')
+  ) {
     throw new Error('HOT_WALLET_PRIVATE_KEY is required in production');
   }
   if (
-    !parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ||
-    PLACEHOLDER_SECRETS.has(parsed.VIRTUAL_WALLET_ENCRYPTION_KEY)
+    (!parsed.VIRTUAL_WALLET_ENCRYPTION_KEY || PLACEHOLDER_SECRETS.has(parsed.VIRTUAL_WALLET_ENCRYPTION_KEY)) &&
+    !hasAsmBinding('VIRTUAL_WALLET_ENCRYPTION_KEY')
   ) {
     throw new Error('VIRTUAL_WALLET_ENCRYPTION_KEY is required in production');
   }
