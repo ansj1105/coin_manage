@@ -54,7 +54,7 @@ describe('activation reclaim service', () => {
       network: 'mainnet',
       idempotencyKey: 'activation-reclaim-401'
     });
-    await new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), {
+    await new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), undefined, {
       enabled: true,
       cycleLimit: 10,
       amountTrx: 1
@@ -86,7 +86,7 @@ describe('activation reclaim service', () => {
       network: 'mainnet',
       idempotencyKey: 'activation-reclaim-402'
     });
-    await new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), {
+    await new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), undefined, {
       enabled: true,
       cycleLimit: 10,
       amountTrx: 1

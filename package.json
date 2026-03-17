@@ -19,6 +19,7 @@
     "stack:logs": "docker compose logs -f app-api app-withdraw-worker app-ops"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.883.0",
     "bullmq": "^5.71.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

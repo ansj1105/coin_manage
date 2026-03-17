@@ -41,7 +41,7 @@ describe('activation grant service', () => {
       idempotencyKey: 'activation-grant-301'
     });
 
-    const service = new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), {
+    const service = new ActivationGrantService(repository, new MockTronGateway(), new AlertService(), undefined, {
       enabled: true,
       cycleLimit: 10,
       amountTrx: 1

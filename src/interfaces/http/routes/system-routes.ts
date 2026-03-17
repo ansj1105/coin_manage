@@ -20,6 +20,7 @@ import {
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
+import { hasAsmSecretBinding } from '../../../bootstrap/runtime-secrets.js';
 
 const PLACEHOLDER_SECRETS = new Set([
   'replace-with-strong-secret',
@@ -123,7 +124,14 @@ export const buildSystemStatusResponse = (
     },
     security: {
       jwtConfigured: !PLACEHOLDER_SECRETS.has(env.jwtSecret),
-      hotWalletPrivateKeyConfigured: !PLACEHOLDER_SECRETS.has(env.hotWalletPrivateKey)
+      hotWalletPrivateKeyConfigured: !PLACEHOLDER_SECRETS.has(env.hotWalletPrivateKey),
+      secretSources: {
+        jwt: hasAsmSecretBinding('JWT_SECRET') ? 'asm' : 'env',
+        hotWalletPrivateKey: hasAsmSecretBinding('HOT_WALLET_PRIVATE_KEY') ? 'asm' : 'env',
+        foxyaInternalApiKey: hasAsmSecretBinding('FOXYA_INTERNAL_API_KEY') ? 'asm' : 'env',
+        foxyaEncryptionKey: hasAsmSecretBinding('FOXYA_ENCRYPTION_KEY') ? 'asm' : 'env',
+        virtualWalletEncryptionKey: hasAsmSecretBinding('VIRTUAL_WALLET_ENCRYPTION_KEY') ? 'asm' : 'env'
+      }
     },
     sandbox: {
       runtimeProfileEditable: env.runtimeProfileEditable,

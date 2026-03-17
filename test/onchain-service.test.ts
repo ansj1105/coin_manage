@@ -1,5 +1,15 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { OnchainService } from '../src/application/services/onchain-service.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../src/config/env.js', () => ({
+  env: {
+    sandboxDirectOnchainSendEnabled: true,
+    sandboxMainnetDirectOnchainSendEnabled: true,
+    tronGatewayMode: 'trc20',
+    hotWalletAddress: 'THotWallet111111111111111111111111111'
+  }
+}));
+
+const { OnchainService } = await import('../src/application/services/onchain-service.js');
 const reader = {
   getWalletMonitoringSnapshot: vi.fn()
 };

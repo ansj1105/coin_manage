@@ -26,6 +26,9 @@
 | `WALLET_MONITOR_REQUEST_GAP_MS` | No | No | `1500` | 로컬 앱 지갑별 조회 간격(ms) |
 | `APP_WALLET_MONITOR_REQUEST_GAP_MS` | No | No | `1500` | Docker 앱 지갑별 조회 간격(ms) |
 | `JWT_SECRET` | No | Yes | `dev-only-secret-change-me` | 인증 토큰 서명 키 |
+| `JWT_SECRET_ASM_SECRET_ID` | No | No | empty | `JWT_SECRET`를 AWS Secrets Manager에서 읽어올 secret id/arn |
+| `JWT_SECRET_ASM_JSON_KEY` | No | No | empty | secret이 JSON일 때 사용할 field 이름 |
+| `ASM_REGION` | No | No | empty | 기본 AWS Secrets Manager region. unset이면 `AWS_REGION`/`AWS_DEFAULT_REGION` 사용 |
 
 ## TRON / Wallet
 | Key | Required (dev) | Required (prod) | Default | Description |
@@ -42,9 +45,13 @@
 | `DEPOSIT_WALLET_ADDRESSES` | No | Yes | `TWbuSkkRid1st9gSMy1NhpK1KwJMebHNwh,TLkgBr1vwpkdenM3LZq2hzb33TbCzBYDE3,TCFD5eZAXGdA8ud4ZH2Dt6cZdeGRFYSiaH,TMCUdq7BfaTRCdzUvYmuVoKnjZssYqnJ3s` | 입금 감지 대상 지갑 목록(콤마 구분) |
 | `HOT_WALLET_ADDRESS` | No | Yes | `replace-with-hot-wallet-address` | 핫월렛 주소 |
 | `HOT_WALLET_PRIVATE_KEY` | No | Yes | `dev-only-private-key-change-me` | 핫월렛 개인키 (로그 출력 금지) |
+| `HOT_WALLET_PRIVATE_KEY_ASM_SECRET_ID` | No | No | empty | `HOT_WALLET_PRIVATE_KEY`를 ASM에서 읽을 secret id/arn |
+| `HOT_WALLET_PRIVATE_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 private key가 들어있는 field 이름 |
 
 주의:
 프로덕션에서는 placeholder 값(`replace-with-*`, `dev-only-*`)으로 기동되지 않도록 검증합니다.
+`*_ASM_SECRET_ID`가 설정되면 앱 시작 시 AWS Secrets Manager에서 값을 읽어 실제 env로 주입한 뒤 같은 검증을 수행합니다.
+ASM secret이 plain string이면 `*_ASM_JSON_KEY` 없이 전체 값을 사용하고, JSON secret이면 해당 field를 지정합니다.
 `TRON_GATEWAY_MODE=trc20` 또는 `APP_TRON_GATEWAY_MODE=trc20`이면 `KORI_TOKEN_CONTRACT_ADDRESS`가 반드시 필요합니다.
 현재 예제값은 테스트넷 기준이며, 운영 메인넷 주소는 별도로 관리해야 합니다.
 `ALLOW_RUNTIME_PROFILE_SWITCHING=true` 또는 `APP_ALLOW_RUNTIME_PROFILE_SWITCHING=true`면 sandbox에서 mainnet/testnet/custom contract preset 전환이 가능합니다.
@@ -65,6 +72,25 @@ mainnet 직접 전송은 `ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=true`가 추
 | `DB_USER` | No | Yes | `korion` | DB 사용자 |
 | `DB_PASSWORD` | No | Yes | `korion` | DB 비밀번호 |
 | `DB_SCHEMA` | No | Yes | `public` | Flyway 대상 스키마 |
+
+## foxya / Sweep / Secret Source
+| Key | Required (dev) | Required (prod) | Default | Description |
+|---|---|---|---|---|
+| `FOXYA_INTERNAL_API_URL` | No | Recommended | empty | foxya internal deposits API URL |
+| `FOXYA_INTERNAL_API_KEY` | No | Recommended | empty | foxya internal API key |
+| `FOXYA_INTERNAL_API_KEY_ASM_SECRET_ID` | No | No | empty | `FOXYA_INTERNAL_API_KEY`를 ASM에서 읽을 secret id/arn |
+| `FOXYA_INTERNAL_API_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 사용할 field 이름 |
+| `FOXYA_DB_HOST` | No | Recommended | empty | foxya DB 또는 db-proxy 호스트 |
+| `FOXYA_DB_PORT` | No | Recommended | `5432` | foxya DB 포트 |
+| `FOXYA_DB_NAME` | No | Recommended | empty | foxya DB 이름 |
+| `FOXYA_DB_USER` | No | Recommended | empty | foxya DB 사용자 |
+| `FOXYA_DB_PASSWORD` | No | Recommended | empty | foxya DB 비밀번호 |
+| `FOXYA_ENCRYPTION_KEY` | No | Recommended | empty | foxya user wallet private key 복호화 키 |
+| `FOXYA_ENCRYPTION_KEY_ASM_SECRET_ID` | No | No | empty | `FOXYA_ENCRYPTION_KEY`를 ASM에서 읽을 secret id/arn |
+| `FOXYA_ENCRYPTION_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 사용할 field 이름 |
+| `VIRTUAL_WALLET_ENCRYPTION_KEY` | No | Yes | `dev-only-secret-change-me` | coin_manage virtual wallet 암복호화 키 |
+| `VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_SECRET_ID` | No | No | empty | `VIRTUAL_WALLET_ENCRYPTION_KEY`를 ASM에서 읽을 secret id/arn |
+| `VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 사용할 field 이름 |
 
 ## Risk Control / Scheduler
 | Key | Required (dev) | Required (prod) | Default | Description |

@@ -1,6 +1,12 @@
-import { createApp } from './app.js';
-import { env } from './config/env.js';
-import { createAppDependencies } from './container/create-app-dependencies.js';
+import { loadRuntimeSecretsFromAsm } from './bootstrap/runtime-secrets.js';
+
+await loadRuntimeSecretsFromAsm();
+
+const [{ createApp }, { env }, { createAppDependencies }] = await Promise.all([
+  import('./app.js'),
+  import('./config/env.js'),
+  import('./container/create-app-dependencies.js')
+]);
 
 const deps = createAppDependencies();
 
