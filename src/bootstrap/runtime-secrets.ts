@@ -13,13 +13,21 @@ export type AsmSecretBinding = {
 
 export type AsmSecretFetcher = (input: { secretId: string; region: string }) => Promise<string>;
 
+const readNonEmptyEnv = (source: NodeJS.ProcessEnv, key: string) => {
+  const value = source[key];
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+};
+
 export const discoverAsmSecretBindings = (source: NodeJS.ProcessEnv = process.env): AsmSecretBinding[] => {
   return Object.entries(source)
     .filter(([key, value]) => key.endsWith(ASM_SECRET_ID_SUFFIX) && typeof value === 'string' && value.trim() !== '')
     .map(([key, value]) => {
       const targetEnv = key.slice(0, -ASM_SECRET_ID_SUFFIX.length);
       const region =
-        source[`${targetEnv}${ASM_REGION_SUFFIX}`] ?? source.ASM_REGION ?? source.AWS_REGION ?? source.AWS_DEFAULT_REGION;
+        readNonEmptyEnv(source, `${targetEnv}${ASM_REGION_SUFFIX}`) ??
+        readNonEmptyEnv(source, 'ASM_REGION') ??
+        readNonEmptyEnv(source, 'AWS_REGION') ??
+        readNonEmptyEnv(source, 'AWS_DEFAULT_REGION');
 
       if (!region) {
         throw new Error(`ASM region is required for ${targetEnv}. Set ${targetEnv}${ASM_REGION_SUFFIX} or AWS_REGION.`);

@@ -23,6 +23,24 @@ describe('runtime secret bootstrap', () => {
     ]);
   });
 
+  it('falls back to AWS_REGION when ASM region variables are blank', () => {
+    const bindings = discoverAsmSecretBindings({
+      ASM_REGION: '   ',
+      AWS_REGION: 'ap-northeast-2',
+      HOT_WALLET_PRIVATE_KEY_ASM_REGION: '',
+      HOT_WALLET_PRIVATE_KEY_ASM_SECRET_ID: 'prod/korion/hot-wallet'
+    });
+
+    expect(bindings).toEqual([
+      {
+        targetEnv: 'HOT_WALLET_PRIVATE_KEY',
+        secretId: 'prod/korion/hot-wallet',
+        jsonKey: undefined,
+        region: 'ap-northeast-2'
+      }
+    ]);
+  });
+
   it('extracts a JSON field from an ASM secret string', () => {
     const value = extractAsmSecretValue({
       targetEnv: 'HOT_WALLET_PRIVATE_KEY',
