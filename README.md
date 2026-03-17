@@ -93,13 +93,27 @@ ALLOW_SANDBOX_DIRECT_ONCHAIN_SEND=true
 ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=false
 ```
 
+출금 signer 아키텍처를 모듈 단위로 고정하려면:
+```env
+WITHDRAW_SIGNING_MODE=direct
+WITHDRAW_SIGNING_PERMISSION_ID=
+WITHDRAW_SIGNING_PERMISSION_NAME=withdraw_hot
+WITHDRAW_SIGNER_THRESHOLD=2
+WITHDRAW_OWNER_COLD=true
+WITHDRAW_SIGNER_NODES=signer-a:online,signer-b:online,owner-cold:recovery
+```
+
+- `direct`: 현재 worker가 바로 브로드캐스트
+- `manual_multisig`: worker는 구조만 이해하고, 실제 서명은 외부 signer 연동 전까지 실행하지 않음
+- 즉 필요한 변수만 주면 런타임은 해당 아키텍처를 인식하고 `/api/system/status`에 그대로 노출합니다.
+
 foxya 백엔드와 자동 입금 연동을 사용하려면:
 ```env
 APP_DEPOSIT_MONITOR_ENABLED=true
 APP_DEPOSIT_MONITOR_NETWORK=mainnet
 APP_DEPOSIT_MONITOR_CONFIRMATIONS=20
 APP_DEPOSIT_MONITOR_CURRENCY_IDS=3
-FOXYA_INTERNAL_API_URL=http://54.210.92.221:8080/api/v1/internal/deposits
+FOXYA_INTERNAL_API_URL=https://api.korion.io.kr/api/v1/internal/deposits
 FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
 ```
 
@@ -108,7 +122,7 @@ foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면
 SWEEP_BOT_ENABLED=true
 SWEEP_BOT_POLL_INTERVAL_SEC=30
 SWEEP_BOT_CYCLE_LIMIT=100
-FOXYA_DB_HOST=54.210.92.221
+FOXYA_DB_HOST=172.31.36.110
 FOXYA_DB_PORT=15432
 FOXYA_DB_NAME=foxya
 FOXYA_DB_USER=foxya
@@ -143,7 +157,7 @@ WITHDRAW_RETRY_BASE_DELAY_SEC=15
 
 주의:
 - `watch-addresses` 응답에는 통화 코드가 있어도 체인 이벤트 자체는 계약 기준이라, 같은 TRON 주소가 여러 통화에 재사용되면 `APP_DEPOSIT_MONITOR_CURRENCY_IDS=3`처럼 KORI currency id만 제한해야 합니다.
-- `coin_manage`와 `foxya`가 다른 EC2면 container service name(`foxya-api`, `foxya-postgres`)을 쓰면 안 됩니다. `FOXYA_INTERNAL_API_URL`과 `FOXYA_DB_HOST`는 실제 라우팅 가능한 IP/도메인으로 넣어야 합니다.
+- `coin_manage`와 `foxya`가 다른 EC2면 container service name(`foxya-api`, `foxya-postgres`)을 쓰면 안 됩니다. 현재 운영 기준으로는 `FOXYA_INTERNAL_API_URL=https://api.korion.io.kr/...`, `FOXYA_DB_HOST=172.31.36.110`처럼 실제 라우팅 가능한 경로를 넣어야 합니다.
 - `foxya db-proxy`를 원격에서 직접 쓸 때는 `DB_PROXY_BIND_ADDRESS=0.0.0.0`와 SG 제한을 같이 적용해야 합니다.
 - sweep bot은 source wallet에 TRX gas가 없으면 브로드캐스트 실패할 수 있습니다. 이 경우 foxya deposit `sweep_failed`와 텔레그램 알림으로 남깁니다.
 
