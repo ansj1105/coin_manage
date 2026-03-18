@@ -193,6 +193,19 @@ describe('withdraw flow (service-level)', () => {
     expect(await deps.withdrawService.listPendingApprovals()).toHaveLength(1);
   });
 
+  it('rejects withdrawal requests to managed system wallets', async () => {
+    await expect(
+      deps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 1,
+        toAddress: TRACKED_DEPOSIT_ADDRESS,
+        idempotencyKey: 'wd-managed-destination-1'
+      })
+    ).rejects.toMatchObject({
+      code: 'WITHDRAW_DESTINATION_RESTRICTED'
+    });
+  });
+
   it('reconciles pending broadcast in scheduler timeout path', async () => {
     const oldTime = new Date(Date.now() - 120_000).toISOString();
     const requestResult = await deps.ledger.requestWithdrawal({

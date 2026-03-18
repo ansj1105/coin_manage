@@ -3,6 +3,7 @@ import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
 import { AlertService } from './alert-service.js';
 import { WithdrawService } from './withdraw-service.js';
+import { WithdrawGuardService } from './withdraw-guard-service.js';
 
 class RetryableWithdrawDispatchError extends Error {
   constructor(message: string) {
@@ -22,7 +23,8 @@ export class WithdrawDispatchWorker {
       minTrxSun: env.withdrawMinTrxSun,
       minBandwidth: env.withdrawMinBandwidth,
       minEnergy: env.withdrawMinEnergy
-    }
+    },
+    private readonly withdrawGuardService = new WithdrawGuardService(tronGateway)
   ) {}
 
   setWithdrawService(withdrawService: WithdrawService) {
@@ -100,28 +102,22 @@ export class WithdrawDispatchWorker {
   }
 
   private async ensureHotWalletResources(withdrawalId: string) {
-    const resources = await this.tronGateway.getAccountResources(this.options.hotWalletAddress);
-    const availableBandwidth = Math.max(0, resources.bandwidthLimit - resources.bandwidthUsed);
-    const availableEnergy = Math.max(0, resources.energyLimit - resources.energyUsed);
-    const trxEnough = resources.trxBalanceSun >= this.options.minTrxSun;
-    const bandwidthEnough = availableBandwidth >= this.options.minBandwidth;
-    const energyEnough = availableEnergy >= this.options.minEnergy;
-
-    if (trxEnough && bandwidthEnough && energyEnough) {
+    const readiness = await this.withdrawGuardService.getHotWalletReadiness();
+    if (readiness.ready) {
       return;
     }
 
     await this.alertService.notifyWithdrawalResourceLow({
       withdrawalId,
       hotWalletAddress: this.options.hotWalletAddress,
-      trxBalanceSun: resources.trxBalanceSun.toString(),
-      availableBandwidth,
-      availableEnergy,
+      trxBalanceSun: readiness.trxBalanceSun,
+      availableBandwidth: readiness.availableBandwidth,
+      availableEnergy: readiness.availableEnergy,
       minTrxSun: this.options.minTrxSun.toString(),
       minBandwidth: this.options.minBandwidth,
       minEnergy: this.options.minEnergy
     });
-    throw new RetryableWithdrawDispatchError('hot wallet resources below withdraw threshold');
+    throw new RetryableWithdrawDispatchError(`hot wallet is not ready: ${readiness.failures.join(',')}`);
   }
 
   private getWithdrawService() {

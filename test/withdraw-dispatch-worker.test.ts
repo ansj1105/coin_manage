@@ -84,26 +84,26 @@ describe('withdraw dispatch worker', () => {
       blockNumber: 1
     });
 
-    const request = await lowResourceDeps.withdrawService.request({
+    const request = await lowResourceDeps.ledger.requestWithdrawal({
       userId: 'user-1',
-      amountKori: 150,
+      amount: 150_000_000n,
       toAddress: VALID_TRON_ADDRESS,
-      idempotencyKey: 'dispatch-worker-2',
-      clientIp: '127.0.0.1',
-      deviceId: 'device-1'
+      idempotencyKey: 'dispatch-worker-2'
     });
 
-    await lowResourceDeps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+    await lowResourceDeps.ledger.confirmWithdrawalExternalAuth(request.withdrawal.withdrawalId, {
       provider: 'coin_cloud_system',
       requestId: 'dispatch-worker-auth-2'
     });
-    await lowResourceDeps.withdrawService.approve(request.withdrawal.withdrawalId, {
+    await lowResourceDeps.ledger.approveWithdrawal(request.withdrawal.withdrawalId, {
       adminId: 'admin-1',
+      actorType: 'admin',
       note: 'manual approval'
     });
+    await (lowResourceDeps.withdrawJobQueue as InMemoryWithdrawJobQueue).enqueueDispatch(request.withdrawal.withdrawalId);
 
     await expect((lowResourceDeps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain()).rejects.toThrow(
-      'hot wallet resources below withdraw threshold'
+      'hot wallet is not ready:'
     );
 
     const stored = await lowResourceDeps.withdrawService.get(request.withdrawal.withdrawalId);

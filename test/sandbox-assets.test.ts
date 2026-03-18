@@ -19,6 +19,9 @@ describe('sandbox assets and runtime status', () => {
     expect(typeof payload.sandbox.directOnchainSendEnabled).toBe('boolean');
     expect(payload.sandbox.onchainTransferSourcePolicy).toBe('hot_only');
     expect(payload.sandbox.onchainTransferExecutableWalletCodes).toContain('hot');
+    expect(payload.withdrawals.readiness).toBeNull();
+    expect(typeof payload.security.withdrawRequestApiKeyConfigured).toBe('boolean');
+    expect(typeof payload.security.withdrawAdminApiKeyConfigured).toBe('boolean');
   });
 
   it('ships sandbox ui with the main control sections', async () => {

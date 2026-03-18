@@ -8,6 +8,7 @@ import { ExternalAlertMonitorService } from '../../../application/services/exter
 import { OperationsService } from '../../../application/services/operations-service.js';
 import { SweepBotService } from '../../../application/services/sweep-bot-service.js';
 import { SystemMonitoringService } from '../../../application/services/system-monitoring-service.js';
+import { WithdrawGuardService, type HotWalletReadiness } from '../../../application/services/withdraw-guard-service.js';
 import { buildBlockchainNetworkCatalog } from '../../../config/blockchain-networks.js';
 import { env } from '../../../config/env.js';
 import { getRuntimeContractProfile, setRuntimeContractProfile } from '../../../config/runtime-settings.js';
@@ -67,7 +68,8 @@ export const buildSystemStatusResponse = (
     sweepBot: ReturnType<SweepBotService['getStatus']>;
     telegramEnabled: boolean;
     externalAlertMonitor?: Awaited<ReturnType<ExternalAlertMonitorService['getStatus']>>;
-  }
+  },
+  withdrawReadiness?: HotWalletReadiness
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
   const walletCatalog = getConfiguredSystemWallets().map((wallet) => ({
@@ -94,6 +96,9 @@ export const buildSystemStatusResponse = (
     limits: {
       withdrawSingleLimitKori: env.withdrawSingleLimitKori,
       withdrawDailyLimitKori: env.withdrawDailyLimitKori,
+      withdrawMinTrxSun: env.withdrawMinTrxSun,
+      withdrawMinBandwidth: env.withdrawMinBandwidth,
+      withdrawMinEnergy: env.withdrawMinEnergy,
       tronFeeLimitSun: env.tronFeeLimitSun,
       hotWalletAlertMinKori: env.hotWalletAlertMinKori,
       hotWalletAlertMinTrx: env.hotWalletAlertMinTrx,
@@ -125,6 +130,8 @@ export const buildSystemStatusResponse = (
     security: {
       jwtConfigured: !PLACEHOLDER_SECRETS.has(env.jwtSecret),
       hotWalletPrivateKeyConfigured: !PLACEHOLDER_SECRETS.has(env.hotWalletPrivateKey),
+      withdrawRequestApiKeyConfigured: Boolean(env.withdrawRequestApiKey),
+      withdrawAdminApiKeyConfigured: Boolean(env.withdrawAdminApiKey),
       secretSources: {
         jwt: hasAsmSecretBinding('JWT_SECRET') ? 'asm' : 'env',
         hotWalletPrivateKey: hasAsmSecretBinding('HOT_WALLET_PRIVATE_KEY') ? 'asm' : 'env',
@@ -140,6 +147,9 @@ export const buildSystemStatusResponse = (
       onchainTransferSourcePolicy: 'hot_only',
       onchainTransferExecutableWalletCodes: ['hot']
     },
+    withdrawals: {
+      readiness: withdrawReadiness ?? null
+    },
     reconciliation: reconciliation ?? null
   };
 };
@@ -150,7 +160,8 @@ export const createSystemRoutes = (
   depositMonitorService: DepositMonitorService,
   sweepBotService: SweepBotService,
   alertService: AlertService,
-  externalAlertMonitorService: ExternalAlertMonitorService
+  externalAlertMonitorService: ExternalAlertMonitorService,
+  withdrawGuardService: WithdrawGuardService
 ): Router => {
   const router = Router();
   const getConfiguredWallets = () => getConfiguredSystemWallets();
@@ -158,11 +169,12 @@ export const createSystemRoutes = (
   router.get('/status', async (_req, res, next) => {
     try {
       const wallets = getConfiguredWallets();
-      const [monitoring, collectorRuns, depositMonitor, reconciliation] = await Promise.all([
+      const [monitoring, collectorRuns, depositMonitor, reconciliation, withdrawReadiness] = await Promise.all([
         systemMonitoringService.getStoredWallets(wallets),
         systemMonitoringService.getCollectorRuns(),
         depositMonitorService.getStatus(),
-        operationsService.getReconciliationReport()
+        operationsService.getReconciliationReport(),
+        withdrawGuardService.getHotWalletReadiness()
       ]);
       const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json(
@@ -170,7 +182,7 @@ export const createSystemRoutes = (
           sweepBot: sweepBotService.getStatus(),
           telegramEnabled: alertService.enabled,
           externalAlertMonitor
-        })
+        }, withdrawReadiness)
       );
     } catch (error) {
       next(error);
@@ -181,10 +193,11 @@ export const createSystemRoutes = (
     try {
       const wallets = getConfiguredWallets();
       const { snapshots, run } = await systemMonitoringService.collectWallets(wallets);
-      const [collectorRuns, depositMonitor, reconciliation] = await Promise.all([
+      const [collectorRuns, depositMonitor, reconciliation, withdrawReadiness] = await Promise.all([
         systemMonitoringService.getCollectorRuns(),
         depositMonitorService.getStatus(),
-        operationsService.getReconciliationReport()
+        operationsService.getReconciliationReport(),
+        withdrawGuardService.getHotWalletReadiness()
       ]);
       const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json({
@@ -193,7 +206,7 @@ export const createSystemRoutes = (
           sweepBot: sweepBotService.getStatus(),
           telegramEnabled: alertService.enabled,
           externalAlertMonitor
-        })
+        }, withdrawReadiness)
       });
     } catch (error) {
       next(error);

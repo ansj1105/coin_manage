@@ -25,6 +25,7 @@ import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
+import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
 import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
@@ -219,7 +220,15 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
-  const withdrawDispatchWorker = new WithdrawDispatchWorker(ledger, undefined, tronGateway, alertService);
+  const withdrawGuardService = new WithdrawGuardService(tronGateway);
+  const withdrawDispatchWorker = new WithdrawDispatchWorker(
+    ledger,
+    undefined,
+    tronGateway,
+    alertService,
+    undefined,
+    withdrawGuardService
+  );
   let withdrawJobQueue: WithdrawJobQueue;
   const queueHandlers = {
     dispatch: async (withdrawalId: string, attempt: number) => {
@@ -247,7 +256,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     tronGateway,
     alertService,
     withdrawJobQueue,
-    virtualWalletLifecyclePolicy
+    virtualWalletLifecyclePolicy,
+    withdrawGuardService
   );
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
@@ -308,6 +318,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     virtualWalletLifecyclePolicy,
     walletService,
     accountReconciliationService,
+    withdrawGuardService,
     withdrawService,
     withdrawDispatchWorker,
     schedulerService,

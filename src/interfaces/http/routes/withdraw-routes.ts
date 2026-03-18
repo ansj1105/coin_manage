@@ -1,10 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { WithdrawService } from '../../../application/services/withdraw-service.js';
+import { env } from '../../../config/env.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 import { requireIdempotencyKey, zodToDomainError } from '../../../core/validation.js';
+import {
+  createRequireWithdrawApiKey,
+  readWithdrawActorId,
+  readWithdrawAdminActorId
+} from '../middleware/withdraw-auth.js';
 
 const requestSchema = z.object({
   userId: z.string().min(1).optional(),
@@ -28,10 +34,31 @@ const externalAuthConfirmSchema = z.object({
   actorId: z.string().min(1).max(64).optional()
 });
 
-export const createWithdrawRoutes = (withdrawService: WithdrawService): Router => {
-  const router = Router();
+type WithdrawRouteSecurityOptions = {
+  requestApiKey?: string;
+  adminApiKey?: string;
+};
 
-  router.post('/', async (req, res, next) => {
+export const createWithdrawRoutes = (
+  withdrawService: WithdrawService,
+  security: WithdrawRouteSecurityOptions = {
+    requestApiKey: env.withdrawRequestApiKey,
+    adminApiKey: env.withdrawAdminApiKey
+  }
+): Router => {
+  const router = Router();
+  const requireRequestApiKey = createRequireWithdrawApiKey(
+    security.requestApiKey,
+    'WITHDRAW_REQUEST_UNAUTHORIZED',
+    'withdraw request api key is required'
+  );
+  const requireAdminApiKey = createRequireWithdrawApiKey(
+    security.adminApiKey,
+    'WITHDRAW_ADMIN_UNAUTHORIZED',
+    'withdraw admin api key is required'
+  );
+
+  router.post('/', requireRequestApiKey, async (req, res, next) => {
     try {
       const parsed = requestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -61,7 +88,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.get('/pending-approvals', async (_req, res, next) => {
+  router.get('/pending-approvals', requireAdminApiKey, async (_req, res, next) => {
     try {
       const withdrawals = await withdrawService.listPendingApprovals();
       res.json({
@@ -75,7 +102,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/reconcile', async (_req, res, next) => {
+  router.post('/reconcile', requireAdminApiKey, async (_req, res, next) => {
     try {
       const result = await withdrawService.reconcileBroadcasted();
       res.json(result);
@@ -84,7 +111,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/:withdrawalId/approve', async (req, res, next) => {
+  router.post('/:withdrawalId/approve', requireAdminApiKey, async (req, res, next) => {
     try {
       const parsed = approveSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
@@ -92,7 +119,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
       }
 
       const result = await withdrawService.approve(req.params.withdrawalId, {
-        adminId: parsed.data.adminId,
+        adminId: readWithdrawAdminActorId(req) ?? parsed.data.adminId,
         note: parsed.data.note
       });
       res.json({
@@ -108,14 +135,17 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/:withdrawalId/external-auth/confirm', async (req, res, next) => {
+  router.post('/:withdrawalId/external-auth/confirm', requireAdminApiKey, async (req, res, next) => {
     try {
       const parsed = externalAuthConfirmSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
 
-      const withdrawal = await withdrawService.confirmExternalAuth(req.params.withdrawalId, parsed.data);
+      const withdrawal = await withdrawService.confirmExternalAuth(req.params.withdrawalId, {
+        ...parsed.data,
+        actorId: readWithdrawActorId(req) ?? parsed.data.actorId
+      });
       res.json({
         withdrawal: {
           ...withdrawal,
@@ -127,7 +157,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/:withdrawalId/broadcast', async (req, res, next) => {
+  router.post('/:withdrawalId/broadcast', requireAdminApiKey, async (req, res, next) => {
     try {
       const withdrawal = await withdrawService.broadcast(req.params.withdrawalId);
       if (!withdrawal) {
@@ -144,7 +174,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.post('/:withdrawalId/confirm', async (req, res, next) => {
+  router.post('/:withdrawalId/confirm', requireAdminApiKey, async (req, res, next) => {
     try {
       const withdrawal = await withdrawService.confirm(req.params.withdrawalId);
       res.json({
@@ -158,7 +188,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.get('/:withdrawalId/approvals', async (req, res, next) => {
+  router.get('/:withdrawalId/approvals', requireAdminApiKey, async (req, res, next) => {
     try {
       const approvals = await withdrawService.listApprovals(req.params.withdrawalId);
       res.json({ approvals });
@@ -167,7 +197,7 @@ export const createWithdrawRoutes = (withdrawService: WithdrawService): Router =
     }
   });
 
-  router.get('/:withdrawalId', async (req, res, next) => {
+  router.get('/:withdrawalId', requireAdminApiKey, async (req, res, next) => {
     try {
       const withdrawal = await withdrawService.get(req.params.withdrawalId);
       if (!withdrawal) {

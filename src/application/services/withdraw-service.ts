@@ -7,6 +7,7 @@ import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
 import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
+import { WithdrawGuardService } from './withdraw-guard-service.js';
 
 export class WithdrawService {
   constructor(
@@ -15,7 +16,8 @@ export class WithdrawService {
     private readonly tronGateway: TronGateway,
     private readonly alertService: AlertService,
     private readonly withdrawJobQueue: WithdrawJobQueue,
-    private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService
+    private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
+    private readonly withdrawGuardService = new WithdrawGuardService(tronGateway)
   ) {}
 
   async request(input: {
@@ -33,6 +35,10 @@ export class WithdrawService {
     });
     await this.virtualWalletLifecyclePolicy?.assertWithdrawalAllowed({
       userId,
+      walletAddress: input.walletAddress
+    });
+    await this.withdrawGuardService.assertRequestAllowed({
+      toAddress: input.toAddress,
       walletAddress: input.walletAddress
     });
     const riskAssessment = this.assessRisk(input);
@@ -146,6 +152,10 @@ export class WithdrawService {
     if (!current) {
       return undefined;
     }
+
+    await this.withdrawGuardService.assertBroadcastAllowed({
+      toAddress: current.toAddress
+    });
 
     const { txHash } = await this.tronGateway.broadcastTransfer({
       toAddress: current.toAddress,
