@@ -270,4 +270,60 @@ describe('operations and control flows', () => {
       actorId: 'ops-admin-1'
     });
   });
+
+  it('lists recent external sync failures for operator retry screens', async () => {
+    await deps.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: 'wd-sync-failed-1',
+      action: 'withdraw.external_sync.failed',
+      actorType: 'system',
+      actorId: 'foxya-withdrawal-sync',
+      metadata: {
+        status: 'COMPLETED',
+        occurredAt: '2026-03-18T13:00:00.000Z',
+        txHash: 'tx-1',
+        error: 'callback timeout'
+      }
+    });
+    await deps.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: 'wd-sync-failed-2',
+      action: 'withdraw.external_sync.failed',
+      actorType: 'system',
+      actorId: 'foxya-withdrawal-sync',
+      metadata: {
+        status: 'FAILED',
+        occurredAt: '2026-03-18T13:01:00.000Z',
+        txHash: '',
+        error: '401 unauthorized'
+      }
+    });
+
+    const result = await deps.operationsService.listWithdrawalExternalSyncFailures(10);
+
+    expect(result.failedJobCount).toBe(0);
+    expect(result.items).toHaveLength(2);
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        {
+          withdrawalId: 'wd-sync-failed-1',
+          createdAt: expect.any(String),
+          status: 'COMPLETED',
+          error: 'callback timeout',
+          occurredAt: '2026-03-18T13:00:00.000Z',
+          txHash: 'tx-1',
+          failedJob: null
+        },
+        {
+          withdrawalId: 'wd-sync-failed-2',
+          createdAt: expect.any(String),
+          status: 'FAILED',
+          error: '401 unauthorized',
+          occurredAt: '2026-03-18T13:01:00.000Z',
+          txHash: '',
+          failedJob: null
+        }
+      ])
+    );
+  });
 });

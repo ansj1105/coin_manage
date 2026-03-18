@@ -13,6 +13,10 @@ const buildRouter = (operationsServiceOverrides: Record<string, unknown> = {}) =
         queuedCount: 1,
         withdrawalIds: ['2f1ac758-2bce-47dd-8eaf-ffae13845657']
       }),
+      listWithdrawalExternalSyncFailures: vi.fn().mockResolvedValue({
+        items: [],
+        failedJobCount: 0
+      }),
       ...operationsServiceOverrides
     } as any,
     {
@@ -88,6 +92,65 @@ const invokeRetryRoute = async (body: unknown) => {
 };
 
 describe('system routes', () => {
+  it('lists external sync failures for ops tooling', async () => {
+    const listWithdrawalExternalSyncFailures = vi.fn().mockResolvedValue({
+      items: [
+        {
+          withdrawalId: '2f1ac758-2bce-47dd-8eaf-ffae13845657',
+          createdAt: '2026-03-18T12:34:56.000Z',
+          status: 'COMPLETED',
+          error: 'timeout',
+          occurredAt: '2026-03-18T12:34:55.000Z',
+          txHash: 'tx-sync-1',
+          failedJob: null
+        }
+      ],
+      failedJobCount: 1
+    });
+    const router = buildRouter({ listWithdrawalExternalSyncFailures });
+    const routeLayer = router.stack.find(
+      (layer: any) =>
+        layer.route?.path === '/withdraw-jobs/external-sync/failures' && layer.route.methods?.get
+    );
+
+    const req = {
+      body: {},
+      query: { limit: '25' },
+      params: {},
+      method: 'GET',
+      originalUrl: '/withdraw-jobs/external-sync/failures',
+      header: () => undefined
+    } as any;
+    let jsonBody: unknown;
+    const res = {
+      status() {
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(listWithdrawalExternalSyncFailures).toHaveBeenCalledWith(25);
+    expect(jsonBody).toEqual({
+      items: [
+        {
+          withdrawalId: '2f1ac758-2bce-47dd-8eaf-ffae13845657',
+          createdAt: '2026-03-18T12:34:56.000Z',
+          status: 'COMPLETED',
+          error: 'timeout',
+          occurredAt: '2026-03-18T12:34:55.000Z',
+          txHash: 'tx-sync-1',
+          failedJob: null
+        }
+      ],
+      failedJobCount: 1
+    });
+  });
+
   it('rejects invalid external sync retry payloads', async () => {
     const response = await invokeRetryRoute({
       withdrawalIds: ['not-a-uuid']

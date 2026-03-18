@@ -257,6 +257,53 @@ paths:
                         items:
                           type: string
                           format: uuid
+  /api/system/withdraw-jobs/external-sync/failures:
+    get:
+      summary: List recent foxya withdrawal callback sync failures for retry tooling
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: External sync failure list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        withdrawalId:
+                          type: string
+                          format: uuid
+                        createdAt:
+                          type: string
+                        status:
+                          type: string
+                        error:
+                          type: string
+                        occurredAt:
+                          type: string
+                        txHash:
+                          type: string
+                        failedJob:
+                          nullable: true
+                          type: object
+                          properties:
+                            attemptsMade:
+                              type: integer
+                            failedReason:
+                              type: string
+                  failedJobCount:
+                    type: integer
         '400':
           $ref: '#/components/responses/ErrorResponse'
   /api/system/reconciliation:

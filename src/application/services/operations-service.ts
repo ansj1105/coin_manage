@@ -16,6 +16,93 @@ export class OperationsService {
     return this.ledger.listAuditLogs(input);
   }
 
+  async listWithdrawalExternalSyncFailures(limit = 50) {
+    const [logs, failedJobs] = await Promise.all([
+      this.ledger.listAuditLogs({
+        entityType: 'withdrawal',
+        limit: Math.max(limit * 4, 100)
+      }),
+      this.withdrawJobQueue.listFailed(limit)
+    ]);
+
+    const syncFailedJobs = failedJobs.filter((job) => job.name === 'external_sync');
+    const failedJobByWithdrawalId = new Map(
+      syncFailedJobs
+        .filter((job) => job.withdrawalId)
+        .map((job) => [job.withdrawalId as string, job] as const)
+    );
+
+    const items: Array<{
+      withdrawalId: string;
+      createdAt: string;
+      status: string;
+      error: string;
+      occurredAt: string;
+      txHash: string;
+      failedJob: {
+        attemptsMade: number;
+        failedReason: string;
+      } | null;
+    }> = [];
+    const seenWithdrawalIds = new Set<string>();
+
+    for (const log of logs) {
+      if (log.action !== 'withdraw.external_sync.failed' || seenWithdrawalIds.has(log.entityId)) {
+        continue;
+      }
+
+      seenWithdrawalIds.add(log.entityId);
+      const failedJob = failedJobByWithdrawalId.get(log.entityId);
+      items.push({
+        withdrawalId: log.entityId,
+        createdAt: log.createdAt,
+        status: log.metadata.status ?? '',
+        error: log.metadata.error ?? '',
+        occurredAt: log.metadata.occurredAt ?? '',
+        txHash: log.metadata.txHash ?? '',
+        failedJob: failedJob
+          ? {
+              attemptsMade: failedJob.attemptsMade,
+              failedReason: failedJob.failedReason ?? ''
+            }
+          : null
+      });
+
+      if (items.length >= limit) {
+        break;
+      }
+    }
+
+    for (const failedJob of syncFailedJobs) {
+      if (!failedJob.withdrawalId || seenWithdrawalIds.has(failedJob.withdrawalId)) {
+        continue;
+      }
+
+      seenWithdrawalIds.add(failedJob.withdrawalId);
+      items.push({
+        withdrawalId: failedJob.withdrawalId,
+        createdAt: '',
+        status: '',
+        error: failedJob.failedReason ?? '',
+        occurredAt: '',
+        txHash: '',
+        failedJob: {
+          attemptsMade: failedJob.attemptsMade,
+          failedReason: failedJob.failedReason ?? ''
+        }
+      });
+
+      if (items.length >= limit) {
+        break;
+      }
+    }
+
+    return {
+      items,
+      failedJobCount: syncFailedJobs.length
+    };
+  }
+
   async getWithdrawalExternalSyncStatus(limit = 200) {
     const [logs, failedJobs] = await Promise.all([
       this.ledger.listAuditLogs({

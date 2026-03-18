@@ -58,6 +58,10 @@ const retryExternalSyncSchema = z.object({
   withdrawalIds: z.array(z.string().uuid()).min(1).max(100)
 });
 
+const externalSyncFailuresQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional()
+});
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
   collectorRuns: CollectorRunRecord[] = [],
@@ -437,6 +441,19 @@ export const createSystemRoutes = (
       res.json({
         result: await operationsService.retryExternalSyncWithdrawals(parsed.data.withdrawalIds)
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/withdraw-jobs/external-sync/failures', async (req, res, next) => {
+    try {
+      const parsed = externalSyncFailuresQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid external sync failures query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.listWithdrawalExternalSyncFailures(parsed.data.limit ?? 50));
     } catch (error) {
       next(error);
     }
