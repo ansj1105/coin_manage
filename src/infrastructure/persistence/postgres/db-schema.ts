@@ -89,7 +89,7 @@ export interface WithdrawalsTable {
 
 export interface TxJobsTable {
   job_id: string;
-  type: 'withdraw_dispatch' | 'withdraw_reconcile' | 'withdraw_manual_review' | 'sweep_plan';
+  type: 'withdraw_dispatch' | 'withdraw_reconcile' | 'withdraw_external_sync' | 'withdraw_manual_review' | 'sweep_plan';
   payload: Record<string, string>;
   status: 'pending' | 'running' | 'done' | 'failed';
   retry_count: number;

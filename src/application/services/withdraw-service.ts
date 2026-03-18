@@ -273,6 +273,19 @@ export class WithdrawService {
     return { confirmed, failed, pending };
   }
 
+  async processExternalSyncRetry(withdrawalId: string, _attempt = 1) {
+    const withdrawal = await this.ledger.getWithdrawal(withdrawalId);
+    if (!withdrawal) {
+      throw new Error('withdrawal not found');
+    }
+
+    if (!this.externalWithdrawalSyncClient) {
+      return;
+    }
+
+    await this.syncExternalWithdrawalState(withdrawal, new Date().toISOString(), false);
+  }
+
   private assessRisk(input: { amountKori: number; clientIp?: string; deviceId?: string }) {
     const flags: string[] = [];
     let score = 0;
@@ -315,12 +328,29 @@ export class WithdrawService {
     withdrawal: Parameters<typeof buildWithdrawalStateChangedContract>[0],
     occurredAt: string
   ) {
-    const contract = buildWithdrawalStateChangedContract(withdrawal, occurredAt);
-    this.eventPublisher.publish('withdrawal.state.changed', contract);
+    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(withdrawal, occurredAt));
 
     if (!this.externalWithdrawalSyncClient) {
       return;
     }
+
+    try {
+      await this.syncExternalWithdrawalState(withdrawal, occurredAt, true);
+    } catch {
+      // Best-effort delivery only. Retry is queued inside syncExternalWithdrawalState.
+    }
+  }
+
+  private async syncExternalWithdrawalState(
+    withdrawal: Parameters<typeof buildWithdrawalStateChangedContract>[0],
+    occurredAt: string,
+    enqueueOnFailure: boolean
+  ) {
+    if (!this.externalWithdrawalSyncClient) {
+      return;
+    }
+
+    const contract = buildWithdrawalStateChangedContract(withdrawal, occurredAt);
 
     try {
       await this.externalWithdrawalSyncClient.syncWithdrawalState(contract);
@@ -349,6 +379,10 @@ export class WithdrawService {
           reason: message.slice(0, 500)
         })
       ]);
+      if (enqueueOnFailure) {
+        await this.enqueueExternalSyncRetry(withdrawal.withdrawalId);
+      }
+      throw error;
     }
   }
 
@@ -366,6 +400,17 @@ export class WithdrawService {
       console.error('Failed to record external withdrawal sync audit log', {
         withdrawalId,
         action,
+        error
+      });
+    }
+  }
+
+  private async enqueueExternalSyncRetry(withdrawalId: string) {
+    try {
+      await this.withdrawJobQueue.enqueueExternalSync(withdrawalId);
+    } catch (error) {
+      console.error('Failed to enqueue external withdrawal sync retry', {
+        withdrawalId,
         error
       });
     }

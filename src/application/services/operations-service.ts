@@ -17,11 +17,15 @@ export class OperationsService {
   }
 
   async getWithdrawalExternalSyncStatus(limit = 200) {
-    const logs = await this.ledger.listAuditLogs({
-      entityType: 'withdrawal',
-      limit
-    });
+    const [logs, failedJobs] = await Promise.all([
+      this.ledger.listAuditLogs({
+        entityType: 'withdrawal',
+        limit
+      }),
+      this.withdrawJobQueue.listFailed(limit)
+    ]);
     const syncLogs = logs.filter((log) => log.action.startsWith('withdraw.external_sync.'));
+    const syncFailedJobs = failedJobs.filter((job) => job.name === 'external_sync');
     const failures = syncLogs.filter((log) => log.action === 'withdraw.external_sync.failed');
     const successes = syncLogs.filter((log) => log.action === 'withdraw.external_sync.succeeded');
     const lastFailure = failures[0];
@@ -31,12 +35,20 @@ export class OperationsService {
       totalEvents: syncLogs.length,
       successCount: successes.length,
       failureCount: failures.length,
+      failedJobCount: syncFailedJobs.length,
       lastFailure: lastFailure
         ? {
             withdrawalId: lastFailure.entityId,
             createdAt: lastFailure.createdAt,
             status: lastFailure.metadata.status ?? '',
             error: lastFailure.metadata.error ?? ''
+          }
+        : null,
+      lastFailedJob: syncFailedJobs[0]
+        ? {
+            withdrawalId: syncFailedJobs[0].withdrawalId ?? '',
+            attemptsMade: syncFailedJobs[0].attemptsMade,
+            failedReason: syncFailedJobs[0].failedReason ?? ''
           }
         : null
     };

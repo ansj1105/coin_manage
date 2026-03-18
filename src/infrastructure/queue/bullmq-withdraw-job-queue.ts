@@ -20,6 +20,7 @@ export class BullmqWithdrawJobQueue implements WithdrawJobQueue {
     private readonly handlers: {
       dispatch: (withdrawalId: string, attempt: number) => Promise<void>;
       reconcile: (withdrawalId: string | undefined, attempt: number) => Promise<void>;
+      externalSync: (withdrawalId: string, attempt: number) => Promise<void>;
     },
     private readonly options: BullmqOptions
   ) {
@@ -52,11 +53,19 @@ export class BullmqWithdrawJobQueue implements WithdrawJobQueue {
     );
   }
 
+  async enqueueExternalSync(withdrawalId: string): Promise<void> {
+    await this.queue.add(
+      'external_sync',
+      { withdrawalId },
+      this.buildOptions(`external_sync:${withdrawalId}`, this.options.reconcileAttempts)
+    );
+  }
+
   async listFailed(limit: number) {
     const jobs = await this.queue.getJobs(['failed'], 0, Math.max(0, limit - 1), false);
     return jobs.map((job) => ({
       id: job.id ?? `${job.name}:${job.data.withdrawalId ?? '*'}`,
-      name: job.name as 'dispatch' | 'reconcile',
+      name: job.name as 'dispatch' | 'reconcile' | 'external_sync',
       withdrawalId: job.data.withdrawalId ? String(job.data.withdrawalId) : undefined,
       failedReason: job.failedReason,
       attemptsMade: job.attemptsMade
@@ -73,6 +82,10 @@ export class BullmqWithdrawJobQueue implements WithdrawJobQueue {
       async (job) => {
         if (job.name === 'dispatch') {
           await this.handlers.dispatch(String(job.data.withdrawalId), job.attemptsStarted);
+          return;
+        }
+        if (job.name === 'external_sync') {
+          await this.handlers.externalSync(String(job.data.withdrawalId), job.attemptsStarted);
           return;
         }
         await this.handlers.reconcile(job.data.withdrawalId ? String(job.data.withdrawalId) : undefined, job.attemptsStarted);

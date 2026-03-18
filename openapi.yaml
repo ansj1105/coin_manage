@@ -1831,6 +1831,8 @@ components:
                       type: integer
                     failureCount:
                       type: integer
+                    failedJobCount:
+                      type: integer
                     lastFailure:
                       oneOf:
                         - type: object
@@ -1842,6 +1844,17 @@ components:
                             status:
                               type: string
                             error:
+                              type: string
+                        - type: 'null'
+                    lastFailedJob:
+                      oneOf:
+                        - type: object
+                          properties:
+                            withdrawalId:
+                              type: string
+                            attemptsMade:
+                              type: integer
+                            failedReason:
                               type: string
                         - type: 'null'
                 - type: 'null'

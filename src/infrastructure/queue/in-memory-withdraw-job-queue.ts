@@ -2,11 +2,12 @@ import type { WithdrawJobQueue } from '../../application/ports/withdraw-job-queu
 
 type InMemoryJob =
   | { kind: 'dispatch'; withdrawalId: string; attempt: number }
-  | { kind: 'reconcile'; withdrawalId?: string; attempt: number };
+  | { kind: 'reconcile'; withdrawalId?: string; attempt: number }
+  | { kind: 'external_sync'; withdrawalId: string; attempt: number };
 
 type FailedJob = {
   id: string;
-  name: 'dispatch' | 'reconcile';
+  name: 'dispatch' | 'reconcile' | 'external_sync';
   withdrawalId?: string;
   failedReason?: string;
   attemptsMade: number;
@@ -21,6 +22,7 @@ export class InMemoryWithdrawJobQueue implements WithdrawJobQueue {
     private readonly handlers: {
       dispatch: (withdrawalId: string, attempt: number) => Promise<void>;
       reconcile: (withdrawalId: string | undefined, attempt: number) => Promise<void>;
+      externalSync: (withdrawalId: string, attempt: number) => Promise<void>;
     },
     private readonly intervalMs = 50
   ) {}
@@ -31,6 +33,10 @@ export class InMemoryWithdrawJobQueue implements WithdrawJobQueue {
 
   async enqueueReconcile(withdrawalId?: string): Promise<void> {
     this.jobs.push({ kind: 'reconcile', withdrawalId, attempt: 1 });
+  }
+
+  async enqueueExternalSync(withdrawalId: string): Promise<void> {
+    this.jobs.push({ kind: 'external_sync', withdrawalId, attempt: 1 });
   }
 
   async listFailed(limit: number) {
@@ -72,7 +78,7 @@ export class InMemoryWithdrawJobQueue implements WithdrawJobQueue {
           });
           throw error;
         }
-      } else {
+      } else if (job.kind === 'reconcile') {
         try {
           await this.handlers.reconcile(job.withdrawalId, job.attempt);
         } catch (error) {
@@ -81,6 +87,19 @@ export class InMemoryWithdrawJobQueue implements WithdrawJobQueue {
             name: 'reconcile',
             withdrawalId: job.withdrawalId,
             failedReason: error instanceof Error ? error.message : 'reconcile failed',
+            attemptsMade: job.attempt
+          });
+          throw error;
+        }
+      } else {
+        try {
+          await this.handlers.externalSync(job.withdrawalId, job.attempt);
+        } catch (error) {
+          this.failedJobs.unshift({
+            id: `external_sync:${job.withdrawalId}:${Date.now()}`,
+            name: 'external_sync',
+            withdrawalId: job.withdrawalId,
+            failedReason: error instanceof Error ? error.message : 'external sync failed',
             attemptsMade: job.attempt
           });
           throw error;

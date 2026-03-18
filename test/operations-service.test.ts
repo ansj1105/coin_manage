@@ -234,6 +234,8 @@ describe('operations and control flows', () => {
     expect(summary.totalEvents).toBe(2);
     expect(summary.successCount).toBe(1);
     expect(summary.failureCount).toBe(1);
+    expect(summary.failedJobCount).toBe(0);
+    expect(summary.lastFailedJob).toBeNull();
     expect(summary.lastFailure).toMatchObject({
       withdrawalId: 'wd-sync-failed',
       status: 'TX_BROADCASTED',

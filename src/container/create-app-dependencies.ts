@@ -66,6 +66,7 @@ import { Pool } from 'pg';
 type AppDependencyOverrides = {
   tronGateway?: TronGateway;
   blockchainReader?: BlockchainReader;
+  externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient;
 };
 
 const createPersistence = () => {
@@ -177,9 +178,10 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
   const foxyaWithdrawalSyncClient: ExternalWithdrawalSyncClient | undefined =
-    env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && resolveFoxyaInternalWithdrawalApiKey()
+    overrides.externalWithdrawalSyncClient ??
+    (env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && resolveFoxyaInternalWithdrawalApiKey()
       ? new FoxyaInternalWithdrawalClient(resolveFoxyaInternalWithdrawalApiUrl()!, resolveFoxyaInternalWithdrawalApiKey()!)
-      : undefined;
+      : undefined);
   const foxyaWalletRepository =
     env.foxyaDb?.encryptionKey && env.foxyaDb.host && env.foxyaDb.name && env.foxyaDb.user
       ? new PostgresFoxyaWalletRepository(
@@ -267,6 +269,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     undefined,
     withdrawGuardService
   );
+  let withdrawService: WithdrawService;
   let withdrawJobQueue: WithdrawJobQueue;
   const queueHandlers = {
     dispatch: async (withdrawalId: string, attempt: number) => {
@@ -274,7 +277,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       await withdrawJobQueue.enqueueReconcile(withdrawalId);
     },
     reconcile: (withdrawalId: string | undefined, attempt: number) =>
-      withdrawDispatchWorker.processReconcile(withdrawalId, attempt)
+      withdrawDispatchWorker.processReconcile(withdrawalId, attempt),
+    externalSync: (withdrawalId: string, attempt: number) => withdrawService.processExternalSyncRetry(withdrawalId, attempt)
   };
   withdrawJobQueue = env.redisEnabled
     ? new BullmqWithdrawJobQueue(
@@ -288,7 +292,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
         }
       )
     : new InMemoryWithdrawJobQueue(queueHandlers);
-  const withdrawService = new WithdrawService(
+  withdrawService = new WithdrawService(
     ledger,
     eventPublisher,
     tronGateway,
