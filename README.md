@@ -93,20 +93,6 @@ ALLOW_SANDBOX_DIRECT_ONCHAIN_SEND=true
 ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=false
 ```
 
-출금 signer 아키텍처를 모듈 단위로 고정하려면:
-```env
-WITHDRAW_SIGNING_MODE=direct
-WITHDRAW_SIGNING_PERMISSION_ID=
-WITHDRAW_SIGNING_PERMISSION_NAME=withdraw_hot
-WITHDRAW_SIGNER_THRESHOLD=2
-WITHDRAW_OWNER_COLD=true
-WITHDRAW_SIGNER_NODES=signer-a:online,signer-b:online,owner-cold:recovery
-```
-
-- `direct`: 현재 worker가 바로 브로드캐스트
-- `manual_multisig`: worker는 구조만 이해하고, 실제 서명은 외부 signer 연동 전까지 실행하지 않음
-- 즉 필요한 변수만 주면 런타임은 해당 아키텍처를 인식하고 `/api/system/status`에 그대로 노출합니다.
-
 foxya 백엔드와 자동 입금 연동을 사용하려면:
 ```env
 APP_DEPOSIT_MONITOR_ENABLED=true
