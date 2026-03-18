@@ -117,6 +117,12 @@ FOXYA_INTERNAL_API_URL=https://api.korion.io.kr/api/v1/internal/deposits
 FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
 ```
 
+foxya 출금 상태 callback까지 같이 연동하려면:
+```env
+FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
+FOXYA_INTERNAL_WITHDRAWAL_API_URL=https://api.korion.io.kr/api/v1/internal/withdrawals
+```
+
 foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면:
 ```env
 SWEEP_BOT_ENABLED=true

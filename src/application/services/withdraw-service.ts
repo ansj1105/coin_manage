@@ -5,6 +5,7 @@ import type { EventPublisher } from '../ports/event-publisher.js';
 import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
+import type { ExternalWithdrawalSyncClient } from '../ports/external-withdrawal-sync-client.js';
 import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 import { WithdrawGuardService } from './withdraw-guard-service.js';
@@ -19,7 +20,8 @@ export class WithdrawService {
     private readonly withdrawJobQueue: WithdrawJobQueue,
     private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
     private readonly withdrawGuardService = new WithdrawGuardService(tronGateway),
-    private readonly withdrawPolicyService?: WithdrawPolicyService
+    private readonly withdrawPolicyService?: WithdrawPolicyService,
+    private readonly externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient
   ) {}
 
   async request(input: {
@@ -58,10 +60,7 @@ export class WithdrawService {
     });
 
     if (!result.duplicated) {
-      this.eventPublisher.publish(
-        'withdrawal.state.changed',
-        buildWithdrawalStateChangedContract(result.withdrawal, result.withdrawal.createdAt)
-      );
+      await this.publishWithdrawalStateChange(result.withdrawal, result.withdrawal.createdAt);
       await this.ledger.appendAuditLog({
         entityType: 'withdrawal',
         entityId: result.withdrawal.withdrawalId,
@@ -97,7 +96,7 @@ export class WithdrawService {
       provider: input.provider,
       requestId: input.requestId
     });
-    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
+    await this.publishWithdrawalStateChange(updated, new Date().toISOString());
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -121,10 +120,7 @@ export class WithdrawService {
       actorType: input.actorType ?? 'admin',
       note: input.note
     });
-    this.eventPublisher.publish(
-      'withdrawal.state.changed',
-      buildWithdrawalStateChangedContract(result.withdrawal, result.approval.createdAt)
-    );
+    await this.publishWithdrawalStateChange(result.withdrawal, result.approval.createdAt);
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -165,7 +161,7 @@ export class WithdrawService {
     });
 
     const updated = await this.ledger.broadcastWithdrawal(withdrawalId, txHash);
-    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
+    await this.publishWithdrawalStateChange(updated, new Date().toISOString());
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -181,7 +177,7 @@ export class WithdrawService {
 
   async confirm(withdrawalId: string) {
     const updated = await this.ledger.confirmWithdrawal(withdrawalId);
-    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
+    await this.publishWithdrawalStateChange(updated, new Date().toISOString());
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -197,7 +193,7 @@ export class WithdrawService {
 
   async fail(withdrawalId: string, reason: string) {
     const updated = await this.ledger.failWithdrawal(withdrawalId, reason);
-    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(updated, new Date().toISOString()));
+    await this.publishWithdrawalStateChange(updated, new Date().toISOString());
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
       entityId: withdrawalId,
@@ -313,5 +309,27 @@ export class WithdrawService {
 
   private isPrivateIp(ip: string) {
     return /^(127\.0\.0\.1|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(ip);
+  }
+
+  private async publishWithdrawalStateChange(
+    withdrawal: Parameters<typeof buildWithdrawalStateChangedContract>[0],
+    occurredAt: string
+  ) {
+    const contract = buildWithdrawalStateChangedContract(withdrawal, occurredAt);
+    this.eventPublisher.publish('withdrawal.state.changed', contract);
+
+    if (!this.externalWithdrawalSyncClient) {
+      return;
+    }
+
+    try {
+      await this.externalWithdrawalSyncClient.syncWithdrawalState(contract);
+    } catch (error) {
+      console.error('Failed to sync withdrawal state to foxya', {
+        withdrawalId: withdrawal.withdrawalId,
+        status: withdrawal.status,
+        error
+      });
+    }
   }
 }

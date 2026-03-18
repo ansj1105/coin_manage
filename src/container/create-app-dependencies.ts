@@ -1,3 +1,4 @@
+import type { ExternalWithdrawalSyncClient } from '../application/ports/external-withdrawal-sync-client.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
@@ -35,6 +36,7 @@ import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-ev
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
 import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-internal-deposit-client.js';
+import { FoxyaInternalWithdrawalClient } from '../infrastructure/integration/foxya-internal-withdrawal-client.js';
 import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
 import { PostgresFoxyaAlertSourceRepository } from '../infrastructure/integration/foxya-alert-source-repository.js';
 import { PostgresFoxyaWalletRepository } from '../infrastructure/integration/foxya-wallet-repository.js';
@@ -112,6 +114,18 @@ const resolveFoxyaInternalWalletApiUrl = () => {
   return env.foxyaInternalApiUrl.replace(/\/deposits\/?$/, '/wallets');
 };
 
+const resolveFoxyaInternalWithdrawalApiUrl = () => {
+  if (env.foxyaInternalWithdrawalApiUrl) {
+    return env.foxyaInternalWithdrawalApiUrl;
+  }
+
+  if (!env.foxyaInternalApiUrl) {
+    return undefined;
+  }
+
+  return env.foxyaInternalApiUrl.replace(/\/deposits\/?$/, '/withdrawals');
+};
+
 export const createAppDependencies = (overrides: AppDependencyOverrides = {}): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
   const {
@@ -151,8 +165,12 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       ? new FoxyaInternalDepositClient(env.foxyaInternalApiUrl, env.foxyaInternalApiKey)
       : undefined;
   const foxyaWalletSyncClient =
-    resolveFoxyaInternalWalletApiUrl() && env.foxyaInternalApiKey
+    env.nodeEnv !== 'test' && resolveFoxyaInternalWalletApiUrl() && env.foxyaInternalApiKey
       ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
+      : undefined;
+  const foxyaWithdrawalSyncClient: ExternalWithdrawalSyncClient | undefined =
+    env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && env.foxyaInternalApiKey
+      ? new FoxyaInternalWithdrawalClient(resolveFoxyaInternalWithdrawalApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
   const foxyaWalletRepository =
     env.foxyaDb?.encryptionKey && env.foxyaDb.host && env.foxyaDb.name && env.foxyaDb.user
@@ -270,7 +288,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawJobQueue,
     virtualWalletLifecyclePolicy,
     withdrawGuardService,
-    withdrawPolicyService
+    withdrawPolicyService,
+    foxyaWithdrawalSyncClient
   );
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
