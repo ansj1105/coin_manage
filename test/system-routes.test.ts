@@ -13,6 +13,27 @@ const buildRouter = (operationsServiceOverrides: Record<string, unknown> = {}) =
         queuedCount: 1,
         withdrawalIds: ['2f1ac758-2bce-47dd-8eaf-ffae13845657']
       }),
+      listWithdrawalAddressPolicies: vi.fn().mockResolvedValue([]),
+      upsertWithdrawalAddressPolicy: vi.fn().mockResolvedValue({
+        address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        policyType: 'blacklist',
+        reason: 'manual block',
+        createdBy: 'system-ops',
+        createdAt: '2026-03-19T00:00:00.000Z',
+        updatedAt: '2026-03-19T00:00:00.000Z'
+      }),
+      deleteWithdrawalAddressPolicy: vi.fn().mockResolvedValue(true),
+      listWithdrawalRiskEvents: vi.fn().mockResolvedValue({ items: [] }),
+      recordWithdrawalRiskEvent: vi.fn().mockResolvedValue({
+        eventId: 'risk-1',
+        address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        signal: 'manual_blacklist',
+        severity: 'high',
+        reason: 'manual risk flag',
+        createdAt: '2026-03-19T00:00:00.000Z',
+        actorId: 'system-ops',
+        blacklistPolicyType: 'blacklist'
+      }),
       listWithdrawalExternalSyncFailures: vi.fn().mockResolvedValue({
         items: [],
         failedJobCount: 0
@@ -205,6 +226,128 @@ describe('system routes', () => {
       result: {
         queuedCount: 1,
         withdrawalIds: ['2f1ac758-2bce-47dd-8eaf-ffae13845657']
+      }
+    });
+  });
+
+  it('lists withdraw policies for ops tooling', async () => {
+    const listWithdrawalAddressPolicies = vi.fn().mockResolvedValue([
+      {
+        address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        policyType: 'blacklist',
+        reason: 'manual block',
+        createdBy: 'ops-admin',
+        createdAt: '2026-03-19T00:00:00.000Z',
+        updatedAt: '2026-03-19T00:00:00.000Z'
+      }
+    ]);
+    const router = buildRouter({ listWithdrawalAddressPolicies });
+    const routeLayer = router.stack.find(
+      (layer: any) =>
+        layer.route?.path === '/withdraw-policies/addresses' && layer.route.methods?.get
+    );
+
+    const req = {
+      body: {},
+      query: { policyType: 'blacklist', limit: '10' },
+      params: {},
+      method: 'GET',
+      originalUrl: '/withdraw-policies/addresses',
+      header: () => undefined
+    } as any;
+    let jsonBody: unknown;
+    const res = {
+      status() {
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(listWithdrawalAddressPolicies).toHaveBeenCalledWith({ policyType: 'blacklist', limit: 10 });
+    expect(jsonBody).toEqual({
+      policies: [
+        {
+          address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          policyType: 'blacklist',
+          reason: 'manual block',
+          createdBy: 'ops-admin',
+          createdAt: '2026-03-19T00:00:00.000Z',
+          updatedAt: '2026-03-19T00:00:00.000Z'
+        }
+      ]
+    });
+  });
+
+  it('records risk events and optional blacklist policy from system routes', async () => {
+    const recordWithdrawalRiskEvent = vi.fn().mockResolvedValue({
+      eventId: 'risk-1',
+      address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      signal: 'manual_blacklist',
+      severity: 'high',
+      reason: 'manual risk flag',
+      createdAt: '2026-03-19T00:00:00.000Z',
+      actorId: 'ops-admin',
+      blacklistPolicyType: 'blacklist'
+    });
+    const router = buildRouter({ recordWithdrawalRiskEvent });
+    const routeLayer = router.stack.find(
+      (layer: any) =>
+        layer.route?.path === '/withdraw-risk-events' && layer.route.methods?.post
+    );
+
+    const req = {
+      body: {
+        address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        signal: 'manual_blacklist',
+        severity: 'high',
+        reason: 'manual risk flag',
+        blacklistPolicyType: 'blacklist'
+      },
+      query: {},
+      params: {},
+      method: 'POST',
+      originalUrl: '/withdraw-risk-events',
+      header: (name: string) => (name === 'x-admin-id' ? 'ops-admin' : undefined)
+    } as any;
+    let statusCode = 200;
+    let jsonBody: unknown;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(statusCode).toBe(201);
+    expect(recordWithdrawalRiskEvent).toHaveBeenCalledWith({
+      address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      signal: 'manual_blacklist',
+      severity: 'high',
+      reason: 'manual risk flag',
+      blacklistPolicyType: 'blacklist',
+      actorId: 'ops-admin'
+    });
+    expect(jsonBody).toEqual({
+      event: {
+        eventId: 'risk-1',
+        address: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        signal: 'manual_blacklist',
+        severity: 'high',
+        reason: 'manual risk flag',
+        createdAt: '2026-03-19T00:00:00.000Z',
+        actorId: 'ops-admin',
+        blacklistPolicyType: 'blacklist'
       }
     });
   });

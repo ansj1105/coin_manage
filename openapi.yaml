@@ -306,6 +306,136 @@ paths:
                     type: integer
         '400':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/withdraw-policies/addresses:
+    get:
+      summary: List withdrawal destination address policies for ops tooling
+      parameters:
+        - in: query
+          name: address
+          required: false
+          schema:
+            type: string
+            pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        - in: query
+          name: policyType
+          required: false
+          schema:
+            type: string
+            enum: [blacklist, whitelist, internal_blocked]
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Withdrawal address policy list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WithdrawAddressPolicy'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Create or update a withdrawal destination address policy from ops tooling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawAddressPolicyUpsertRequest'
+      responses:
+        '201':
+          description: Withdrawal address policy upserted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy:
+                    $ref: '#/components/schemas/WithdrawAddressPolicy'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/withdraw-policies/addresses/{address}/{policyType}:
+    delete:
+      summary: Delete a withdrawal destination address policy from ops tooling
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+            pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        - in: path
+          name: policyType
+          required: true
+          schema:
+            type: string
+            enum: [blacklist, whitelist, internal_blocked]
+      responses:
+        '200':
+          description: Withdrawal address policy deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/withdraw-risk-events:
+    get:
+      summary: List recorded withdrawal risk events for operator review
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Withdrawal risk event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WithdrawRiskEvent'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Record a withdrawal risk event and optionally materialize a blacklist policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRiskEventCreateRequest'
+      responses:
+        '201':
+          description: Withdrawal risk event recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    $ref: '#/components/schemas/WithdrawRiskEvent'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/reconciliation:
     get:
       summary: Get internal ledger versus on-chain reconciliation summary
@@ -1241,6 +1371,89 @@ components:
         createdAt:
           type: string
           format: date-time
+    WithdrawAddressPolicy:
+      type: object
+      properties:
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        policyType:
+          type: string
+          enum: [blacklist, whitelist, internal_blocked]
+        reason:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WithdrawAddressPolicyUpsertRequest:
+      type: object
+      required: [address, policyType]
+      properties:
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        policyType:
+          type: string
+          enum: [blacklist, whitelist, internal_blocked]
+        reason:
+          type: string
+          maxLength: 500
+    WithdrawRiskEvent:
+      type: object
+      properties:
+        eventId:
+          type: string
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        signal:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        actorId:
+          type: string
+        blacklistPolicyType:
+          oneOf:
+            - type: string
+              enum: [blacklist, whitelist, internal_blocked]
+            - type: 'null'
+    WithdrawRiskEventCreateRequest:
+      type: object
+      required: [address, signal, severity, reason]
+      properties:
+        address:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        signal:
+          type: string
+          minLength: 1
+          maxLength: 100
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        blacklistPolicyType:
+          type: string
+          enum: [blacklist, whitelist, internal_blocked]
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 64
     SweepTransitionRequest:
       type: object
       properties:
@@ -1918,6 +2131,32 @@ components:
                       type: integer
                     failedJobCount:
                       type: integer
+                    recentFailures:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          withdrawalId:
+                            type: string
+                          createdAt:
+                            type: string
+                          status:
+                            type: string
+                          error:
+                            type: string
+                          occurredAt:
+                            type: string
+                          txHash:
+                            type: string
+                          failedJob:
+                            oneOf:
+                              - type: object
+                                properties:
+                                  attemptsMade:
+                                    type: integer
+                                  failedReason:
+                                    type: string
+                              - type: 'null'
                     lastFailure:
                       oneOf:
                         - type: object

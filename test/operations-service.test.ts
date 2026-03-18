@@ -236,6 +236,11 @@ describe('operations and control flows', () => {
     expect(summary.failureCount).toBe(1);
     expect(summary.failedJobCount).toBe(0);
     expect(summary.lastFailedJob).toBeNull();
+    expect(summary.recentFailures).toHaveLength(1);
+    expect(summary.recentFailures[0]).toMatchObject({
+      withdrawalId: 'wd-sync-failed',
+      status: 'TX_BROADCASTED'
+    });
     expect(summary.lastFailure).toMatchObject({
       withdrawalId: 'wd-sync-failed',
       status: 'TX_BROADCASTED',
@@ -325,5 +330,46 @@ describe('operations and control flows', () => {
         }
       ])
     );
+  });
+
+  it('records risk events and materializes blacklist policies for ops workflows', async () => {
+    const event = await deps.operationsService.recordWithdrawalRiskEvent({
+      address: VALID_TRON_ADDRESS,
+      signal: 'manual_blacklist',
+      severity: 'high',
+      reason: 'ops flagged destination',
+      actorId: 'ops-admin',
+      blacklistPolicyType: 'blacklist'
+    });
+
+    expect(event).toMatchObject({
+      address: VALID_TRON_ADDRESS,
+      signal: 'manual_blacklist',
+      severity: 'high',
+      reason: 'ops flagged destination',
+      actorId: 'ops-admin',
+      blacklistPolicyType: 'blacklist'
+    });
+
+    const policies = await deps.operationsService.listWithdrawalAddressPolicies({
+      address: VALID_TRON_ADDRESS
+    });
+    expect(policies).toEqual([
+      expect.objectContaining({
+        address: VALID_TRON_ADDRESS,
+        policyType: 'blacklist',
+        reason: 'ops flagged destination'
+      })
+    ]);
+
+    const riskEvents = await deps.operationsService.listWithdrawalRiskEvents(10);
+    expect(riskEvents.items).toEqual([
+      expect.objectContaining({
+        address: VALID_TRON_ADDRESS,
+        signal: 'manual_blacklist',
+        severity: 'high',
+        blacklistPolicyType: 'blacklist'
+      })
+    ]);
   });
 });

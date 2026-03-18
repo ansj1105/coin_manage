@@ -18,6 +18,12 @@ import {
   parseLedgerContract,
   verifyLedgerContractSignature
 } from '../../../contracts/ledger-contracts.js';
+import {
+  withdrawAddressPolicyParamsSchema,
+  withdrawAddressPolicyQuerySchema,
+  withdrawAddressPolicyTypeSchema,
+  withdrawAddressPolicyUpsertSchema
+} from '../schemas/withdraw-schemas.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
@@ -59,6 +65,21 @@ const retryExternalSyncSchema = z.object({
 });
 
 const externalSyncFailuresQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional()
+});
+
+const riskEventSeveritySchema = z.enum(['low', 'medium', 'high', 'critical']);
+
+const riskEventCreateSchema = z.object({
+  address: z.string().regex(tronAddressPattern, 'invalid TRON address format'),
+  signal: z.string().trim().min(1).max(100),
+  severity: riskEventSeveritySchema,
+  reason: z.string().trim().min(1).max(500),
+  blacklistPolicyType: withdrawAddressPolicyTypeSchema.optional(),
+  actorId: z.string().trim().min(1).max(64).optional()
+});
+
+const riskEventListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional()
 });
 
@@ -454,6 +475,94 @@ export const createSystemRoutes = (
       }
 
       res.json(await operationsService.listWithdrawalExternalSyncFailures(parsed.data.limit ?? 50));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/withdraw-policies/addresses', async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid withdraw policy query', parsed.error.flatten());
+      }
+
+      res.json({
+        policies: await operationsService.listWithdrawalAddressPolicies(parsed.data)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/withdraw-policies/addresses', async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyUpsertSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid withdraw policy payload', parsed.error.flatten());
+      }
+
+      const actorId = typeof req.header('x-admin-id') === 'string' ? req.header('x-admin-id')! : 'system-ops';
+      const policy = await operationsService.upsertWithdrawalAddressPolicy({
+        ...parsed.data,
+        actorId
+      });
+      res.status(201).json({ policy });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete('/withdraw-policies/addresses/:address/:policyType', async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyParamsSchema.safeParse(req.params);
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid withdraw policy params', parsed.error.flatten());
+      }
+
+      const actorId = typeof req.header('x-admin-id') === 'string' ? req.header('x-admin-id')! : 'system-ops';
+      const deleted = await operationsService.deleteWithdrawalAddressPolicy(
+        parsed.data.address,
+        parsed.data.policyType,
+        actorId
+      );
+      res.json({ deleted });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/withdraw-risk-events', async (req, res, next) => {
+    try {
+      const parsed = riskEventListQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid risk event query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.listWithdrawalRiskEvents(parsed.data.limit ?? 50));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/withdraw-risk-events', async (req, res, next) => {
+    try {
+      const parsed = riskEventCreateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid risk event payload', parsed.error.flatten());
+      }
+
+      const actorId =
+        parsed.data.actorId ?? (typeof req.header('x-admin-id') === 'string' ? req.header('x-admin-id')! : 'system-ops');
+      const event = await operationsService.recordWithdrawalRiskEvent({
+        address: parsed.data.address,
+        signal: parsed.data.signal,
+        severity: parsed.data.severity,
+        reason: parsed.data.reason,
+        blacklistPolicyType: parsed.data.blacklistPolicyType,
+        actorId
+      });
+      res.status(201).json({ event });
     } catch (error) {
       next(error);
     }

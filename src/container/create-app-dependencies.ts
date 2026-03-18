@@ -306,7 +306,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
   const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher, withdrawJobQueue);
-  const operationsService = new OperationsService(ledger, systemMonitoringService, withdrawJobQueue);
+  const operationsService = new OperationsService(ledger, systemMonitoringService, withdrawJobQueue, withdrawPolicyService);
   const sweepBotService = new SweepBotService(
     depositMonitorRepository,
     foxyaClient,

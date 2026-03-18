@@ -4,12 +4,41 @@ import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../
 import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import { SystemMonitoringService } from './system-monitoring-service.js';
+import type { WithdrawPolicyService } from './withdraw-policy-service.js';
+import type { WithdrawAddressPolicyType } from '../../domain/withdraw-policy/types.js';
+
+type ExternalSyncFailureItem = {
+  withdrawalId: string;
+  createdAt: string;
+  status: string;
+  error: string;
+  occurredAt: string;
+  txHash: string;
+  failedJob: {
+    attemptsMade: number;
+    failedReason: string;
+  } | null;
+};
+
+type WithdrawalRiskEventSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+type WithdrawalRiskEvent = {
+  eventId: string;
+  address: string;
+  signal: string;
+  severity: WithdrawalRiskEventSeverity;
+  reason: string;
+  createdAt: string;
+  actorId: string;
+  blacklistPolicyType: WithdrawAddressPolicyType | null;
+};
 
 export class OperationsService {
   constructor(
     private readonly ledger: LedgerRepository,
     private readonly systemMonitoringService: SystemMonitoringService,
-    private readonly withdrawJobQueue: WithdrawJobQueue
+    private readonly withdrawJobQueue: WithdrawJobQueue,
+    private readonly withdrawPolicyService?: WithdrawPolicyService
   ) {}
 
   async listAuditLogs(input?: { entityType?: 'withdrawal' | 'sweep' | 'system'; entityId?: string; limit?: number }) {
@@ -32,18 +61,7 @@ export class OperationsService {
         .map((job) => [job.withdrawalId as string, job] as const)
     );
 
-    const items: Array<{
-      withdrawalId: string;
-      createdAt: string;
-      status: string;
-      error: string;
-      occurredAt: string;
-      txHash: string;
-      failedJob: {
-        attemptsMade: number;
-        failedReason: string;
-      } | null;
-    }> = [];
+    const items: ExternalSyncFailureItem[] = [];
     const seenWithdrawalIds = new Set<string>();
 
     for (const log of logs) {
@@ -116,6 +134,7 @@ export class OperationsService {
     const failures = syncLogs.filter((log) => log.action === 'withdraw.external_sync.failed');
     const successes = syncLogs.filter((log) => log.action === 'withdraw.external_sync.succeeded');
     const lastFailure = failures[0];
+    const recentFailures = (await this.listWithdrawalExternalSyncFailures(Math.min(limit, 10))).items;
 
     return {
       enabled: Boolean(env.foxyaInternalWithdrawalApiUrl && env.foxyaInternalWithdrawalApiKey),
@@ -123,6 +142,7 @@ export class OperationsService {
       successCount: successes.length,
       failureCount: failures.length,
       failedJobCount: syncFailedJobs.length,
+      recentFailures,
       lastFailure: lastFailure
         ? {
             withdrawalId: lastFailure.entityId,
@@ -139,6 +159,140 @@ export class OperationsService {
           }
         : null
     };
+  }
+
+  async listWithdrawalAddressPolicies(input?: {
+    address?: string;
+    policyType?: WithdrawAddressPolicyType;
+    limit?: number;
+  }) {
+    if (!this.withdrawPolicyService) {
+      throw new Error('withdraw policy service is not configured');
+    }
+
+    return this.withdrawPolicyService.listAddressPolicies(input);
+  }
+
+  async upsertWithdrawalAddressPolicy(input: {
+    address: string;
+    policyType: WithdrawAddressPolicyType;
+    reason?: string;
+    actorId: string;
+  }) {
+    if (!this.withdrawPolicyService) {
+      throw new Error('withdraw policy service is not configured');
+    }
+
+    const policy = await this.withdrawPolicyService.upsertAddressPolicy({
+      address: input.address,
+      policyType: input.policyType,
+      reason: input.reason,
+      createdBy: input.actorId
+    });
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: `withdraw-policy:${policy.address}:${policy.policyType}`,
+      action: 'withdraw.policy.upserted',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        address: policy.address,
+        policyType: policy.policyType,
+        reason: policy.reason ?? ''
+      }
+    });
+
+    return policy;
+  }
+
+  async deleteWithdrawalAddressPolicy(address: string, policyType: WithdrawAddressPolicyType, actorId: string) {
+    if (!this.withdrawPolicyService) {
+      throw new Error('withdraw policy service is not configured');
+    }
+
+    const deleted = await this.withdrawPolicyService.deleteAddressPolicy(address, policyType);
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: `withdraw-policy:${address}:${policyType}`,
+      action: deleted ? 'withdraw.policy.deleted' : 'withdraw.policy.delete_missed',
+      actorType: 'admin',
+      actorId,
+      metadata: {
+        address,
+        policyType
+      }
+    });
+
+    return deleted;
+  }
+
+  async listWithdrawalRiskEvents(limit = 50): Promise<{ items: WithdrawalRiskEvent[] }> {
+    const logs = await this.ledger.listAuditLogs({
+      entityType: 'system',
+      limit: Math.max(limit * 4, 100)
+    });
+
+    const items = logs
+      .filter((log) => log.action === 'withdraw.risk_event.recorded')
+      .slice(0, limit)
+      .map((log) => ({
+        eventId: log.entityId,
+        address: log.metadata.address ?? '',
+        signal: log.metadata.signal ?? '',
+        severity: (log.metadata.severity as WithdrawalRiskEventSeverity | undefined) ?? 'medium',
+        reason: log.metadata.reason ?? '',
+        createdAt: log.createdAt,
+        actorId: log.actorId,
+        blacklistPolicyType: (log.metadata.blacklistPolicyType as WithdrawAddressPolicyType | undefined) ?? null
+      }));
+
+    return { items };
+  }
+
+  async recordWithdrawalRiskEvent(input: {
+    address: string;
+    signal: string;
+    severity: WithdrawalRiskEventSeverity;
+    reason: string;
+    actorId: string;
+    blacklistPolicyType?: WithdrawAddressPolicyType;
+  }) {
+    if (input.blacklistPolicyType) {
+      await this.upsertWithdrawalAddressPolicy({
+        address: input.address,
+        policyType: input.blacklistPolicyType,
+        reason: input.reason,
+        actorId: input.actorId
+      });
+    }
+
+    const eventId = `risk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const log = await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: eventId,
+      action: 'withdraw.risk_event.recorded',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        address: input.address,
+        signal: input.signal,
+        severity: input.severity,
+        reason: input.reason,
+        blacklistPolicyType: input.blacklistPolicyType ?? ''
+      }
+    });
+
+    return {
+      eventId,
+      address: input.address,
+      signal: input.signal,
+      severity: input.severity,
+      reason: input.reason,
+      createdAt: log.createdAt,
+      actorId: input.actorId,
+      blacklistPolicyType: input.blacklistPolicyType ?? null
+    } satisfies WithdrawalRiskEvent;
   }
 
   async getReconciliationReport() {
