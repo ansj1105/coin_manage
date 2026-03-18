@@ -105,8 +105,8 @@ FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
 
 foxya 출금 상태 callback까지 같이 연동하려면:
 ```env
-FOXYA_INTERNAL_API_KEY=replace-with-foxya-deposit-scanner-api-key
 FOXYA_INTERNAL_WITHDRAWAL_API_URL=https://api.korion.io.kr/api/v1/internal/withdrawals
+FOXYA_INTERNAL_WITHDRAWAL_API_KEY=replace-with-foxya-withdraw-callback-api-key
 ```
 
 foxya 지갑 private key 복호화 기반 자동 sweep bot까지 사용하려면:
@@ -133,6 +133,8 @@ VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_SECRET_ID=prod/korion/virtual-wallet
 VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_JSON_KEY=encryptionKey
 FOXYA_INTERNAL_API_KEY_ASM_SECRET_ID=prod/korion/foxya-internal-api
 FOXYA_INTERNAL_API_KEY_ASM_JSON_KEY=apiKey
+FOXYA_INTERNAL_WITHDRAWAL_API_KEY_ASM_SECRET_ID=prod/korion/foxya-withdraw-callback-api
+FOXYA_INTERNAL_WITHDRAWAL_API_KEY_ASM_JSON_KEY=apiKey
 ```
 
 - 앱은 부팅 시 `*_ASM_SECRET_ID`를 먼저 읽고 실제 env 값으로 주입한 뒤 기존 검증을 수행합니다.
@@ -285,7 +287,7 @@ npm run build
 - `APP_TRON_GATEWAY_MODE=trc20`는 구현되어 있고 TRON API key와 mainnet/testnet contract preset까지 반영됐습니다.
 - `APP_DEPOSIT_MONITOR_ENABLED=true`면 foxya 내부 API와 같은 도커 네트워크에서 watch-address 조회, TRON KORI 입금 register/complete가 자동 실행됩니다.
 - `SWEEP_BOT_ENABLED=true`와 foxya DB 접속 정보 + `FOXYA_ENCRYPTION_KEY`가 있으면 completed deposit를 hot wallet로 자동 sweep합니다.
-- 운영에서는 `HOT_WALLET_PRIVATE_KEY`, `FOXYA_ENCRYPTION_KEY`, `VIRTUAL_WALLET_ENCRYPTION_KEY`, `FOXYA_INTERNAL_API_KEY`를 ASM으로 빼는 구성이 권장됩니다.
+- 운영에서는 `HOT_WALLET_PRIVATE_KEY`, `FOXYA_ENCRYPTION_KEY`, `VIRTUAL_WALLET_ENCRYPTION_KEY`, `FOXYA_INTERNAL_API_KEY`, `FOXYA_INTERNAL_WITHDRAWAL_API_KEY`를 ASM으로 빼는 구성이 권장됩니다.
 - `ALERT_MONITOR_ENABLED=true`와 `ALERT_MONITOR_HEALTH_TARGETS`가 있으면 외부 health URL 비정상/복구를 텔레그램으로 전송합니다.
 - foxya DB 접근이 가능하면 `internal_transfers`, `token_deposits`, `external_transfers`, `swaps`, `exchanges`, `payment_deposits` 신규 row를 텔레그램으로 전송합니다.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`가 있으면 핫월렛 임계치와 sweep/deposit monitor 실패를 텔레그램으로 전송합니다.

@@ -136,6 +136,13 @@ export const buildSystemStatusResponse = (
         jwt: hasAsmSecretBinding('JWT_SECRET') ? 'asm' : 'env',
         hotWalletPrivateKey: hasAsmSecretBinding('HOT_WALLET_PRIVATE_KEY') ? 'asm' : 'env',
         foxyaInternalApiKey: hasAsmSecretBinding('FOXYA_INTERNAL_API_KEY') ? 'asm' : 'env',
+        foxyaInternalWithdrawalApiKey: hasAsmSecretBinding('FOXYA_INTERNAL_WITHDRAWAL_API_KEY')
+          ? 'asm'
+          : hasAsmSecretBinding('FOXYA_INTERNAL_API_KEY')
+            ? 'asm:fallback-deposit'
+            : env.foxyaInternalWithdrawalApiKey
+              ? 'env'
+              : 'unconfigured',
         foxyaEncryptionKey: hasAsmSecretBinding('FOXYA_ENCRYPTION_KEY') ? 'asm' : 'env',
         virtualWalletEncryptionKey: hasAsmSecretBinding('VIRTUAL_WALLET_ENCRYPTION_KEY') ? 'asm' : 'env'
       }

@@ -126,6 +126,14 @@ const resolveFoxyaInternalWithdrawalApiUrl = () => {
   return env.foxyaInternalApiUrl.replace(/\/deposits\/?$/, '/withdrawals');
 };
 
+const resolveFoxyaInternalWithdrawalApiKey = () => {
+  if (env.foxyaInternalWithdrawalApiKey) {
+    return env.foxyaInternalWithdrawalApiKey;
+  }
+
+  return env.foxyaInternalApiKey;
+};
+
 export const createAppDependencies = (overrides: AppDependencyOverrides = {}): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
   const {
@@ -169,8 +177,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
   const foxyaWithdrawalSyncClient: ExternalWithdrawalSyncClient | undefined =
-    env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && env.foxyaInternalApiKey
-      ? new FoxyaInternalWithdrawalClient(resolveFoxyaInternalWithdrawalApiUrl()!, env.foxyaInternalApiKey)
+    env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && resolveFoxyaInternalWithdrawalApiKey()
+      ? new FoxyaInternalWithdrawalClient(resolveFoxyaInternalWithdrawalApiUrl()!, resolveFoxyaInternalWithdrawalApiKey()!)
       : undefined;
   const foxyaWalletRepository =
     env.foxyaDb?.encryptionKey && env.foxyaDb.host && env.foxyaDb.name && env.foxyaDb.user

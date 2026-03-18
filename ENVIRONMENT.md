@@ -80,6 +80,10 @@ mainnet 직접 전송은 `ALLOW_MAINNET_SANDBOX_DIRECT_ONCHAIN_SEND=true`가 추
 | `FOXYA_INTERNAL_API_KEY` | No | Recommended | empty | foxya internal API key |
 | `FOXYA_INTERNAL_API_KEY_ASM_SECRET_ID` | No | No | empty | `FOXYA_INTERNAL_API_KEY`를 ASM에서 읽을 secret id/arn |
 | `FOXYA_INTERNAL_API_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 사용할 field 이름 |
+| `FOXYA_INTERNAL_WITHDRAWAL_API_URL` | No | Recommended | empty | foxya internal withdrawals callback API URL |
+| `FOXYA_INTERNAL_WITHDRAWAL_API_KEY` | No | Recommended | empty | foxya withdrawal callback API key. 비어 있으면 `FOXYA_INTERNAL_API_KEY` fallback 사용 |
+| `FOXYA_INTERNAL_WITHDRAWAL_API_KEY_ASM_SECRET_ID` | No | No | empty | `FOXYA_INTERNAL_WITHDRAWAL_API_KEY`를 ASM에서 읽을 secret id/arn |
+| `FOXYA_INTERNAL_WITHDRAWAL_API_KEY_ASM_JSON_KEY` | No | No | empty | secret이 JSON이면 사용할 field 이름 |
 | `FOXYA_DB_HOST` | No | Recommended | empty | foxya DB 또는 db-proxy 호스트 |
 | `FOXYA_DB_PORT` | No | Recommended | `5432` | foxya DB 포트 |
 | `FOXYA_DB_NAME` | No | Recommended | empty | foxya DB 이름 |

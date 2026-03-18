@@ -23,6 +23,7 @@
 - `foxya_coin_service` may submit requests and cache display state, but canonical withdrawal status belongs to `coin_manage`.
 - Redis can be used for locks, queues, and transient delivery, but not as the canonical withdrawal-state store.
 - Multi-node deployment improves availability and throughput; it does not replace explicit callback or polling contracts between services.
+- Do not couple withdrawal callbacks to unrelated foxya internal credentials such as deposit-scanner keys. Prefer a dedicated withdrawal callback API key, and only use fallback wiring temporarily for zero-downtime rollout.
 
 ## Deployment Env Rule
 

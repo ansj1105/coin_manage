@@ -95,6 +95,7 @@ const schema = z.object({
   FOXYA_INTERNAL_API_KEY: z.string().optional(),
   FOXYA_INTERNAL_WALLET_API_URL: optionalUrlString,
   FOXYA_INTERNAL_WITHDRAWAL_API_URL: optionalUrlString,
+  FOXYA_INTERNAL_WITHDRAWAL_API_KEY: z.string().optional(),
   FOXYA_DB_HOST: z.string().optional(),
   FOXYA_DB_PORT: z.coerce.number().int().positive().default(5432),
   FOXYA_DB_NAME: z.string().optional(),
@@ -284,6 +285,7 @@ export const env = Object.freeze({
   foxyaInternalApiKey: parsed.FOXYA_INTERNAL_API_KEY,
   foxyaInternalWalletApiUrl: parsed.FOXYA_INTERNAL_WALLET_API_URL,
   foxyaInternalWithdrawalApiUrl: parsed.FOXYA_INTERNAL_WITHDRAWAL_API_URL,
+  foxyaInternalWithdrawalApiKey: parsed.FOXYA_INTERNAL_WITHDRAWAL_API_KEY ?? parsed.FOXYA_INTERNAL_API_KEY,
   foxyaDb:
     parsed.FOXYA_DB_HOST && parsed.FOXYA_DB_NAME && parsed.FOXYA_DB_USER
       ? {
