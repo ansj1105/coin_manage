@@ -1789,6 +1789,62 @@ components:
               type: array
               items:
                 type: string
+        withdrawals:
+          type: object
+          properties:
+            readiness:
+              oneOf:
+                - type: object
+                  properties:
+                    ready:
+                      type: boolean
+                    failures:
+                      type: array
+                      items:
+                        type: string
+                    trxBalanceSun:
+                      type: string
+                    trxBalance:
+                      type: string
+                    availableBandwidth:
+                      type: integer
+                    availableEnergy:
+                      type: integer
+                    minTrxSun:
+                      type: string
+                    minTrx:
+                      type: string
+                    minBandwidth:
+                      type: integer
+                    minEnergy:
+                      type: integer
+                - type: 'null'
+            externalSync:
+              oneOf:
+                - type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    totalEvents:
+                      type: integer
+                    successCount:
+                      type: integer
+                    failureCount:
+                      type: integer
+                    lastFailure:
+                      oneOf:
+                        - type: object
+                          properties:
+                            withdrawalId:
+                              type: string
+                            createdAt:
+                              type: string
+                            status:
+                              type: string
+                            error:
+                              type: string
+                        - type: 'null'
+                - type: 'null'
         reconciliation:
           oneOf:
             - $ref: '#/components/schemas/ReconciliationReport'

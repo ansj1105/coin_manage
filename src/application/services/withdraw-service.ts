@@ -324,10 +324,48 @@ export class WithdrawService {
 
     try {
       await this.externalWithdrawalSyncClient.syncWithdrawalState(contract);
+      await this.recordExternalSyncAudit(withdrawal.withdrawalId, 'withdraw.external_sync.succeeded', {
+        status: withdrawal.status,
+        occurredAt,
+        txHash: withdrawal.txHash ?? ''
+      });
     } catch (error) {
       console.error('Failed to sync withdrawal state to foxya', {
         withdrawalId: withdrawal.withdrawalId,
         status: withdrawal.status,
+        error
+      });
+      const message = error instanceof Error ? error.message : 'unknown external sync failure';
+      await Promise.all([
+        this.recordExternalSyncAudit(withdrawal.withdrawalId, 'withdraw.external_sync.failed', {
+          status: withdrawal.status,
+          occurredAt,
+          txHash: withdrawal.txHash ?? '',
+          error: message.slice(0, 500)
+        }),
+        this.alertService.notifyWithdrawalExternalSyncFailed({
+          withdrawalId: withdrawal.withdrawalId,
+          status: withdrawal.status,
+          reason: message.slice(0, 500)
+        })
+      ]);
+    }
+  }
+
+  private async recordExternalSyncAudit(withdrawalId: string, action: string, metadata: Record<string, string>) {
+    try {
+      await this.ledger.appendAuditLog({
+        entityType: 'withdrawal',
+        entityId: withdrawalId,
+        action,
+        actorType: 'system',
+        actorId: 'foxya-withdrawal-sync',
+        metadata
+      });
+    } catch (error) {
+      console.error('Failed to record external withdrawal sync audit log', {
+        withdrawalId,
+        action,
         error
       });
     }

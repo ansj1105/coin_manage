@@ -69,7 +69,8 @@ export const buildSystemStatusResponse = (
     telegramEnabled: boolean;
     externalAlertMonitor?: Awaited<ReturnType<ExternalAlertMonitorService['getStatus']>>;
   },
-  withdrawReadiness?: HotWalletReadiness
+  withdrawReadiness?: HotWalletReadiness,
+  withdrawExternalSync?: Awaited<ReturnType<OperationsService['getWithdrawalExternalSyncStatus']>>
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
   const walletCatalog = getConfiguredSystemWallets().map((wallet) => ({
@@ -155,7 +156,8 @@ export const buildSystemStatusResponse = (
       onchainTransferExecutableWalletCodes: ['hot']
     },
     withdrawals: {
-      readiness: withdrawReadiness ?? null
+      readiness: withdrawReadiness ?? null,
+      externalSync: withdrawExternalSync ?? null
     },
     reconciliation: reconciliation ?? null
   };
@@ -176,12 +178,14 @@ export const createSystemRoutes = (
   router.get('/status', async (_req, res, next) => {
     try {
       const wallets = getConfiguredWallets();
-      const [monitoring, collectorRuns, depositMonitor, reconciliation, withdrawReadiness] = await Promise.all([
+      const [monitoring, collectorRuns, depositMonitor, reconciliation, withdrawReadiness, withdrawExternalSync] =
+        await Promise.all([
         systemMonitoringService.getStoredWallets(wallets),
         systemMonitoringService.getCollectorRuns(),
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport(),
-        withdrawGuardService.getHotWalletReadiness()
+        withdrawGuardService.getHotWalletReadiness(),
+        operationsService.getWithdrawalExternalSyncStatus()
       ]);
       const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json(
@@ -189,7 +193,7 @@ export const createSystemRoutes = (
           sweepBot: sweepBotService.getStatus(),
           telegramEnabled: alertService.enabled,
           externalAlertMonitor
-        }, withdrawReadiness)
+        }, withdrawReadiness, withdrawExternalSync)
       );
     } catch (error) {
       next(error);

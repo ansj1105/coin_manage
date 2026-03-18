@@ -106,6 +106,22 @@ export class AlertService {
     });
   }
 
+  async notifyWithdrawalExternalSyncFailed(input: {
+    withdrawalId: string;
+    status: string;
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Withdrawal Callback Sync Failed',
+      body: [
+        `withdrawalId=${input.withdrawalId}`,
+        `status=${input.status}`,
+        `reason=${input.reason}`
+      ].join('\n'),
+      dedupeKey: `withdraw-callback-sync-failed:${input.withdrawalId}:${input.status}:${input.reason}`
+    });
+  }
+
   async notifyWithdrawalResourceLow(input: {
     withdrawalId: string;
     hotWalletAddress: string;

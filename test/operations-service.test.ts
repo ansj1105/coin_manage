@@ -201,4 +201,43 @@ describe('operations and control flows', () => {
     const completed = await deps.withdrawService.get(request.withdrawal.withdrawalId);
     expect(completed?.status).toBe('COMPLETED');
   });
+
+  it('summarizes recent external withdrawal sync failures for system status', async () => {
+    await deps.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: 'wd-sync-ok',
+      action: 'withdraw.external_sync.succeeded',
+      actorType: 'system',
+      actorId: 'foxya-withdrawal-sync',
+      metadata: {
+        status: 'COMPLETED',
+        occurredAt: '2026-03-18T12:00:00.000Z',
+        txHash: 'tx-ok'
+      }
+    });
+    await deps.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: 'wd-sync-failed',
+      action: 'withdraw.external_sync.failed',
+      actorType: 'system',
+      actorId: 'foxya-withdrawal-sync',
+      metadata: {
+        status: 'TX_BROADCASTED',
+        occurredAt: '2026-03-18T12:01:00.000Z',
+        txHash: 'tx-failed',
+        error: 'foxya timeout'
+      }
+    });
+
+    const summary = await deps.operationsService.getWithdrawalExternalSyncStatus();
+
+    expect(summary.totalEvents).toBe(2);
+    expect(summary.successCount).toBe(1);
+    expect(summary.failureCount).toBe(1);
+    expect(summary.lastFailure).toMatchObject({
+      withdrawalId: 'wd-sync-failed',
+      status: 'TX_BROADCASTED',
+      error: 'foxya timeout'
+    });
+  });
 });

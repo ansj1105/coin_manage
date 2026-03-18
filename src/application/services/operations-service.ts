@@ -16,6 +16,32 @@ export class OperationsService {
     return this.ledger.listAuditLogs(input);
   }
 
+  async getWithdrawalExternalSyncStatus(limit = 200) {
+    const logs = await this.ledger.listAuditLogs({
+      entityType: 'withdrawal',
+      limit
+    });
+    const syncLogs = logs.filter((log) => log.action.startsWith('withdraw.external_sync.'));
+    const failures = syncLogs.filter((log) => log.action === 'withdraw.external_sync.failed');
+    const successes = syncLogs.filter((log) => log.action === 'withdraw.external_sync.succeeded');
+    const lastFailure = failures[0];
+
+    return {
+      enabled: Boolean(env.foxyaInternalWithdrawalApiUrl && env.foxyaInternalWithdrawalApiKey),
+      totalEvents: syncLogs.length,
+      successCount: successes.length,
+      failureCount: failures.length,
+      lastFailure: lastFailure
+        ? {
+            withdrawalId: lastFailure.entityId,
+            createdAt: lastFailure.createdAt,
+            status: lastFailure.metadata.status ?? '',
+            error: lastFailure.metadata.error ?? ''
+          }
+        : null
+    };
+  }
+
   async getReconciliationReport() {
     const wallets = getConfiguredSystemWallets();
     const [snapshots, ledgerSummary] = await Promise.all([
