@@ -179,6 +179,27 @@ export class OperationsService {
     return this.withdrawJobQueue.listFailed(limit);
   }
 
+  async retryExternalSyncWithdrawals(withdrawalIds: string[], actorId = 'manual-operator') {
+    const uniqueWithdrawalIds = Array.from(new Set(withdrawalIds.map((item) => item.trim()).filter(Boolean)));
+
+    for (const withdrawalId of uniqueWithdrawalIds) {
+      await this.withdrawJobQueue.enqueueExternalSync(withdrawalId);
+      await this.ledger.appendAuditLog({
+        entityType: 'withdrawal',
+        entityId: withdrawalId,
+        action: 'withdraw.external_sync.retry_requested',
+        actorType: 'admin',
+        actorId,
+        metadata: {}
+      });
+    }
+
+    return {
+      queuedCount: uniqueWithdrawalIds.length,
+      withdrawalIds: uniqueWithdrawalIds
+    };
+  }
+
   async seedWithdrawalQueueRecovery() {
     const [approved, broadcasted] = await Promise.all([
       this.ledger.listWithdrawalsByStatuses(['ADMIN_APPROVED']),

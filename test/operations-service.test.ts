@@ -242,4 +242,32 @@ describe('operations and control flows', () => {
       error: 'foxya timeout'
     });
   });
+
+  it('queues manual external sync retries and records audit logs', async () => {
+    const result = await deps.operationsService.retryExternalSyncWithdrawals(
+      [
+        '2f1ac758-2bce-47dd-8eaf-ffae13845657',
+        'f0bb7a31-b4ab-46e5-a625-f21dd1c0f3b1',
+        '2f1ac758-2bce-47dd-8eaf-ffae13845657'
+      ],
+      'ops-admin-1'
+    );
+
+    expect(result).toEqual({
+      queuedCount: 2,
+      withdrawalIds: [
+        '2f1ac758-2bce-47dd-8eaf-ffae13845657',
+        'f0bb7a31-b4ab-46e5-a625-f21dd1c0f3b1'
+      ]
+    });
+
+    const logs = await deps.operationsService.listAuditLogs({
+      entityType: 'withdrawal',
+      entityId: '2f1ac758-2bce-47dd-8eaf-ffae13845657'
+    });
+    expect(logs[0]).toMatchObject({
+      action: 'withdraw.external_sync.retry_requested',
+      actorId: 'ops-admin-1'
+    });
+  });
 });

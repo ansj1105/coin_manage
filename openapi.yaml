@@ -221,6 +221,44 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AuditLog'
+  /api/system/withdraw-jobs/external-sync/retry:
+    post:
+      summary: Requeue foxya withdrawal callback sync jobs for specific withdrawals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [withdrawalIds]
+              properties:
+                withdrawalIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: External sync retry queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      queuedCount:
+                        type: integer
+                      withdrawalIds:
+                        type: array
+                        items:
+                          type: string
+                          format: uuid
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/reconciliation:
     get:
       summary: Get internal ledger versus on-chain reconciliation summary

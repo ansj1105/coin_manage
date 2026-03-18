@@ -54,6 +54,10 @@ const depositReconcileSchema = z.object({
   txHashes: z.array(z.string().min(8).max(128)).max(100).optional()
 });
 
+const retryExternalSyncSchema = z.object({
+  withdrawalIds: z.array(z.string().uuid()).min(1).max(100)
+});
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
   collectorRuns: CollectorRunRecord[] = [],
@@ -417,6 +421,21 @@ export const createSystemRoutes = (
     try {
       res.json({
         result: await operationsService.seedWithdrawalQueueRecovery()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/withdraw-jobs/external-sync/retry', async (req, res, next) => {
+    try {
+      const parsed = retryExternalSyncSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid external sync retry payload', parsed.error.flatten());
+      }
+
+      res.json({
+        result: await operationsService.retryExternalSyncWithdrawals(parsed.data.withdrawalIds)
       });
     } catch (error) {
       next(error);
