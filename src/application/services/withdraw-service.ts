@@ -8,6 +8,7 @@ import type { TronGateway } from '../ports/tron-gateway.js';
 import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 import { WithdrawGuardService } from './withdraw-guard-service.js';
+import type { WithdrawPolicyService } from './withdraw-policy-service.js';
 
 export class WithdrawService {
   constructor(
@@ -17,7 +18,8 @@ export class WithdrawService {
     private readonly alertService: AlertService,
     private readonly withdrawJobQueue: WithdrawJobQueue,
     private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
-    private readonly withdrawGuardService = new WithdrawGuardService(tronGateway)
+    private readonly withdrawGuardService = new WithdrawGuardService(tronGateway),
+    private readonly withdrawPolicyService?: WithdrawPolicyService
   ) {}
 
   async request(input: {
@@ -219,6 +221,31 @@ export class WithdrawService {
 
   async listApprovals(withdrawalId: string) {
     return this.ledger.listWithdrawalApprovals(withdrawalId);
+  }
+
+  async upsertAddressPolicy(input: {
+    address: string;
+    policyType: 'blacklist' | 'whitelist' | 'internal_blocked';
+    reason?: string;
+    createdBy: string;
+  }) {
+    if (!this.withdrawPolicyService) {
+      throw new Error('withdraw policy service is not configured');
+    }
+
+    return this.withdrawPolicyService.upsertAddressPolicy(input);
+  }
+
+  async listAddressPolicies(input?: {
+    address?: string;
+    policyType?: 'blacklist' | 'whitelist' | 'internal_blocked';
+    limit?: number;
+  }) {
+    return this.withdrawPolicyService?.listAddressPolicies(input) ?? [];
+  }
+
+  async deleteAddressPolicy(address: string, policyType: 'blacklist' | 'whitelist' | 'internal_blocked') {
+    return this.withdrawPolicyService?.deleteAddressPolicy(address, policyType) ?? false;
   }
 
   async reconcileBroadcasted(): Promise<{ confirmed: string[]; failed: string[]; pending: string[] }> {

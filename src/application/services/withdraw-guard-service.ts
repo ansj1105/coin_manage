@@ -3,6 +3,8 @@ import { env } from '../../config/env.js';
 import { getConfiguredSystemWallets } from '../../config/system-wallets.js';
 import { DomainError } from '../../core/domain-error.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
+import type { WithdrawPolicyRepository } from '../ports/withdraw-policy-repository.js';
+import { WithdrawPolicyService } from './withdraw-policy-service.js';
 
 const PLACEHOLDER_PRIVATE_KEYS = new Set(['replace-with-private-key', 'dev-only-private-key-change-me']);
 
@@ -27,6 +29,7 @@ type WithdrawGuardOptions = {
   minBandwidth: number;
   minEnergy: number;
   restrictedDestinationAddresses: string[];
+  policyService?: WithdrawPolicyService;
 };
 
 export class WithdrawGuardService {
@@ -39,17 +42,39 @@ export class WithdrawGuardService {
       minTrxSun: BigInt(env.withdrawMinTrxSun),
       minBandwidth: env.withdrawMinBandwidth,
       minEnergy: env.withdrawMinEnergy,
-      restrictedDestinationAddresses: getConfiguredSystemWallets().map((wallet) => wallet.address)
+      restrictedDestinationAddresses: getConfiguredSystemWallets().map((wallet) => wallet.address),
+      policyService: undefined
     }
   ) {}
 
+  static withPolicyRepository(
+    tronGateway: TronGateway,
+    withdrawPolicyRepository: WithdrawPolicyRepository,
+    options: Omit<WithdrawGuardOptions, 'policyService'> = {
+      tronGatewayMode: env.tronGatewayMode,
+      hotWalletAddress: env.hotWalletAddress,
+      hotWalletPrivateKey: env.hotWalletPrivateKey,
+      minTrxSun: BigInt(env.withdrawMinTrxSun),
+      minBandwidth: env.withdrawMinBandwidth,
+      minEnergy: env.withdrawMinEnergy,
+      restrictedDestinationAddresses: getConfiguredSystemWallets().map((wallet) => wallet.address)
+    }
+  ) {
+    return new WithdrawGuardService(tronGateway, {
+      ...options,
+      policyService: new WithdrawPolicyService(withdrawPolicyRepository)
+    });
+  }
+
   async assertRequestAllowed(input: { toAddress: string; walletAddress?: string }) {
     this.assertDestinationAllowed(input);
+    await this.options.policyService?.assertAddressAllowed(input.toAddress);
     await this.assertHotWalletReady('WITHDRAW_CIRCUIT_OPEN', 'withdraw request circuit is open');
   }
 
   async assertBroadcastAllowed(input: { toAddress: string }) {
     this.assertDestinationAllowed(input);
+    await this.options.policyService?.assertAddressAllowed(input.toAddress);
     await this.assertHotWalletReady('WITHDRAW_BROADCAST_BLOCKED', 'hot wallet is not ready for broadcast');
   }
 

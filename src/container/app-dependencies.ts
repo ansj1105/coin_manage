@@ -29,6 +29,7 @@ import { VirtualWalletService } from '../application/services/virtual-wallet-ser
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
 import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
+import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 
 export interface AppDependencies {
@@ -59,6 +60,7 @@ export interface AppDependencies {
   virtualWalletLifecyclePolicy: VirtualWalletLifecyclePolicyService;
   walletService: WalletService;
   accountReconciliationService: AccountReconciliationService;
+  withdrawPolicyService: WithdrawPolicyService;
   withdrawGuardService: WithdrawGuardService;
   withdrawService: WithdrawService;
   withdrawDispatchWorker: WithdrawDispatchWorker;

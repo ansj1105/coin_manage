@@ -1,38 +1,22 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { WithdrawService } from '../../../application/services/withdraw-service.js';
 import { env } from '../../../config/env.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
-import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 import { requireIdempotencyKey, zodToDomainError } from '../../../core/validation.js';
+import {
+  withdrawAddressPolicyParamsSchema,
+  withdrawAddressPolicyQuerySchema,
+  withdrawAddressPolicyUpsertSchema,
+  withdrawApproveSchema,
+  withdrawExternalAuthConfirmSchema,
+  withdrawRequestSchema
+} from '../schemas/withdraw-schemas.js';
 import {
   createRequireWithdrawApiKey,
   readWithdrawActorId,
   readWithdrawAdminActorId
 } from '../middleware/withdraw-auth.js';
-
-const requestSchema = z.object({
-  userId: z.string().min(1).optional(),
-  walletAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format').optional(),
-  amount: z.number().positive(),
-  toAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format'),
-  clientIp: z.string().max(64).optional(),
-  deviceId: z.string().max(128).optional()
-}).refine((value) => value.userId || value.walletAddress, {
-  message: 'userId or walletAddress is required'
-});
-
-const approveSchema = z.object({
-  adminId: z.string().min(1).optional(),
-  note: z.string().max(500).optional()
-});
-
-const externalAuthConfirmSchema = z.object({
-  provider: z.string().min(1).max(64),
-  requestId: z.string().min(1).max(128),
-  actorId: z.string().min(1).max(64).optional()
-});
 
 type WithdrawRouteSecurityOptions = {
   requestApiKey?: string;
@@ -60,7 +44,7 @@ export const createWithdrawRoutes = (
 
   router.post('/', requireRequestApiKey, async (req, res, next) => {
     try {
-      const parsed = requestSchema.safeParse(req.body);
+      const parsed = withdrawRequestSchema.safeParse(req.body);
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -113,7 +97,7 @@ export const createWithdrawRoutes = (
 
   router.post('/:withdrawalId/approve', requireAdminApiKey, async (req, res, next) => {
     try {
-      const parsed = approveSchema.safeParse(req.body ?? {});
+      const parsed = withdrawApproveSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -137,7 +121,7 @@ export const createWithdrawRoutes = (
 
   router.post('/:withdrawalId/external-auth/confirm', requireAdminApiKey, async (req, res, next) => {
     try {
-      const parsed = externalAuthConfirmSchema.safeParse(req.body ?? {});
+      const parsed = withdrawExternalAuthConfirmSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -183,6 +167,51 @@ export const createWithdrawRoutes = (
           amount: formatKoriAmount(withdrawal.amount)
         }
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/policies/addresses', requireAdminApiKey, async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const policies = await withdrawService.listAddressPolicies(parsed.data);
+      res.json({ policies });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/policies/addresses', requireAdminApiKey, async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyUpsertSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const policy = await withdrawService.upsertAddressPolicy({
+        ...parsed.data,
+        createdBy: readWithdrawAdminActorId(req) ?? 'admin-unknown'
+      });
+      res.status(201).json({ policy });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete('/policies/addresses/:address/:policyType', requireAdminApiKey, async (req, res, next) => {
+    try {
+      const parsed = withdrawAddressPolicyParamsSchema.safeParse(req.params);
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const deleted = await withdrawService.deleteAddressPolicy(parsed.data.address, parsed.data.policyType);
+      res.json({ deleted });
     } catch (error) {
       next(error);
     }

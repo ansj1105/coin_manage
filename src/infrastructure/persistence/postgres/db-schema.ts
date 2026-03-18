@@ -105,6 +105,15 @@ export interface WithdrawalApprovalsTable {
   created_at: string;
 }
 
+export interface WithdrawAddressPoliciesTable {
+  address: string;
+  policy_type: 'blacklist' | 'whitelist' | 'internal_blocked';
+  reason: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuditLogsTable {
   audit_id: string;
   entity_type: 'withdrawal' | 'sweep' | 'system';
@@ -267,6 +276,7 @@ export interface KorionDatabase {
   withdrawals: WithdrawalsTable;
   tx_jobs: TxJobsTable;
   withdrawal_approvals: WithdrawalApprovalsTable;
+  withdraw_address_policies: WithdrawAddressPoliciesTable;
   audit_logs: AuditLogsTable;
   sweep_records: SweepRecordsTable;
   deposit_monitor_cursors: DepositMonitorCursorsTable;

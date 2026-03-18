@@ -27,6 +27,7 @@ import { VirtualWalletLifecyclePolicyService } from '../application/services/vir
 import { WalletService } from '../application/services/wallet-service.js';
 import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
 import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
+import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
@@ -42,12 +43,14 @@ import { InMemoryAlertMonitorStateRepository } from '../infrastructure/persisten
 import { InMemoryDepositMonitorRepository } from '../infrastructure/persistence/in-memory-deposit-monitor-repository.js';
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
 import { InMemoryMonitoringRepository } from '../infrastructure/persistence/in-memory-monitoring-repository.js';
+import { InMemoryWithdrawPolicyRepository } from '../infrastructure/persistence/in-memory-withdraw-policy-repository.js';
 import { InMemoryVirtualWalletRepository } from '../infrastructure/persistence/in-memory-virtual-wallet-repository.js';
 import { InMemoryWithdrawJobQueue } from '../infrastructure/queue/in-memory-withdraw-job-queue.js';
 import { PostgresAlertMonitorStateRepository } from '../infrastructure/persistence/postgres/postgres-alert-monitor-state-repository.js';
 import { PostgresDepositMonitorRepository } from '../infrastructure/persistence/postgres/postgres-deposit-monitor-repository.js';
 import { PostgresMonitoringRepository } from '../infrastructure/persistence/postgres/postgres-monitoring-repository.js';
 import { PostgresLedgerRepository } from '../infrastructure/persistence/postgres/postgres-ledger-repository.js';
+import { PostgresWithdrawPolicyRepository } from '../infrastructure/persistence/postgres/postgres-withdraw-policy-repository.js';
 import { PostgresVirtualWalletRepository } from '../infrastructure/persistence/postgres/postgres-virtual-wallet-repository.js';
 import { createPostgresDb, createPostgresPool } from '../infrastructure/persistence/postgres/postgres-pool.js';
 import { BullmqWithdrawJobQueue } from '../infrastructure/queue/bullmq-withdraw-job-queue.js';
@@ -74,6 +77,7 @@ const createPersistence = () => {
     const db = createPostgresDb(pool);
     return {
       ledger: new PostgresLedgerRepository(db, limits),
+      withdrawPolicyRepository: new PostgresWithdrawPolicyRepository(db),
       virtualWalletRepository: new PostgresVirtualWalletRepository(db, env.virtualWalletEncryptionKey),
       monitoringRepository: new PostgresMonitoringRepository(db),
       depositMonitorRepository: new PostgresDepositMonitorRepository(db),
@@ -84,6 +88,7 @@ const createPersistence = () => {
   const ledger = new InMemoryLedgerRepository(limits);
   return {
     ledger,
+    withdrawPolicyRepository: new InMemoryWithdrawPolicyRepository(),
     virtualWalletRepository: new InMemoryVirtualWalletRepository(ledger),
     monitoringRepository: new InMemoryMonitoringRepository(),
     depositMonitorRepository: new InMemoryDepositMonitorRepository(),
@@ -109,8 +114,14 @@ const resolveFoxyaInternalWalletApiUrl = () => {
 
 export const createAppDependencies = (overrides: AppDependencyOverrides = {}): AppDependencies => {
   const eventPublisher = new InMemoryEventPublisher();
-  const { ledger, virtualWalletRepository, monitoringRepository, depositMonitorRepository, alertMonitorStateRepository } =
-    createPersistence();
+  const {
+    ledger,
+    withdrawPolicyRepository,
+    virtualWalletRepository,
+    monitoringRepository,
+    depositMonitorRepository,
+    alertMonitorStateRepository
+  } = createPersistence();
   const tronGateway = overrides.tronGateway ?? createTronGateway();
   const blockchainReader = overrides.blockchainReader ?? new TronWalletReader();
   const alertNotifier = env.telegram ? new TelegramAlertNotifier(env.telegram.botToken, env.telegram.chatId) : undefined;
@@ -220,7 +231,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
-  const withdrawGuardService = new WithdrawGuardService(tronGateway);
+  const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
+  const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
   const withdrawDispatchWorker = new WithdrawDispatchWorker(
     ledger,
     undefined,
@@ -257,7 +269,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertService,
     withdrawJobQueue,
     virtualWalletLifecyclePolicy,
-    withdrawGuardService
+    withdrawGuardService,
+    withdrawPolicyService
   );
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
@@ -318,6 +331,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     virtualWalletLifecyclePolicy,
     walletService,
     accountReconciliationService,
+    withdrawPolicyService,
     withdrawGuardService,
     withdrawService,
     withdrawDispatchWorker,

@@ -206,6 +206,26 @@ describe('withdraw flow (service-level)', () => {
     });
   });
 
+  it('rejects withdrawal requests to blocked policy addresses', async () => {
+    await deps.withdrawService.upsertAddressPolicy({
+      address: VALID_TRON_ADDRESS,
+      policyType: 'blacklist',
+      reason: 'fraud-review',
+      createdBy: 'ops-admin-1'
+    });
+
+    await expect(
+      deps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 1,
+        toAddress: VALID_TRON_ADDRESS,
+        idempotencyKey: 'wd-policy-blocked-1'
+      })
+    ).rejects.toMatchObject({
+      code: 'WITHDRAW_DESTINATION_BLOCKED'
+    });
+  });
+
   it('reconciles pending broadcast in scheduler timeout path', async () => {
     const oldTime = new Date(Date.now() - 120_000).toISOString();
     const requestResult = await deps.ledger.requestWithdrawal({
