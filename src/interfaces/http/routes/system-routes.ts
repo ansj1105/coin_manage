@@ -96,7 +96,7 @@ export const buildSystemStatusResponse = (
     limits: {
       withdrawSingleLimitKori: env.withdrawSingleLimitKori,
       withdrawDailyLimitKori: env.withdrawDailyLimitKori,
-      withdrawMinTrxSun: env.withdrawMinTrxSun,
+      withdrawMinTrxSun: env.withdrawMinTrxSun.toString(),
       withdrawMinBandwidth: env.withdrawMinBandwidth,
       withdrawMinEnergy: env.withdrawMinEnergy,
       tronFeeLimitSun: env.tronFeeLimitSun,
