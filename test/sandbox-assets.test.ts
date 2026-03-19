@@ -20,6 +20,7 @@ describe('sandbox assets and runtime status', () => {
     expect(payload.sandbox.onchainTransferSourcePolicy).toBe('hot_only');
     expect(payload.sandbox.onchainTransferExecutableWalletCodes).toContain('hot');
     expect(payload.withdrawals.readiness).toBeNull();
+    expect(payload.withdrawals.overview).toBeNull();
     expect(typeof payload.security.withdrawRequestApiKeyConfigured).toBe('boolean');
     expect(typeof payload.security.withdrawAdminApiKeyConfigured).toBe('boolean');
   });

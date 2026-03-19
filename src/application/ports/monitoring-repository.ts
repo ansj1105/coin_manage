@@ -17,6 +17,12 @@ export interface CollectorRunRecord {
   errorMessage?: string;
 }
 
+export interface WalletMonitoringHistoryPoint extends StoredWalletMonitoringSnapshot {
+  snapshotId: string;
+  collectorName: string;
+  createdAt: string;
+}
+
 export interface MonitoringRepository {
   saveWalletSnapshots(input: {
     collectorName: string;
@@ -28,4 +34,10 @@ export interface MonitoringRepository {
   }): Promise<void>;
   getWalletSnapshots(codes: string[]): Promise<StoredWalletMonitoringSnapshot[]>;
   getLatestCollectorRuns(): Promise<CollectorRunRecord[]>;
+  getWalletSnapshotHistory(input: {
+    walletCodes?: string[];
+    createdFrom?: string;
+    createdTo?: string;
+    limit?: number;
+  }): Promise<WalletMonitoringHistoryPoint[]>;
 }

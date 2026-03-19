@@ -3,7 +3,8 @@ import type {
   CollectorRunRecord,
   CollectorRunStatus,
   MonitoringRepository,
-  StoredWalletMonitoringSnapshot
+  StoredWalletMonitoringSnapshot,
+  WalletMonitoringHistoryPoint
 } from '../ports/monitoring-repository.js';
 import type { SystemWalletDescriptor } from '../../config/system-wallets.js';
 
@@ -78,6 +79,15 @@ export class SystemMonitoringService {
 
   async getCollectorRuns() {
     return this.repository.getLatestCollectorRuns();
+  }
+
+  async getWalletHistory(input: {
+    walletCodes?: string[];
+    createdFrom?: string;
+    createdTo?: string;
+    limit?: number;
+  }): Promise<WalletMonitoringHistoryPoint[]> {
+    return this.repository.getWalletSnapshotHistory(input);
   }
 
   private prioritize(wallets: SystemWalletDescriptor[]) {

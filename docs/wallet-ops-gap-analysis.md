@@ -53,8 +53,6 @@
 
 부족함
 
-- 사용자용 통합 거래내역 API
-- 사용자 친화적 출금 상태 표현
 - 입금 가능 상태를 바로 이해할 수 있는 표시 모델
 
 평가
@@ -76,9 +74,8 @@
 
 부족함
 
-- 수수료 회계 모델
-- 실제 네트워크 비용의 원장 반영
-- 일일 단위 정합성 스냅샷과 운영 리포트
+- consumer observability
+- subscriber retry/DLQ policy
 
 평가
 
@@ -101,9 +98,7 @@
 
 부족함
 
-- cold wallet / offline signing
 - 고도화된 이상거래 탐지
-- blacklist/whitelist 운영 정책
 - 운영 대시보드의 집계/가시화
 - 장애 유형별 운영 런북
 
@@ -169,6 +164,7 @@
 - journal type에 `withdraw_network_fee`, `sweep_network_fee`, `withdraw_service_fee` 추가
 - confirm 시 실제 수수료와 자원 사용량을 저장
 - 일일 reconciliation snapshot 생성
+- publisher outbox, dead-letter, replay/recovery/ack
 
 ### 3. 출금 통제/리스크
 
@@ -210,6 +206,7 @@
 - 장애 유형별 대응 문서화
 - status/overview API 확장
 - failed jobs, pending approvals, readiness, signer health 집계
+- outbox dead-letter 분류, incidentRef, 시계열 monitoring history API
 
 ### 6. 감사/추적
 

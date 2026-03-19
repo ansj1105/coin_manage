@@ -24,6 +24,16 @@ import {
   withdrawAddressPolicyTypeSchema,
   withdrawAddressPolicyUpsertSchema
 } from '../schemas/withdraw-schemas.js';
+import {
+  auditLogsQuerySchema,
+  monitoringHistoryQuerySchema,
+  networkFeeDailySnapshotsQuerySchema,
+  networkFeeReceiptsQuerySchema,
+  acknowledgeOutboxDeadLetterSchema,
+  outboxStatusQuerySchema,
+  recoverOutboxProcessingSchema,
+  replayOutboxSchema
+} from '../schemas/system-schemas.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
@@ -84,6 +94,35 @@ const riskEventListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional()
 });
 
+const escapeCsvCell = (value: string) => `"${value.replaceAll('"', '""')}"`;
+
+const buildAuditLogsCsv = (
+  logs: Awaited<ReturnType<OperationsService['listAuditLogs']>>
+) => {
+  const header = [
+    'auditId',
+    'entityType',
+    'entityId',
+    'action',
+    'actorType',
+    'actorId',
+    'createdAt',
+    'metadata'
+  ];
+  const rows = logs.map((log) => [
+    log.auditId,
+    log.entityType,
+    log.entityId,
+    log.action,
+    log.actorType,
+    log.actorId,
+    log.createdAt,
+    JSON.stringify(log.metadata)
+  ]);
+
+  return [header, ...rows].map((row) => row.map((cell) => escapeCsvCell(cell)).join(',')).join('\n');
+};
+
 export const buildSystemStatusResponse = (
   walletMonitoring: StoredWalletMonitoringSnapshot[] = [],
   collectorRuns: CollectorRunRecord[] = [],
@@ -100,7 +139,8 @@ export const buildSystemStatusResponse = (
     externalAlertMonitor?: Awaited<ReturnType<ExternalAlertMonitorService['getStatus']>>;
   },
   withdrawReadiness?: HotWalletReadiness,
-  withdrawExternalSync?: Awaited<ReturnType<OperationsService['getWithdrawalExternalSyncStatus']>>
+  withdrawExternalSync?: Awaited<ReturnType<OperationsService['getWithdrawalExternalSyncStatus']>>,
+  withdrawOverview?: Awaited<ReturnType<OperationsService['getWithdrawalOverview']>>
 ) => {
   const walletMonitoringByCode = new Map(walletMonitoring.map((snapshot) => [snapshot.walletCode, snapshot]));
   const walletCatalog = getConfiguredSystemWallets().map((wallet) => ({
@@ -127,6 +167,7 @@ export const buildSystemStatusResponse = (
     limits: {
       withdrawSingleLimitKori: env.withdrawSingleLimitKori,
       withdrawDailyLimitKori: env.withdrawDailyLimitKori,
+      coldWithdrawMinKori: env.coldWithdrawMinKori,
       withdrawMinTrxSun: env.withdrawMinTrxSun.toString(),
       withdrawMinBandwidth: env.withdrawMinBandwidth,
       withdrawMinEnergy: env.withdrawMinEnergy,
@@ -161,6 +202,7 @@ export const buildSystemStatusResponse = (
     security: {
       jwtConfigured: !PLACEHOLDER_SECRETS.has(env.jwtSecret),
       hotWalletPrivateKeyConfigured: !PLACEHOLDER_SECRETS.has(env.hotWalletPrivateKey),
+      withdrawSignerMode: env.withdrawSignerMode,
       withdrawRequestApiKeyConfigured: Boolean(env.withdrawRequestApiKey),
       withdrawAdminApiKeyConfigured: Boolean(env.withdrawAdminApiKey),
       secretSources: {
@@ -187,7 +229,8 @@ export const buildSystemStatusResponse = (
     },
     withdrawals: {
       readiness: withdrawReadiness ?? null,
-      externalSync: withdrawExternalSync ?? null
+      externalSync: withdrawExternalSync ?? null,
+      overview: withdrawOverview ?? null
     },
     reconciliation: reconciliation ?? null
   };
@@ -218,14 +261,15 @@ export const createSystemRoutes = (
   router.get('/status', async (_req, res, next) => {
     try {
       const wallets = getConfiguredWallets();
-      const [monitoring, collectorRuns, depositMonitor, reconciliation, withdrawReadiness, withdrawExternalSync] =
+      const [monitoring, collectorRuns, depositMonitor, reconciliation, withdrawReadiness, withdrawExternalSync, withdrawOverview] =
         await Promise.all([
         systemMonitoringService.getStoredWallets(wallets),
         systemMonitoringService.getCollectorRuns(),
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport(),
         withdrawGuardService.getHotWalletReadiness(),
-        operationsService.getWithdrawalExternalSyncStatus()
+        operationsService.getWithdrawalExternalSyncStatus(),
+        operationsService.getWithdrawalOverview()
       ]);
       const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json(
@@ -233,7 +277,7 @@ export const createSystemRoutes = (
           sweepBot: sweepBotService.getStatus(),
           telegramEnabled: alertService.enabled,
           externalAlertMonitor
-        }, withdrawReadiness, withdrawExternalSync)
+        }, withdrawReadiness, withdrawExternalSync, withdrawOverview)
       );
     } catch (error) {
       next(error);
@@ -244,11 +288,12 @@ export const createSystemRoutes = (
     try {
       const wallets = getConfiguredWallets();
       const { snapshots, run } = await systemMonitoringService.collectWallets(wallets);
-      const [collectorRuns, depositMonitor, reconciliation, withdrawReadiness] = await Promise.all([
+      const [collectorRuns, depositMonitor, reconciliation, withdrawReadiness, withdrawOverview] = await Promise.all([
         systemMonitoringService.getCollectorRuns(),
         depositMonitorService.getStatus(),
         operationsService.getReconciliationReport(),
-        withdrawGuardService.getHotWalletReadiness()
+        withdrawGuardService.getHotWalletReadiness(),
+        operationsService.getWithdrawalOverview()
       ]);
       const externalAlertMonitor = await externalAlertMonitorService.getStatus();
       res.json({
@@ -257,7 +302,22 @@ export const createSystemRoutes = (
           sweepBot: sweepBotService.getStatus(),
           telegramEnabled: alertService.enabled,
           externalAlertMonitor
-        }, withdrawReadiness)
+        }, withdrawReadiness, undefined, withdrawOverview)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/monitoring/history', async (req, res, next) => {
+    try {
+      const parsed = monitoringHistoryQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid monitoring history query', parsed.error.flatten());
+      }
+
+      res.json({
+        items: await systemMonitoringService.getWalletHistory(parsed.data)
       });
     } catch (error) {
       next(error);
@@ -430,13 +490,95 @@ export const createSystemRoutes = (
 
   router.get('/audit-logs', async (req, res, next) => {
     try {
-      const limit = req.query.limit ? Number(req.query.limit) : undefined;
-      const logs = await operationsService.listAuditLogs({
-        entityType: req.query.entityType as 'withdrawal' | 'sweep' | 'system' | undefined,
-        entityId: typeof req.query.entityId === 'string' ? req.query.entityId : undefined,
-        limit
-      });
+      const query = auditLogsQuerySchema.parse(req.query);
+      const logs = await operationsService.listAuditLogs(query);
       res.json({ logs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/audit-logs/export', async (req, res, next) => {
+    try {
+      const query = auditLogsQuerySchema.parse(req.query);
+      const logs = await operationsService.listAuditLogs(query);
+      const csv = buildAuditLogsCsv(logs);
+
+      res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.csv"');
+      res.type('text/csv; charset=utf-8');
+      res.send(csv);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/outbox', async (req, res, next) => {
+    try {
+      const parsed = outboxStatusQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid outbox query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.getOutboxStatus(parsed.data.limit ?? 50));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/outbox/replay', async (req, res, next) => {
+    try {
+      const parsed = replayOutboxSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid outbox replay payload', parsed.error.flatten());
+      }
+
+      res.json(
+        await operationsService.replayDeadLetterOutboxEvents({
+          outboxEventIds: parsed.data.outboxEventIds,
+          limit: parsed.data.limit,
+          actorId: parsed.data.actorId ?? 'admin-unknown'
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/outbox/recover-processing', async (req, res, next) => {
+    try {
+      const parsed = recoverOutboxProcessingSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid outbox recovery payload', parsed.error.flatten());
+      }
+
+      res.json(
+        await operationsService.recoverStaleOutboxProcessing({
+          timeoutSec: parsed.data.timeoutSec,
+          actorId: parsed.data.actorId ?? 'admin-unknown'
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/outbox/dead-letter/ack', async (req, res, next) => {
+    try {
+      const parsed = acknowledgeOutboxDeadLetterSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid outbox dead-letter ack payload', parsed.error.flatten());
+      }
+
+      res.json(
+        await operationsService.acknowledgeDeadLetterOutboxEvents({
+          outboxEventIds: parsed.data.outboxEventIds,
+          limit: parsed.data.limit,
+          actorId: parsed.data.actorId ?? 'admin-unknown',
+          note: parsed.data.note,
+          category: parsed.data.category,
+          incidentRef: parsed.data.incidentRef
+        })
+      );
     } catch (error) {
       next(error);
     }
@@ -582,6 +724,40 @@ export const createSystemRoutes = (
   router.get('/reconciliation', async (_req, res, next) => {
     try {
       res.json(await operationsService.getReconciliationReport());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/network-fees', async (req, res, next) => {
+    try {
+      const parsed = networkFeeReceiptsQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid network fee query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.listNetworkFeeReceipts(parsed.data));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/network-fees/daily-snapshots', async (req, res, next) => {
+    try {
+      const parsed = networkFeeDailySnapshotsQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid network fee daily snapshot query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.listNetworkFeeDailySnapshots(parsed.data));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/withdrawals/overview', async (_req, res, next) => {
+    try {
+      res.json(await operationsService.getWithdrawalOverview());
     } catch (error) {
       next(error);
     }

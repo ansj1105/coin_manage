@@ -24,7 +24,7 @@
     "journalType": { "type": "string", "minLength": 1, "maxLength": 64 },
     "referenceType": { "type": "string", "minLength": 1, "maxLength": 32 },
     "referenceId": { "type": "string", "minLength": 1, "maxLength": 64 },
-    "currency": { "type": "string", "const": "KORI" },
+    "currency": { "type": "string", "enum": ["KORI", "TRX"] },
     "description": { "type": "string", "maxLength": 500 },
     "occurredAt": { "type": "string", "format": "date-time" },
     "postings": {

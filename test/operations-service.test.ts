@@ -87,6 +87,7 @@ describe('operations and control flows', () => {
 
     const first = await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
       adminId: 'admin-1',
+      reasonCode: 'high_value_verified',
       note: 'first approval'
     });
     expect(first.finalized).toBe(false);
@@ -94,6 +95,7 @@ describe('operations and control flows', () => {
 
     const second = await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
       adminId: 'admin-2',
+      reasonCode: 'manual_review_passed',
       note: 'second approval'
     });
     expect(second.finalized).toBe(true);
@@ -105,6 +107,8 @@ describe('operations and control flows', () => {
 
     const approvals = await deps.withdrawService.listApprovals(request.withdrawal.withdrawalId);
     expect(approvals).toHaveLength(2);
+    expect(approvals[0]?.reasonCode).toBe('high_value_verified');
+    expect(approvals[1]?.reasonCode).toBe('manual_review_passed');
   });
 
   it('reflects completed withdrawals in ledger summary without counting them as active', async () => {
@@ -276,6 +280,42 @@ describe('operations and control flows', () => {
     });
   });
 
+  it('filters audit logs by actor, action, and createdAt range', async () => {
+    await deps.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'policy-1',
+      action: 'withdraw.policy.upserted',
+      actorType: 'admin',
+      actorId: 'ops-admin-1',
+      metadata: {},
+      nowIso: '2026-03-19T09:00:00.000Z'
+    });
+    await deps.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'policy-2',
+      action: 'withdraw.policy.deleted',
+      actorType: 'admin',
+      actorId: 'ops-admin-2',
+      metadata: {},
+      nowIso: '2026-03-19T10:00:00.000Z'
+    });
+
+    const logs = await deps.operationsService.listAuditLogs({
+      entityType: 'system',
+      actorId: 'ops-admin-1',
+      action: 'withdraw.policy.upserted',
+      createdFrom: '2026-03-19T08:30:00.000Z',
+      createdTo: '2026-03-19T09:30:00.000Z'
+    });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      entityId: 'policy-1',
+      actorId: 'ops-admin-1',
+      action: 'withdraw.policy.upserted'
+    });
+  });
+
   it('lists recent external sync failures for operator retry screens', async () => {
     await deps.ledger.appendAuditLog({
       entityType: 'withdrawal',
@@ -371,5 +411,110 @@ describe('operations and control flows', () => {
         blacklistPolicyType: 'blacklist'
       })
     ]);
+  });
+
+  it('records withdrawal network fee receipts and exposes trx totals for ops', async () => {
+    const request = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 15,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'network-fee-withdraw-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'network-fee-auth-1'
+    });
+    await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
+      adminId: 'admin-1',
+      note: 'approve for network fee'
+    });
+    await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+
+    const fees = await deps.operationsService.listNetworkFeeReceipts({
+      referenceType: 'withdrawal'
+    });
+
+    expect(fees.items).toHaveLength(1);
+    expect(fees.items[0]).toMatchObject({
+      referenceType: 'withdrawal',
+      referenceId: request.withdrawal.withdrawalId,
+      currencyCode: 'TRX',
+      feeSun: '1500000',
+      feeAmount: '1.500000',
+      energyUsed: 5000,
+      bandwidthUsed: 350
+    });
+    expect(fees.summary).toEqual({
+      currencyCode: 'TRX',
+      totalFeeSun: '1500000',
+      totalFeeAmount: '1.500000',
+      byReferenceType: {
+        withdrawal: '1.500000',
+        sweep: '0.000000'
+      }
+    });
+  });
+
+  it('builds daily network fee reconciliation snapshots for ops reporting', async () => {
+    const request = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 15,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'network-fee-daily-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    await deps.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'network-fee-daily-auth-1'
+    });
+    await deps.withdrawService.approve(request.withdrawal.withdrawalId, {
+      adminId: 'admin-1',
+      note: 'approve for network fee daily snapshot'
+    });
+    await (deps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain();
+
+    const snapshots = await deps.operationsService.listNetworkFeeDailySnapshots({ days: 7 });
+
+    expect(snapshots.items).toHaveLength(1);
+    expect(snapshots.items[0]).toMatchObject({
+      currencyCode: 'TRX',
+      ledgerFeeSun: '1500000',
+      ledgerFeeAmount: '1.500000',
+      actualFeeSun: '1500000',
+      actualFeeAmount: '1.500000',
+      gapFeeSun: '0',
+      gapFeeAmount: '0.000000',
+      ledgerFeeCount: 1,
+      actualFeeCount: 1,
+      status: 'balanced',
+      byReferenceType: {
+        withdrawal: {
+          ledgerFeeSun: '1500000',
+          actualFeeSun: '1500000',
+          ledgerFeeCount: 1,
+          actualFeeCount: 1
+        },
+        sweep: {
+          ledgerFeeSun: '0',
+          actualFeeSun: '0',
+          ledgerFeeCount: 0,
+          actualFeeCount: 0
+        }
+      }
+    });
+    expect(snapshots.summary).toEqual({
+      currencyCode: 'TRX',
+      totalLedgerFeeSun: '1500000',
+      totalLedgerFeeAmount: '1.500000',
+      totalActualFeeSun: '1500000',
+      totalActualFeeAmount: '1.500000',
+      totalGapFeeSun: '0',
+      totalGapFeeAmount: '0.000000'
+    });
   });
 });

@@ -1,5 +1,5 @@
 import type { BlockchainNetwork } from '../config/blockchain-networks.js';
-import type { TronAccountResources } from '../application/ports/tron-gateway.js';
+import type { TronAccountResources, TronTransactionReceipt } from '../application/ports/tron-gateway.js';
 
 export interface BroadcastRequest {
   toAddress: string;
@@ -16,5 +16,6 @@ export type TronReceiptStatus = 'pending' | 'confirmed' | 'failed';
 export interface TronClient {
   broadcastTransfer(request: BroadcastRequest): Promise<{ txHash: string }>;
   getTransactionReceipt(txHash: string): Promise<TronReceiptStatus>;
+  getTransactionReceiptDetails(txHash: string): Promise<TronTransactionReceipt>;
   getAccountResources(address: string, network?: BlockchainNetwork): Promise<TronAccountResources>;
 }

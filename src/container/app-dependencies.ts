@@ -10,6 +10,7 @@ import { ResourceDelegationService } from '../application/services/resource-dele
 import { ResourceDelegationWorker } from '../application/services/resource-delegation-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import { OutboxPublisherWorker } from '../application/services/outbox-publisher-worker.js';
 import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
@@ -55,6 +56,7 @@ export interface AppDependencies {
   sweepBotWorker: SweepBotWorker;
   monitoringWorker: MonitoringWorker;
   alertWorker: AlertWorker;
+  outboxPublisherWorker: OutboxPublisherWorker;
   depositService: DepositService;
   virtualWalletService: VirtualWalletService;
   virtualWalletLifecyclePolicy: VirtualWalletLifecyclePolicyService;

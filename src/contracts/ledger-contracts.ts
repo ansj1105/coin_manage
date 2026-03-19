@@ -55,7 +55,7 @@ export const journalEntryContractSchema = z
     journalType: z.string().min(1).max(64),
     referenceType: z.string().min(1).max(32),
     referenceId: z.string().min(1).max(64),
-    currency: z.literal('KORI'),
+    currency: z.enum(['KORI', 'TRX']),
     description: z.string().max(500).optional(),
     postings: z.array(journalPostingContractSchema).min(2),
     occurredAt: z.string().datetime()
@@ -180,6 +180,7 @@ export const buildJournalEntryContract = (input: {
   journalType: string;
   referenceType: string;
   referenceId: string;
+  currency?: 'KORI' | 'TRX';
   description?: string;
   postings: JournalEntryContract['postings'];
   occurredAt: string;
@@ -191,7 +192,7 @@ export const buildJournalEntryContract = (input: {
       journalType: input.journalType,
     referenceType: input.referenceType,
     referenceId: input.referenceId,
-    currency: 'KORI',
+    currency: input.currency ?? 'KORI',
       description: input.description,
       postings: input.postings,
       occurredAt: input.occurredAt

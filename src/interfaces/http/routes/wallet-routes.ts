@@ -1,58 +1,16 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
-import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 import { requireIdempotencyKey, zodToDomainError } from '../../../core/validation.js';
 import { AccountReconciliationService } from '../../../application/services/account-reconciliation-service.js';
 import { WalletService } from '../../../application/services/wallet-service.js';
-
-const accountRefSchema = z
-  .object({
-    userId: z.string().min(1).optional(),
-    walletAddress: z.string().regex(tronAddressPattern).optional()
-  })
-  .refine((value) => value.userId || value.walletAddress, {
-    message: 'userId or walletAddress is required'
-  });
-
-const bindWalletSchema = z.object({
-  userId: z.string().min(1),
-  walletAddress: z.string().regex(tronAddressPattern, 'invalid TRON address format')
-});
-
-const transferSchema = z
-  .object({
-    fromUserId: z.string().min(1).optional(),
-    fromWalletAddress: z.string().regex(tronAddressPattern).optional(),
-    toUserId: z.string().min(1).optional(),
-    toWalletAddress: z.string().regex(tronAddressPattern).optional(),
-    amount: z.number().positive()
-  })
-  .refine((value) => value.fromUserId || value.fromWalletAddress, {
-    message: 'fromUserId or fromWalletAddress is required'
-  })
-  .refine((value) => value.toUserId || value.toWalletAddress, {
-    message: 'toUserId or toWalletAddress is required'
-  });
-
-const reconcileRequestSchema = z
-  .object({
-    userId: z.string().min(1).optional(),
-    walletAddress: z.string().regex(tronAddressPattern).optional(),
-    txHashes: z.array(z.string().min(8).max(128)).max(100).optional(),
-    lookbackMs: z.number().int().positive().max(30 * 24 * 60 * 60 * 1000).optional()
-  })
-  .refine((value) => value.userId || value.walletAddress, {
-    message: 'userId or walletAddress is required'
-  });
-
-const reconcileQuerySchema = z.object({
-  reconcile: z
-    .union([z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((value) => value === 'true'),
-  lookbackMs: z.coerce.number().int().positive().max(30 * 24 * 60 * 60 * 1000).optional()
-});
+import {
+  walletAccountRefSchema,
+  walletBindSchema,
+  walletReconcileQuerySchema,
+  walletReconcileRequestSchema,
+  walletTimelineQuerySchema,
+  walletTransferSchema
+} from '../schemas/wallet-schemas.js';
 
 export const createWalletRoutes = (
   walletService: WalletService,
@@ -62,7 +20,7 @@ export const createWalletRoutes = (
 
   router.post('/address-binding', async (req, res, next) => {
     try {
-      const parsed = bindWalletSchema.safeParse(req.body);
+      const parsed = walletBindSchema.safeParse(req.body);
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -76,7 +34,7 @@ export const createWalletRoutes = (
 
   router.get('/address-binding', async (req, res, next) => {
     try {
-      const parsed = accountRefSchema.safeParse({
+      const parsed = walletAccountRefSchema.safeParse({
         userId: req.query.userId,
         walletAddress: req.query.walletAddress
       });
@@ -93,11 +51,11 @@ export const createWalletRoutes = (
 
   router.get('/balance', async (req, res, next) => {
     try {
-      const reconcileQuery = reconcileQuerySchema.safeParse(req.query ?? {});
+      const reconcileQuery = walletReconcileQuerySchema.safeParse(req.query ?? {});
       if (!reconcileQuery.success) {
         throw zodToDomainError(reconcileQuery.error);
       }
-      const parsed = accountRefSchema.safeParse({
+      const parsed = walletAccountRefSchema.safeParse({
         userId: req.query.userId,
         walletAddress: req.query.walletAddress
       });
@@ -145,7 +103,7 @@ export const createWalletRoutes = (
 
   router.get('/:userId/balance', async (req, res, next) => {
     try {
-      const reconcileQuery = reconcileQuerySchema.safeParse(req.query ?? {});
+      const reconcileQuery = walletReconcileQuerySchema.safeParse(req.query ?? {});
       if (!reconcileQuery.success) {
         throw zodToDomainError(reconcileQuery.error);
       }
@@ -180,7 +138,7 @@ export const createWalletRoutes = (
         throw new Error('account reconciliation service is not configured');
       }
 
-      const parsed = reconcileRequestSchema.safeParse(req.body ?? {});
+      const parsed = walletReconcileRequestSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -194,7 +152,7 @@ export const createWalletRoutes = (
 
   router.post('/transfer', async (req, res, next) => {
     try {
-      const parsed = transferSchema.safeParse(req.body);
+      const parsed = walletTransferSchema.safeParse(req.body);
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
@@ -216,6 +174,29 @@ export const createWalletRoutes = (
           toTxId: result.toTx.txId,
           amount: formatKoriAmount(result.fromTx.amount)
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/timeline', async (req, res, next) => {
+    try {
+      const parsed = walletTimelineQuerySchema.safeParse({
+        userId: req.query.userId,
+        walletAddress: req.query.walletAddress,
+        limit: req.query.limit
+      });
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const items = await walletService.getTimeline(parsed.data);
+      res.json({
+        items: items.map((item) => ({
+          ...item,
+          amount: formatKoriAmount(item.amount)
+        }))
       });
     } catch (error) {
       next(error);

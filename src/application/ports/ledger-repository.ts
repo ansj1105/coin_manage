@@ -3,7 +3,13 @@ import type {
   ApprovalDecisionResult,
   AuditLog,
   DepositApplyResult,
+  Deposit,
   LedgerSummary,
+  LedgerTransaction,
+  NetworkFeeReceipt,
+  NetworkFeeDailySnapshot,
+  OutboxEvent,
+  OutboxEventSummary,
   SweepRecord,
   TransferResult,
   TxJob,
@@ -24,6 +30,8 @@ export interface LedgerRepository {
     userId: string;
     amount: bigint;
     txHash: string;
+    toAddress?: string;
+    walletAddress?: string;
     blockNumber: number;
     nowIso?: string;
   }): Promise<DepositApplyResult>;
@@ -56,17 +64,32 @@ export interface LedgerRepository {
   markWithdrawalReviewRequired(withdrawalId: string, note: string, nowIso?: string): Promise<Withdrawal>;
   approveWithdrawal(
     withdrawalId: string,
-    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    input: {
+      adminId: string;
+      actorType: 'admin' | 'system';
+      reasonCode?: 'manual_review_passed' | 'high_value_verified' | 'trusted_destination_verified' | 'account_activity_verified' | 'ops_override';
+      note?: string;
+    },
     nowIso?: string
   ): Promise<ApprovalDecisionResult>;
   broadcastWithdrawal(withdrawalId: string, txHash: string, nowIso?: string): Promise<Withdrawal>;
-  confirmWithdrawal(withdrawalId: string, nowIso?: string): Promise<Withdrawal>;
+  confirmWithdrawal(
+    withdrawalId: string,
+    input?: { networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso?: string
+  ): Promise<Withdrawal>;
   failWithdrawal(withdrawalId: string, reason: string, nowIso?: string): Promise<Withdrawal>;
   getWithdrawal(withdrawalId: string): Promise<Withdrawal | undefined>;
+  listWithdrawalsByUser(userId: string, limit?: number): Promise<Withdrawal[]>;
   listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]>;
   listPendingApprovalWithdrawals(): Promise<Withdrawal[]>;
   listWithdrawalApprovals(withdrawalId: string): Promise<WithdrawalApproval[]>;
   listStuckWithdrawals(timeoutSec: number, nowIso?: string): Promise<Withdrawal[]>;
+  listDepositsByUser(userId: string, limit?: number): Promise<Deposit[]>;
+  listTransactionsByUser(
+    userId: string,
+    input?: { types?: LedgerTransaction['type'][]; limit?: number }
+  ): Promise<LedgerTransaction[]>;
   enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso?: string): Promise<TxJob>;
   claimPendingJobs(types: TxJob['type'][], limit: number, nowIso?: string): Promise<TxJob[]>;
   markJobDone(jobId: string): Promise<void>;
@@ -84,6 +107,10 @@ export interface LedgerRepository {
   listAuditLogs(input?: {
     entityType?: AuditLog['entityType'];
     entityId?: string;
+    actorId?: string;
+    action?: string;
+    createdFrom?: string;
+    createdTo?: string;
     limit?: number;
   }): Promise<AuditLog[]>;
   createSweepRecord(input: {
@@ -103,8 +130,35 @@ export interface LedgerRepository {
   markSweepQueued(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   recordSweepAttempt(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
   markSweepBroadcasted(sweepId: string, txHash: string, note?: string, nowIso?: string): Promise<SweepRecord>;
-  confirmSweep(sweepId: string, note?: string, nowIso?: string): Promise<SweepRecord>;
+  confirmSweep(
+    sweepId: string,
+    input?: string | { note?: string; networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso?: string
+  ): Promise<SweepRecord>;
   failSweep(sweepId: string, reason: string, nowIso?: string): Promise<SweepRecord>;
+  listNetworkFeeReceipts(input?: {
+    referenceType?: NetworkFeeReceipt['referenceType'];
+    referenceId?: string;
+    limit?: number;
+  }): Promise<NetworkFeeReceipt[]>;
+  listNetworkFeeDailySnapshots(input?: { days?: number }): Promise<NetworkFeeDailySnapshot[]>;
+  claimPendingOutboxEvents(limit: number, nowIso?: string): Promise<OutboxEvent[]>;
+  markOutboxEventPublished(outboxEventId: string, nowIso?: string): Promise<void>;
+  rescheduleOutboxEvent(outboxEventId: string, error: string, availableAt: string): Promise<void>;
+  deadLetterOutboxEvent(outboxEventId: string, error: string, deadLetteredAt?: string): Promise<void>;
+  listOutboxEvents(input?: { status?: OutboxEvent['status']; limit?: number }): Promise<OutboxEvent[]>;
+  getOutboxEventSummary(): Promise<OutboxEventSummary>;
+  replayOutboxEvents(input: { outboxEventIds?: string[]; status?: OutboxEvent['status']; limit?: number; nowIso?: string }): Promise<number>;
+  recoverStaleProcessingOutboxEvents(timeoutSec: number, nowIso?: string): Promise<number>;
+  acknowledgeDeadLetterOutboxEvents(input: {
+    outboxEventIds?: string[];
+    limit?: number;
+    actorId: string;
+    note?: string;
+    category?: OutboxEvent['deadLetterCategory'];
+    incidentRef?: string;
+    nowIso?: string;
+  }): Promise<number>;
   getLedgerSummary(): Promise<LedgerSummary>;
   rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
 }

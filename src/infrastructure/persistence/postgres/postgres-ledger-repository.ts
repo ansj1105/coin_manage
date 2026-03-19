@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Kysely, sql, type Transaction } from 'kysely';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount, parseStoredKoriAmount } from '../../../domain/value-objects/money.js';
+import { buildDepositStateChangedContract, buildWithdrawalStateChangedContract } from '../../../contracts/ledger-contracts.js';
 import type {
   Account,
   ApprovalDecisionResult,
@@ -10,6 +11,8 @@ import type {
   DepositApplyResult,
   LedgerSummary,
   LedgerTransaction,
+  OutboxEvent,
+  NetworkFeeReceipt,
   SweepRecord,
   TransferResult,
   TxJob,
@@ -149,6 +152,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
     userId: string;
     amount: bigint;
     txHash: string;
+    toAddress?: string;
+    walletAddress?: string;
     blockNumber: number;
     nowIso?: string;
   }): Promise<DepositApplyResult> {
@@ -225,6 +230,24 @@ export class PostgresLedgerRepository implements LedgerRepository {
       });
 
       await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'deposit.state.changed',
+        aggregateType: 'deposit',
+        aggregateId: depositId,
+        payload: buildDepositStateChangedContract({
+          depositId,
+          userId: input.userId,
+          walletAddress: input.walletAddress ?? input.toAddress ?? '',
+          txHash: input.txHash,
+          toAddress: input.toAddress ?? '',
+          status: 'CREDITED',
+          amount: input.amount,
+          blockNumber: input.blockNumber,
+          occurredAt: nowIso
+        }),
+        occurredAt: nowIso
+      });
 
       return {
         deposit: {
@@ -525,9 +548,17 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .selectAll()
         .where('withdraw_id', '=', withdrawalId)
         .executeTakeFirstOrThrow();
+      const hydrated = await this.hydrateWithdrawal(trx, inserted);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, hydrated.createdAt),
+        occurredAt: hydrated.createdAt
+      });
 
       return {
-        withdrawal: await this.hydrateWithdrawal(trx, inserted),
+        withdrawal: hydrated,
         duplicated: false
       };
     });
@@ -554,7 +585,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
           .execute();
 
         const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
-        return this.hydrateWithdrawal(trx, updated);
+        const hydrated = await this.hydrateWithdrawal(trx, updated);
+        await this.enqueueOutboxEvent(trx, {
+          eventType: 'withdrawal.state.changed',
+          aggregateType: 'withdrawal',
+          aggregateId: withdrawalId,
+          payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+          occurredAt: nowIso
+        });
+        return hydrated;
       }
 
       if (
@@ -586,13 +625,26 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .execute();
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      return this.hydrateWithdrawal(trx, updated);
+      const hydrated = await this.hydrateWithdrawal(trx, updated);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+        occurredAt: nowIso
+      });
+      return hydrated;
     });
   }
 
   async approveWithdrawal(
     withdrawalId: string,
-    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    input: {
+      adminId: string;
+      actorType: 'admin' | 'system';
+      reasonCode?: 'manual_review_passed' | 'high_value_verified' | 'trusted_destination_verified' | 'account_activity_verified' | 'ops_override';
+      note?: string;
+    },
     nowIso = new Date().toISOString()
   ): Promise<ApprovalDecisionResult> {
     return this.withTransaction(async (trx) => {
@@ -621,6 +673,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           withdraw_id: withdrawalId,
           admin_id: input.adminId,
           actor_type: input.actorType,
+          reason_code: input.reasonCode ?? 'manual_review_passed',
           note: input.note ?? null,
           created_at: nowIso
         })
@@ -640,13 +693,22 @@ export class PostgresLedgerRepository implements LedgerRepository {
       }
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
+      const hydrated = await this.hydrateWithdrawal(trx, updated);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+        occurredAt: nowIso
+      });
       return {
-        withdrawal: await this.hydrateWithdrawal(trx, updated),
+        withdrawal: hydrated,
         approval: {
           approvalId,
           withdrawalId,
           adminId: input.adminId,
           actorType: input.actorType,
+          reasonCode: input.reasonCode ?? 'manual_review_passed',
           note: input.note,
           createdAt: nowIso
         },
@@ -674,11 +736,23 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .execute();
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      return this.hydrateWithdrawal(trx, updated);
+      const hydrated = await this.hydrateWithdrawal(trx, updated);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+        occurredAt: nowIso
+      });
+      return hydrated;
     });
   }
 
-  async confirmWithdrawal(withdrawalId: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
+  async confirmWithdrawal(
+    withdrawalId: string,
+    input?: { networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso = new Date().toISOString()
+  ): Promise<Withdrawal> {
     return this.withTransaction(async (trx) => {
       await this.lockKey(trx, `withdrawal-state:${withdrawalId}`);
       const withdrawal = await this.getWithdrawalForUpdate(trx, withdrawalId);
@@ -719,6 +793,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         journalType: 'withdraw_completed',
         referenceType: 'withdrawal',
         referenceId: withdrawalId,
+        currencyCode: 'KORI',
         description: `withdraw complete ${mapped.txHash ?? ''}`.trim(),
         nowIso,
         postings: [
@@ -737,10 +812,54 @@ export class PostgresLedgerRepository implements LedgerRepository {
         ]
       });
 
+      if (input?.networkFee && mapped.txHash) {
+        const feeAmount = this.formatTrxSunAmount(input.networkFee.feeSun);
+        await this.persistNetworkFeeReceipt(trx, {
+          referenceType: 'withdrawal',
+          referenceId: withdrawalId,
+          txHash: input.networkFee.txHash,
+          feeSun: input.networkFee.feeSun,
+          energyUsed: input.networkFee.energyUsed,
+          bandwidthUsed: input.networkFee.bandwidthUsed,
+          confirmedAt: nowIso,
+          createdAt: nowIso
+        });
+        await this.appendJournal(trx, {
+          journalType: 'withdraw_network_fee',
+          referenceType: 'withdrawal',
+          referenceId: withdrawalId,
+          currencyCode: 'TRX',
+          description: `withdraw network fee ${mapped.txHash}`.trim(),
+          nowIso,
+          postings: [
+            {
+              ledgerAccountCode: 'system:expense:withdraw_network_fee',
+              accountType: 'expense',
+              entrySide: 'debit',
+              amount: feeAmount
+            },
+            {
+              ledgerAccountCode: 'system:asset:hot_wallet_trx',
+              accountType: 'asset',
+              entrySide: 'credit',
+              amount: feeAmount
+            }
+          ]
+        });
+      }
+
       await this.syncUserAccountProjection(trx, [mapped.userId], nowIso);
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      return this.hydrateWithdrawal(trx, updated);
+      const hydrated = await this.hydrateWithdrawal(trx, updated);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+        occurredAt: nowIso
+      });
+      return hydrated;
     });
   }
 
@@ -804,7 +923,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
       await this.syncUserAccountProjection(trx, [mapped.userId], nowIso);
 
       const updated = await this.getWithdrawalForUpdate(trx, withdrawalId);
-      return this.hydrateWithdrawal(trx, updated);
+      const hydrated = await this.hydrateWithdrawal(trx, updated);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(hydrated, nowIso),
+        occurredAt: nowIso
+      });
+      return hydrated;
     });
   }
 
@@ -816,6 +943,18 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .executeTakeFirst();
 
     return row ? this.hydrateWithdrawal(this.db, row) : undefined;
+  }
+
+  async listWithdrawalsByUser(userId: string, limit = 50): Promise<Withdrawal[]> {
+    const rows = await this.db
+      .selectFrom('withdrawals')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .orderBy('created_at', 'desc')
+      .limit(limit)
+      .execute();
+
+    return this.hydrateWithdrawals(this.db, rows);
   }
 
   async listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]> {
@@ -867,6 +1006,37 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .execute();
 
     return this.hydrateWithdrawals(this.db, rows);
+  }
+
+  async listDepositsByUser(userId: string, limit = 50): Promise<Deposit[]> {
+    const rows = await this.db
+      .selectFrom('deposits')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .orderBy('created_at', 'desc')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => this.mapDeposit(row));
+  }
+
+  async listTransactionsByUser(
+    userId: string,
+    input: { types?: LedgerTransaction['type'][]; limit?: number } = {}
+  ): Promise<LedgerTransaction[]> {
+    let query = this.db
+      .selectFrom('transactions')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .orderBy('created_at', 'desc')
+      .limit(input.limit ?? 50);
+
+    if (input.types?.length) {
+      query = query.where('type', 'in', input.types);
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => this.mapTransaction(row));
   }
 
   async enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso = new Date().toISOString()): Promise<TxJob> {
@@ -973,6 +1143,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
   async listAuditLogs(input?: {
     entityType?: AuditLog['entityType'];
     entityId?: string;
+    actorId?: string;
+    action?: string;
+    createdFrom?: string;
+    createdTo?: string;
     limit?: number;
   }): Promise<AuditLog[]> {
     let query = this.db.selectFrom('audit_logs').selectAll();
@@ -982,6 +1156,18 @@ export class PostgresLedgerRepository implements LedgerRepository {
     }
     if (input?.entityId) {
       query = query.where('entity_id', '=', input.entityId);
+    }
+    if (input?.actorId) {
+      query = query.where('actor_id', '=', input.actorId);
+    }
+    if (input?.action) {
+      query = query.where('action', '=', input.action);
+    }
+    if (input?.createdFrom) {
+      query = query.where('created_at', '>=', input.createdFrom);
+    }
+    if (input?.createdTo) {
+      query = query.where('created_at', '<=', input.createdTo);
     }
 
     const rows = await query.orderBy('created_at desc').limit(input?.limit ?? 100).execute();
@@ -1160,7 +1346,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.mapSweep(row);
   }
 
-  async confirmSweep(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+  async confirmSweep(
+    sweepId: string,
+    input?: string | { note?: string; networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso = new Date().toISOString()
+  ): Promise<SweepRecord> {
+    const payload = typeof input === 'string' ? { note: input } : input;
     const existing = await this.db
       .selectFrom('sweep_records')
       .selectAll()
@@ -1178,12 +1369,48 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .updateTable('sweep_records')
       .set({
         status: 'confirmed',
-        note: note ?? existing.note,
+        note: payload?.note ?? existing.note,
         confirmed_at: nowIso
       })
       .where('sweep_id', '=', sweepId)
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    if (payload?.networkFee && row.tx_hash) {
+      const feeAmount = this.formatTrxSunAmount(payload.networkFee.feeSun);
+      await this.persistNetworkFeeReceipt(this.db, {
+        referenceType: 'sweep',
+        referenceId: sweepId,
+        txHash: payload.networkFee.txHash,
+        feeSun: payload.networkFee.feeSun,
+        energyUsed: payload.networkFee.energyUsed,
+        bandwidthUsed: payload.networkFee.bandwidthUsed,
+        confirmedAt: nowIso,
+        createdAt: nowIso
+      });
+      await this.appendJournal(this.db, {
+        journalType: 'sweep_network_fee',
+        referenceType: 'sweep',
+        referenceId: sweepId,
+        currencyCode: 'TRX',
+        description: `sweep network fee ${row.tx_hash}`.trim(),
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: 'system:expense:sweep_network_fee',
+            accountType: 'expense',
+            entrySide: 'debit',
+            amount: feeAmount
+          },
+          {
+            ledgerAccountCode: 'system:asset:sweep_source_trx',
+            accountType: 'asset',
+            entrySide: 'credit',
+            amount: feeAmount
+          }
+        ]
+      });
+    }
 
     return this.mapSweep(row);
   }
@@ -1214,6 +1441,360 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .executeTakeFirstOrThrow();
 
     return this.mapSweep(row);
+  }
+
+  async listNetworkFeeReceipts(input: {
+    referenceType?: NetworkFeeReceipt['referenceType'];
+    referenceId?: string;
+    limit?: number;
+  } = {}): Promise<NetworkFeeReceipt[]> {
+    let query = this.db
+      .selectFrom('network_fee_receipts')
+      .selectAll()
+      .orderBy('created_at', 'desc')
+      .limit(input.limit ?? 100);
+
+    if (input.referenceType) {
+      query = query.where('reference_type', '=', input.referenceType);
+    }
+    if (input.referenceId) {
+      query = query.where('reference_id', '=', input.referenceId);
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => this.mapNetworkFeeReceipt(row));
+  }
+
+  async listNetworkFeeDailySnapshots(input: { days?: number } = {}) {
+    const dayLimit = input.days ?? 7;
+    const actualRows = await this.db
+      .selectFrom('network_fee_receipts')
+      .select((eb) => [
+        sql<string>`to_char(date_trunc('day', confirmed_at), 'YYYY-MM-DD')`.as('snapshot_date'),
+        'reference_type',
+        sql<string>`coalesce(sum(fee_sun)::text, '0')`.as('fee_sun'),
+        sql<string>`count(*)::text`.as('fee_count')
+      ])
+      .groupBy(sql`date_trunc('day', confirmed_at)`)
+      .groupBy('reference_type')
+      .orderBy(sql`date_trunc('day', confirmed_at)`, 'desc')
+      .limit(dayLimit * 2)
+      .execute();
+
+    const ledgerRows = await this.db
+      .selectFrom('ledger_journals')
+      .innerJoin('ledger_postings', 'ledger_postings.journal_id', 'ledger_journals.journal_id')
+      .select((eb) => [
+        sql<string>`to_char(date_trunc('day', ledger_journals.created_at), 'YYYY-MM-DD')`.as('snapshot_date'),
+        sql<'withdrawal' | 'sweep'>`
+          case
+            when ledger_journals.journal_type = 'withdraw_network_fee' then 'withdrawal'
+            else 'sweep'
+          end
+        `.as('reference_type'),
+        sql<string>`coalesce(sum(ledger_postings.amount)::text, '0')`.as('fee_sun'),
+        sql<string>`count(distinct ledger_journals.journal_id)::text`.as('fee_count')
+      ])
+      .where('ledger_journals.currency_code', '=', 'TRX')
+      .where('ledger_journals.journal_type', 'in', ['withdraw_network_fee', 'sweep_network_fee'])
+      .where('ledger_postings.entry_side', '=', 'debit')
+      .where('ledger_postings.ledger_account_code', 'in', [
+        'system:expense:withdraw_network_fee',
+        'system:expense:sweep_network_fee'
+      ])
+      .groupBy(sql`date_trunc('day', ledger_journals.created_at)`)
+      .groupBy('ledger_journals.journal_type')
+      .orderBy(sql`date_trunc('day', ledger_journals.created_at)`, 'desc')
+      .limit(dayLimit * 2)
+      .execute();
+
+    const snapshots = new Map<string, any>();
+    const ensureSnapshot = (snapshotDate: string) => {
+      const existing = snapshots.get(snapshotDate);
+      if (existing) {
+        return existing;
+      }
+      const created = {
+        snapshotDate,
+        currencyCode: 'TRX' as const,
+        ledgerFeeSun: 0n,
+        actualFeeSun: 0n,
+        gapFeeSun: 0n,
+        ledgerFeeCount: 0,
+        actualFeeCount: 0,
+        byReferenceType: {
+          withdrawal: { ledgerFeeSun: 0n, actualFeeSun: 0n, ledgerFeeCount: 0, actualFeeCount: 0 },
+          sweep: { ledgerFeeSun: 0n, actualFeeSun: 0n, ledgerFeeCount: 0, actualFeeCount: 0 }
+        }
+      };
+      snapshots.set(snapshotDate, created);
+      return created;
+    };
+
+    for (const row of actualRows) {
+      const snapshot = ensureSnapshot(row.snapshot_date);
+      const feeSun = BigInt(row.fee_sun);
+      snapshot.actualFeeSun += feeSun;
+      snapshot.actualFeeCount += Number(row.fee_count);
+      snapshot.byReferenceType[row.reference_type].actualFeeSun += feeSun;
+      snapshot.byReferenceType[row.reference_type].actualFeeCount += Number(row.fee_count);
+    }
+
+    for (const row of ledgerRows) {
+      const snapshot = ensureSnapshot(row.snapshot_date);
+      const feeSun = BigInt(row.fee_sun);
+      snapshot.ledgerFeeSun += feeSun;
+      snapshot.ledgerFeeCount += Number(row.fee_count);
+      snapshot.byReferenceType[row.reference_type].ledgerFeeSun += feeSun;
+      snapshot.byReferenceType[row.reference_type].ledgerFeeCount += Number(row.fee_count);
+    }
+
+    return Array.from(snapshots.values())
+      .map((item) => ({
+        ...item,
+        gapFeeSun: item.actualFeeSun - item.ledgerFeeSun
+      }))
+      .sort((left, right) => right.snapshotDate.localeCompare(left.snapshotDate))
+      .slice(0, dayLimit);
+  }
+
+  async claimPendingOutboxEvents(limit: number, nowIso = new Date().toISOString()): Promise<OutboxEvent[]> {
+    return this.withTransaction(async (trx) => {
+      const rows = await trx
+        .selectFrom('outbox_events')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('available_at', '<=', nowIso)
+        .orderBy('created_at', 'asc')
+        .limit(limit)
+        .forUpdate()
+        .skipLocked()
+        .execute();
+
+      const claimed: OutboxEvent[] = [];
+      for (const row of rows) {
+        const updated = await trx
+          .updateTable('outbox_events')
+          .set({
+            status: 'processing',
+            attempts: row.attempts + 1,
+            processing_started_at: nowIso
+          })
+          .where('outbox_event_id', '=', row.outbox_event_id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        claimed.push(this.mapOutboxEvent(updated));
+      }
+
+      return claimed;
+    });
+  }
+
+  async markOutboxEventPublished(outboxEventId: string, nowIso = new Date().toISOString()): Promise<void> {
+    await this.db
+      .updateTable('outbox_events')
+      .set({
+        status: 'published',
+        processing_started_at: null,
+        published_at: nowIso,
+        dead_lettered_at: null,
+        last_error: null
+      })
+      .where('outbox_event_id', '=', outboxEventId)
+      .execute();
+  }
+
+  async rescheduleOutboxEvent(outboxEventId: string, error: string, availableAt: string): Promise<void> {
+    await this.db
+      .updateTable('outbox_events')
+      .set({
+        status: 'pending',
+        available_at: availableAt,
+        processing_started_at: null,
+        dead_lettered_at: null,
+        last_error: error.slice(0, 1000)
+      })
+      .where('outbox_event_id', '=', outboxEventId)
+      .execute();
+  }
+
+  async deadLetterOutboxEvent(outboxEventId: string, error: string, deadLetteredAt = new Date().toISOString()): Promise<void> {
+    await this.db
+      .updateTable('outbox_events')
+      .set({
+        status: 'dead_lettered',
+        processing_started_at: null,
+        dead_lettered_at: deadLetteredAt,
+        dead_letter_acknowledged_at: null,
+        dead_letter_acknowledged_by: null,
+        dead_letter_note: null,
+        dead_letter_category: null,
+        incident_ref: null,
+        last_error: error.slice(0, 1000)
+      })
+      .where('outbox_event_id', '=', outboxEventId)
+      .execute();
+  }
+
+  async listOutboxEvents(input: { status?: OutboxEvent['status']; limit?: number } = {}): Promise<OutboxEvent[]> {
+    let query = this.db.selectFrom('outbox_events').selectAll();
+
+    if (input.status) {
+      query = query.where('status', '=', input.status);
+    }
+
+    const rows = await query.orderBy('created_at desc').limit(input.limit ?? 100).execute();
+    return rows.map((row) => this.mapOutboxEvent(row));
+  }
+
+  async getOutboxEventSummary() {
+    const statusRows = await this.db
+      .selectFrom('outbox_events')
+      .select([
+        'status',
+        sql<number>`count(*)`.as('count'),
+        sql<number>`count(*) filter (where dead_letter_acknowledged_at is not null)`.as('ack_count'),
+        sql<string | null>`min(created_at) filter (where status = 'pending')`.as('oldest_pending_created_at'),
+        sql<string | null>`min(dead_lettered_at) filter (where status = 'dead_lettered')`.as('oldest_dead_lettered_at')
+      ])
+      .groupBy('status')
+      .execute();
+
+    const summary = {
+      pendingCount: 0,
+      processingCount: 0,
+      publishedCount: 0,
+      deadLetteredCount: 0,
+      deadLetterAcknowledgedCount: 0,
+      deadLetterUnacknowledgedCount: 0,
+      oldestPendingCreatedAt: undefined as string | undefined,
+      oldestDeadLetteredAt: undefined as string | undefined
+    };
+
+    for (const row of statusRows) {
+      if (row.status === 'pending') {
+        summary.pendingCount = Number(row.count);
+        summary.oldestPendingCreatedAt = row.oldest_pending_created_at ?? undefined;
+      } else if (row.status === 'processing') {
+        summary.processingCount = Number(row.count);
+      } else if (row.status === 'published') {
+        summary.publishedCount = Number(row.count);
+      } else if (row.status === 'dead_lettered') {
+        summary.deadLetteredCount = Number(row.count);
+        summary.deadLetterAcknowledgedCount = Number(row.ack_count);
+        summary.deadLetterUnacknowledgedCount = Number(row.count) - Number(row.ack_count);
+        summary.oldestDeadLetteredAt = row.oldest_dead_lettered_at ?? undefined;
+      }
+    }
+
+    return summary;
+  }
+
+  async replayOutboxEvents(input: {
+    outboxEventIds?: string[];
+    status?: OutboxEvent['status'];
+    limit?: number;
+    nowIso?: string;
+  }): Promise<number> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    return this.withTransaction(async (trx) => {
+      let query = trx.selectFrom('outbox_events').select('outbox_event_id');
+      if (input.status) {
+        query = query.where('status', '=', input.status);
+      }
+      if (input.outboxEventIds?.length) {
+        query = query.where('outbox_event_id', 'in', input.outboxEventIds);
+      }
+      const rows = await query.orderBy('created_at', 'asc').limit(input.limit ?? (input.outboxEventIds?.length ?? 100)).execute();
+      const ids = rows.map((row) => row.outbox_event_id);
+      if (ids.length === 0) {
+        return 0;
+      }
+
+      await trx
+        .updateTable('outbox_events')
+        .set({
+          status: 'pending',
+          available_at: nowIso,
+          processing_started_at: null,
+          dead_lettered_at: null,
+          dead_letter_acknowledged_at: null,
+          dead_letter_acknowledged_by: null,
+          dead_letter_note: null,
+          dead_letter_category: null,
+          incident_ref: null
+        })
+        .where('outbox_event_id', 'in', ids)
+        .execute();
+
+      return ids.length;
+    });
+  }
+
+  async acknowledgeDeadLetterOutboxEvents(input: {
+    outboxEventIds?: string[];
+    limit?: number;
+    actorId: string;
+    note?: string;
+    category?: OutboxEvent['deadLetterCategory'];
+    incidentRef?: string;
+    nowIso?: string;
+  }): Promise<number> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    return this.withTransaction(async (trx) => {
+      let query = trx.selectFrom('outbox_events').select('outbox_event_id').where('status', '=', 'dead_lettered').where('dead_letter_acknowledged_at', 'is', null);
+      if (input.outboxEventIds?.length) {
+        query = query.where('outbox_event_id', 'in', input.outboxEventIds);
+      }
+      const rows = await query.orderBy('created_at', 'asc').limit(input.limit ?? (input.outboxEventIds?.length ?? 100)).execute();
+      const ids = rows.map((row) => row.outbox_event_id);
+      if (ids.length === 0) {
+        return 0;
+      }
+
+      await trx
+        .updateTable('outbox_events')
+        .set({
+          dead_letter_acknowledged_at: nowIso,
+          dead_letter_acknowledged_by: input.actorId,
+          dead_letter_note: input.note ?? null,
+          dead_letter_category: input.category ?? null,
+          incident_ref: input.incidentRef ?? null
+        })
+        .where('outbox_event_id', 'in', ids)
+        .execute();
+
+      return ids.length;
+    });
+  }
+
+  async recoverStaleProcessingOutboxEvents(timeoutSec: number, nowIso = new Date().toISOString()): Promise<number> {
+    const threshold = new Date(Date.parse(nowIso) - timeoutSec * 1000).toISOString();
+    return this.withTransaction(async (trx) => {
+      const rows = await trx
+        .selectFrom('outbox_events')
+        .select('outbox_event_id')
+        .where('status', '=', 'processing')
+        .where('processing_started_at', '<=', threshold)
+        .execute();
+      const ids = rows.map((row) => row.outbox_event_id);
+      if (ids.length === 0) {
+        return 0;
+      }
+
+      await trx
+        .updateTable('outbox_events')
+        .set({
+          status: 'pending',
+          available_at: nowIso,
+          processing_started_at: null,
+          last_error: sql<string>`coalesce(last_error, 'processing timeout recovered')`
+        })
+        .where('outbox_event_id', 'in', ids)
+        .execute();
+
+      return ids.length;
+    });
   }
 
   async getLedgerSummary(): Promise<LedgerSummary> {
@@ -1364,6 +1945,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       journalType: string;
       referenceType: string;
       referenceId: string;
+      currencyCode?: string;
       description?: string;
       nowIso: string;
       postings: LedgerPostingInput[];
@@ -1377,13 +1959,20 @@ export class PostgresLedgerRepository implements LedgerRepository {
         journal_type: input.journalType,
         reference_type: input.referenceType,
         reference_id: input.referenceId,
+        currency_code: input.currencyCode ?? 'KORI',
         description: input.description ?? null,
         created_at: input.nowIso
       })
       .execute();
 
     for (const posting of input.postings) {
-      await this.ensureLedgerAccount(db, posting.ledgerAccountCode, posting.accountType, input.nowIso);
+      await this.ensureLedgerAccount(
+        db,
+        posting.ledgerAccountCode,
+        posting.accountType,
+        input.currencyCode ?? 'KORI',
+        input.nowIso
+      );
     }
 
     await db
@@ -1405,6 +1994,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     db: DbExecutor,
     ledgerAccountCode: string,
     accountType: KorionDatabase['ledger_accounts']['account_type'],
+    currencyCode = 'KORI',
     nowIso = new Date().toISOString()
   ): Promise<void> {
     await db
@@ -1412,7 +2002,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       .values({
         ledger_account_code: ledgerAccountCode,
         account_type: accountType,
-        currency_code: 'KORI',
+        currency_code: currencyCode,
         created_at: nowIso
       })
       .onConflict((oc) => oc.column('ledger_account_code').doNothing())
@@ -1653,6 +2243,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       withdrawalId: row.withdraw_id,
       adminId: row.admin_id,
       actorType: row.actor_type,
+      reasonCode: row.reason_code,
       note: row.note ?? undefined,
       createdAt: row.created_at
     };
@@ -1667,6 +2258,21 @@ export class PostgresLedgerRepository implements LedgerRepository {
       actorType: row.actor_type,
       actorId: row.actor_id,
       metadata: row.metadata ?? {},
+      createdAt: row.created_at
+    };
+  }
+
+  private mapNetworkFeeReceipt(row: KorionDatabase['network_fee_receipts']): NetworkFeeReceipt {
+    return {
+      feeReceiptId: row.fee_receipt_id,
+      referenceType: row.reference_type,
+      referenceId: row.reference_id,
+      txHash: row.tx_hash,
+      currencyCode: row.currency_code,
+      feeSun: BigInt(row.fee_sun),
+      energyUsed: row.energy_used,
+      bandwidthUsed: row.bandwidth_used,
+      confirmedAt: row.confirmed_at,
       createdAt: row.created_at
     };
   }
@@ -1693,6 +2299,71 @@ export class PostgresLedgerRepository implements LedgerRepository {
     };
   }
 
+  private async persistNetworkFeeReceipt(
+    db: DbExecutor,
+    input: Omit<NetworkFeeReceipt, 'feeReceiptId' | 'currencyCode'>
+  ): Promise<void> {
+    await db
+      .insertInto('network_fee_receipts')
+      .values({
+        fee_receipt_id: randomUUID(),
+        reference_type: input.referenceType,
+        reference_id: input.referenceId,
+        tx_hash: input.txHash,
+        currency_code: 'TRX',
+        fee_sun: input.feeSun.toString(),
+        energy_used: input.energyUsed,
+        bandwidth_used: input.bandwidthUsed,
+        confirmed_at: input.confirmedAt,
+        created_at: input.createdAt
+      })
+      .onConflict((oc) => oc.columns(['reference_type', 'reference_id']).doNothing())
+      .execute();
+  }
+
+  private async enqueueOutboxEvent(
+    db: DbExecutor,
+    input: {
+      eventType: string;
+      aggregateType: string;
+      aggregateId: string;
+      payload: Record<string, unknown>;
+      occurredAt: string;
+    }
+  ): Promise<void> {
+    await db
+      .insertInto('outbox_events')
+      .values({
+        outbox_event_id: randomUUID(),
+        event_type: input.eventType,
+        aggregate_type: input.aggregateType,
+        aggregate_id: input.aggregateId,
+        payload: input.payload as never,
+        status: 'pending',
+        attempts: 0,
+        available_at: input.occurredAt,
+        processing_started_at: null,
+        last_error: null,
+        created_at: input.occurredAt,
+        published_at: null,
+        dead_lettered_at: null,
+        dead_letter_acknowledged_at: null,
+        dead_letter_acknowledged_by: null,
+        dead_letter_note: null,
+        dead_letter_category: null,
+        incident_ref: null
+      })
+      .execute();
+  }
+
+  private formatTrxSunAmount(value: bigint): string {
+    const negative = value < 0n;
+    const absolute = negative ? value * -1n : value;
+    const whole = absolute / 1_000_000n;
+    const fraction = (absolute % 1_000_000n).toString().padStart(6, '0');
+    return `${negative ? '-' : ''}${whole}.${fraction}`;
+  }
+
   private mapJob(row: KorionDatabase['tx_jobs']): TxJob {
     return {
       jobId: row.job_id,
@@ -1701,6 +2372,29 @@ export class PostgresLedgerRepository implements LedgerRepository {
       status: row.status,
       retryCount: row.retry_count,
       createdAt: row.created_at
+    };
+  }
+
+  private mapOutboxEvent(row: KorionDatabase['outbox_events']): OutboxEvent {
+    return {
+      outboxEventId: row.outbox_event_id,
+      eventType: row.event_type,
+      aggregateType: row.aggregate_type,
+      aggregateId: row.aggregate_id,
+      payload: row.payload ?? {},
+      status: row.status,
+      attempts: row.attempts,
+      availableAt: row.available_at,
+      createdAt: row.created_at,
+      processingStartedAt: row.processing_started_at ?? undefined,
+      publishedAt: row.published_at ?? undefined,
+      deadLetteredAt: row.dead_lettered_at ?? undefined,
+      deadLetterAcknowledgedAt: row.dead_letter_acknowledged_at ?? undefined,
+      deadLetterAcknowledgedBy: row.dead_letter_acknowledged_by ?? undefined,
+      deadLetterNote: row.dead_letter_note ?? undefined,
+      deadLetterCategory: row.dead_letter_category ?? undefined,
+      incidentRef: row.incident_ref ?? undefined,
+      lastError: row.last_error ?? undefined
     };
   }
 

@@ -19,6 +19,7 @@ import { ResourceDelegationService } from '../application/services/resource-dele
 import { ResourceDelegationWorker } from '../application/services/resource-delegation-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import { OutboxPublisherWorker } from '../application/services/outbox-publisher-worker.js';
 import { OperationsService } from '../application/services/operations-service.js';
 import { SchedulerService } from '../application/services/scheduler-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
@@ -31,6 +32,7 @@ import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatc
 import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
+import { HotWalletWithdrawalSigner } from '../infrastructure/blockchain/hot-wallet-withdrawal-signer.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
 import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-event-reader.js';
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
@@ -261,6 +263,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const walletService = new WalletService(ledger, eventPublisher);
   const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
   const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
+  const withdrawalSigner = new HotWalletWithdrawalSigner(tronGateway);
   const withdrawDispatchWorker = new WithdrawDispatchWorker(
     ledger,
     undefined,
@@ -301,12 +304,19 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     virtualWalletLifecyclePolicy,
     withdrawGuardService,
     withdrawPolicyService,
-    foxyaWithdrawalSyncClient
+    foxyaWithdrawalSyncClient,
+    withdrawalSigner
   );
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);
   const schedulerService = new SchedulerService(ledger, withdrawService, eventPublisher, withdrawJobQueue);
-  const operationsService = new OperationsService(ledger, systemMonitoringService, withdrawJobQueue, withdrawPolicyService);
+  const operationsService = new OperationsService(
+    ledger,
+    systemMonitoringService,
+    withdrawJobQueue,
+    withdrawPolicyService,
+    withdrawGuardService
+  );
   const sweepBotService = new SweepBotService(
     depositMonitorRepository,
     foxyaClient,
@@ -317,6 +327,13 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   );
   const sweepBotWorker = new SweepBotWorker(sweepBotService, alertService, env.sweepBotPollIntervalSec * 1000);
   const alertWorker = new AlertWorker(alertService, operationsService, env.walletMonitorIntervalSec * 1000);
+  const outboxPublisherWorker = new OutboxPublisherWorker(ledger, eventPublisher, {
+    intervalMs: env.outboxPublishIntervalMs,
+    batchSize: env.outboxPublishBatchSize,
+    retryBaseDelayMs: env.outboxRetryBaseDelayMs,
+    retryMaxDelayMs: env.outboxRetryMaxDelayMs,
+    maxAttempts: env.outboxMaxAttempts
+  });
   const externalAlertMonitorService = new ExternalAlertMonitorService(
     alertMonitorStateRepository,
     alertService,
@@ -357,6 +374,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     sweepBotWorker,
     monitoringWorker,
     alertWorker,
+    outboxPublisherWorker,
     depositService,
     virtualWalletService,
     virtualWalletLifecyclePolicy,

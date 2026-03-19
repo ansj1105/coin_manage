@@ -52,6 +52,34 @@ describe('ledger contracts', () => {
     });
 
     expect(payload.postings).toHaveLength(2);
+    expect(payload.currency).toBe('KORI');
+    expect(verifyLedgerContractSignature(payload)).toBe(true);
+  });
+
+  it('builds trx journal entry contract for network fees', () => {
+    const payload = buildJournalEntryContract({
+      journalType: 'withdraw_network_fee',
+      referenceType: 'withdrawal',
+      referenceId: 'wd-1',
+      currency: 'TRX',
+      occurredAt: '2026-03-12T12:00:00.000Z',
+      postings: [
+        {
+          accountCode: 'system:expense:withdraw_network_fee',
+          accountType: 'expense',
+          side: 'debit',
+          amount: '1.500000'
+        },
+        {
+          accountCode: 'system:asset:hot_wallet_trx',
+          accountType: 'asset',
+          side: 'credit',
+          amount: '1.500000'
+        }
+      ]
+    });
+
+    expect(payload.currency).toBe('TRX');
     expect(verifyLedgerContractSignature(payload)).toBe(true);
   });
 

@@ -336,12 +336,20 @@ export class SweepBotService {
       return 'skipped';
     }
 
-    const receipt = await this.tronGateway.getTransactionReceipt(sweep.txHash);
-    if (receipt === 'confirmed') {
-      await this.ledger.confirmSweep(sweep.sweepId, 'confirmed by sweep confirmer');
+    const receipt = await this.tronGateway.getTransactionReceiptDetails(sweep.txHash);
+    if (receipt.status === 'confirmed') {
+      await this.ledger.confirmSweep(sweep.sweepId, {
+        note: 'confirmed by sweep confirmer',
+        networkFee: {
+          txHash: sweep.txHash,
+          feeSun: receipt.feeSun,
+          energyUsed: receipt.energyUsed,
+          bandwidthUsed: receipt.bandwidthUsed
+        }
+      });
       return 'confirmed';
     }
-    if (receipt === 'failed') {
+    if (receipt.status === 'failed') {
       await this.ledger.failSweep(sweep.sweepId, 'on-chain receipt reported failure');
       await this.foxyaClient.failSweep(depositId, 'on-chain receipt reported failure');
       await this.alertService.notifySweepFailure({

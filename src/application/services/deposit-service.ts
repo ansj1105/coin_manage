@@ -52,25 +52,10 @@ export class DepositService {
       userId,
       amount: parseKoriAmount(input.amountKori),
       txHash: input.txHash,
+      toAddress: normalizedToAddress,
+      walletAddress: input.walletAddress,
       blockNumber: input.blockNumber
     });
-
-    if (!result.duplicated) {
-      this.eventPublisher.publish(
-        'deposit.state.changed',
-        buildDepositStateChangedContract({
-          depositId: result.deposit.depositId,
-          userId: result.deposit.userId,
-          walletAddress: input.walletAddress ?? normalizedToAddress,
-          txHash: result.deposit.txHash,
-          toAddress: normalizedToAddress,
-          status: result.deposit.status,
-          amount: result.deposit.amount,
-          blockNumber: result.deposit.blockNumber,
-          occurredAt: result.deposit.createdAt
-        })
-      );
-    }
 
     return {
       accepted: true,

@@ -1,11 +1,13 @@
 import { env } from '../../config/env.js';
 import { getConfiguredSystemWallets } from '../../config/system-wallets.js';
 import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../domain/value-objects/money.js';
+import type { NetworkFeeReceipt } from '../../domain/ledger/types.js';
 import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import { SystemMonitoringService } from './system-monitoring-service.js';
 import type { WithdrawPolicyService } from './withdraw-policy-service.js';
 import type { WithdrawAddressPolicyType } from '../../domain/withdraw-policy/types.js';
+import type { WithdrawGuardService } from './withdraw-guard-service.js';
 
 type ExternalSyncFailureItem = {
   withdrawalId: string;
@@ -33,16 +35,133 @@ type WithdrawalRiskEvent = {
   blacklistPolicyType: WithdrawAddressPolicyType | null;
 };
 
+const formatTrxSunAmount = (value: bigint) => {
+  const negative = value < 0n;
+  const absolute = negative ? value * -1n : value;
+  const whole = absolute / 1_000_000n;
+  const fraction = (absolute % 1_000_000n).toString().padStart(6, '0');
+  return `${negative ? '-' : ''}${whole}.${fraction}`;
+};
+
 export class OperationsService {
   constructor(
     private readonly ledger: LedgerRepository,
     private readonly systemMonitoringService: SystemMonitoringService,
     private readonly withdrawJobQueue: WithdrawJobQueue,
-    private readonly withdrawPolicyService?: WithdrawPolicyService
+    private readonly withdrawPolicyService?: WithdrawPolicyService,
+    private readonly withdrawGuardService?: WithdrawGuardService
   ) {}
 
-  async listAuditLogs(input?: { entityType?: 'withdrawal' | 'sweep' | 'system'; entityId?: string; limit?: number }) {
+  async listAuditLogs(input?: {
+    entityType?: 'withdrawal' | 'sweep' | 'system';
+    entityId?: string;
+    actorId?: string;
+    action?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    limit?: number;
+  }) {
     return this.ledger.listAuditLogs(input);
+  }
+
+  async getOutboxStatus(limit = 50) {
+    const [summary, events] = await Promise.all([this.ledger.getOutboxEventSummary(), this.ledger.listOutboxEvents({ limit })]);
+
+    return {
+      summary: {
+        ...summary,
+        oldestPendingCreatedAt: summary.oldestPendingCreatedAt ?? null,
+        oldestDeadLetteredAt: summary.oldestDeadLetteredAt ?? null
+      },
+      items: events.map((event) => ({
+        outboxEventId: event.outboxEventId,
+        eventType: event.eventType,
+        aggregateType: event.aggregateType,
+        aggregateId: event.aggregateId,
+        status: event.status,
+        attempts: event.attempts,
+        availableAt: event.availableAt,
+        createdAt: event.createdAt,
+        processingStartedAt: event.processingStartedAt ?? null,
+        publishedAt: event.publishedAt ?? null,
+        deadLetteredAt: event.deadLetteredAt ?? null,
+        deadLetterAcknowledgedAt: event.deadLetterAcknowledgedAt ?? null,
+        deadLetterAcknowledgedBy: event.deadLetterAcknowledgedBy ?? null,
+        deadLetterNote: event.deadLetterNote ?? null,
+        deadLetterCategory: event.deadLetterCategory ?? null,
+        incidentRef: event.incidentRef ?? null,
+        lastError: event.lastError ?? null
+      }))
+    };
+  }
+
+  async replayDeadLetterOutboxEvents(input: { outboxEventIds?: string[]; limit?: number; actorId: string }) {
+    const replayedCount = await this.ledger.replayOutboxEvents({
+      outboxEventIds: input.outboxEventIds,
+      status: 'dead_lettered',
+      limit: input.limit
+    });
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'outbox',
+      action: 'outbox.dead_letter.replayed',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        replayedCount: replayedCount.toString(),
+        outboxEventIds: (input.outboxEventIds ?? []).join(',')
+      }
+    });
+
+    return { replayedCount };
+  }
+
+  async recoverStaleOutboxProcessing(input: { timeoutSec?: number; actorId: string }) {
+    const timeoutSec = input.timeoutSec ?? env.outboxProcessingStaleTimeoutSec;
+    const recoveredCount = await this.ledger.recoverStaleProcessingOutboxEvents(timeoutSec);
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'outbox',
+      action: 'outbox.processing.recovered',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        timeoutSec: timeoutSec.toString(),
+        recoveredCount: recoveredCount.toString()
+      }
+    });
+
+    return { recoveredCount, timeoutSec };
+  }
+
+  async acknowledgeDeadLetterOutboxEvents(input: {
+    outboxEventIds?: string[];
+    limit?: number;
+    actorId: string;
+    note?: string;
+    category?: 'external_dependency' | 'validation' | 'state_conflict' | 'network' | 'unknown';
+    incidentRef?: string;
+  }) {
+    const acknowledgedCount = await this.ledger.acknowledgeDeadLetterOutboxEvents(input);
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: 'outbox',
+      action: 'outbox.dead_letter.acknowledged',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        acknowledgedCount: acknowledgedCount.toString(),
+        outboxEventIds: (input.outboxEventIds ?? []).join(','),
+        note: input.note ?? '',
+        category: input.category ?? '',
+        incidentRef: input.incidentRef ?? ''
+      }
+    });
+
+    return { acknowledgedCount };
   }
 
   async listWithdrawalExternalSyncFailures(limit = 50) {
@@ -293,6 +412,113 @@ export class OperationsService {
       actorId: input.actorId,
       blacklistPolicyType: input.blacklistPolicyType ?? null
     } satisfies WithdrawalRiskEvent;
+  }
+
+  async listNetworkFeeReceipts(input?: {
+    referenceType?: NetworkFeeReceipt['referenceType'];
+    referenceId?: string;
+    limit?: number;
+  }) {
+    const items = await this.ledger.listNetworkFeeReceipts(input);
+    const totalFeeSun = items.reduce((acc, item) => acc + item.feeSun, 0n);
+    const byReferenceType = items.reduce(
+      (acc, item) => {
+        acc[item.referenceType] = (acc[item.referenceType] ?? 0n) + item.feeSun;
+        return acc;
+      },
+      {} as Record<NetworkFeeReceipt['referenceType'], bigint>
+    );
+
+    return {
+      items: items.map((item) => ({
+        ...item,
+        feeSun: item.feeSun.toString(),
+        feeAmount: formatTrxSunAmount(item.feeSun)
+      })),
+      summary: {
+        currencyCode: 'TRX',
+        totalFeeSun: totalFeeSun.toString(),
+        totalFeeAmount: formatTrxSunAmount(totalFeeSun),
+        byReferenceType: {
+          withdrawal: formatTrxSunAmount(byReferenceType.withdrawal ?? 0n),
+          sweep: formatTrxSunAmount(byReferenceType.sweep ?? 0n)
+        }
+      }
+    };
+  }
+
+  async listNetworkFeeDailySnapshots(input?: { days?: number }) {
+    const items = await this.ledger.listNetworkFeeDailySnapshots(input);
+    const totalLedgerFeeSun = items.reduce((acc, item) => acc + item.ledgerFeeSun, 0n);
+    const totalActualFeeSun = items.reduce((acc, item) => acc + item.actualFeeSun, 0n);
+    const totalGapFeeSun = totalActualFeeSun - totalLedgerFeeSun;
+
+    return {
+      items: items.map((item) => ({
+        snapshotDate: item.snapshotDate,
+        currencyCode: item.currencyCode,
+        ledgerFeeSun: item.ledgerFeeSun.toString(),
+        ledgerFeeAmount: formatTrxSunAmount(item.ledgerFeeSun),
+        actualFeeSun: item.actualFeeSun.toString(),
+        actualFeeAmount: formatTrxSunAmount(item.actualFeeSun),
+        gapFeeSun: item.gapFeeSun.toString(),
+        gapFeeAmount: formatTrxSunAmount(item.gapFeeSun),
+        ledgerFeeCount: item.ledgerFeeCount,
+        actualFeeCount: item.actualFeeCount,
+        status: item.gapFeeSun === 0n ? 'balanced' : item.gapFeeSun > 0n ? 'underbooked' : 'overbooked',
+        byReferenceType: {
+          withdrawal: {
+            ledgerFeeSun: item.byReferenceType.withdrawal.ledgerFeeSun.toString(),
+            ledgerFeeAmount: formatTrxSunAmount(item.byReferenceType.withdrawal.ledgerFeeSun),
+            actualFeeSun: item.byReferenceType.withdrawal.actualFeeSun.toString(),
+            actualFeeAmount: formatTrxSunAmount(item.byReferenceType.withdrawal.actualFeeSun),
+            ledgerFeeCount: item.byReferenceType.withdrawal.ledgerFeeCount,
+            actualFeeCount: item.byReferenceType.withdrawal.actualFeeCount
+          },
+          sweep: {
+            ledgerFeeSun: item.byReferenceType.sweep.ledgerFeeSun.toString(),
+            ledgerFeeAmount: formatTrxSunAmount(item.byReferenceType.sweep.ledgerFeeSun),
+            actualFeeSun: item.byReferenceType.sweep.actualFeeSun.toString(),
+            actualFeeAmount: formatTrxSunAmount(item.byReferenceType.sweep.actualFeeSun),
+            ledgerFeeCount: item.byReferenceType.sweep.ledgerFeeCount,
+            actualFeeCount: item.byReferenceType.sweep.actualFeeCount
+          }
+        }
+      })),
+      summary: {
+        currencyCode: 'TRX',
+        totalLedgerFeeSun: totalLedgerFeeSun.toString(),
+        totalLedgerFeeAmount: formatTrxSunAmount(totalLedgerFeeSun),
+        totalActualFeeSun: totalActualFeeSun.toString(),
+        totalActualFeeAmount: formatTrxSunAmount(totalActualFeeSun),
+        totalGapFeeSun: totalGapFeeSun.toString(),
+        totalGapFeeAmount: formatTrxSunAmount(totalGapFeeSun)
+      }
+    };
+  }
+
+  async getWithdrawalOverview() {
+    const [pendingApprovals, adminApproved, txBroadcasted, failedJobs] = await Promise.all([
+      this.ledger.listPendingApprovalWithdrawals(),
+      this.ledger.listWithdrawalsByStatuses(['ADMIN_APPROVED']),
+      this.ledger.listWithdrawalsByStatuses(['TX_BROADCASTED']),
+      this.withdrawJobQueue.listFailed(200)
+    ]);
+
+    const offlineSigningPending = this.withdrawGuardService
+      ? adminApproved.filter((withdrawal) => this.withdrawGuardService!.requiresOfflineSigning(withdrawal.amount))
+      : [];
+    const hotBroadcastPending = this.withdrawGuardService
+      ? adminApproved.filter((withdrawal) => !this.withdrawGuardService!.requiresOfflineSigning(withdrawal.amount))
+      : adminApproved;
+
+    return {
+      pendingApprovalCount: pendingApprovals.length,
+      broadcastPendingCount: hotBroadcastPending.length,
+      offlineSigningPendingCount: offlineSigningPending.length,
+      onchainPendingCount: txBroadcasted.length,
+      failedJobCount: failedJobs.length
+    };
   }
 
   async getReconciliationReport() {

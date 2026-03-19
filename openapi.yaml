@@ -246,6 +246,28 @@ paths:
           schema:
             type: string
         - in: query
+          name: actorId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: action
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: createdFrom
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: createdTo
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
           name: limit
           required: false
           schema:
@@ -263,6 +285,208 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AuditLog'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/audit-logs/export:
+    get:
+      summary: Export persisted audit logs as CSV
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: entityType
+          required: false
+          schema:
+            type: string
+            enum: [withdrawal, sweep, system]
+        - in: query
+          name: entityId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: actorId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: action
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: createdFrom
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: createdTo
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Audit log CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/outbox:
+    get:
+      summary: List outbox publisher status and recent events
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Outbox status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxStatusResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/monitoring/history:
+    get:
+      summary: List wallet monitoring history points for time-series analysis
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: walletCodes
+          required: false
+          schema:
+            type: string
+          description: Comma-separated wallet codes
+        - in: query
+          name: createdFrom
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: createdTo
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2000
+      responses:
+        '200':
+          description: Wallet monitoring history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WalletMonitoringHistoryPoint'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/outbox/replay:
+    post:
+      summary: Replay dead-lettered outbox events
+      security:
+        - WithdrawAdminApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplayOutboxRequest'
+      responses:
+        '200':
+          description: Dead-letter replay result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replayedCount:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/outbox/recover-processing:
+    post:
+      summary: Recover stale processing outbox events back to pending
+      security:
+        - WithdrawAdminApiKey: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoverOutboxProcessingRequest'
+      responses:
+        '200':
+          description: Processing recovery result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveredCount:
+                    type: integer
+                  timeoutSec:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/outbox/dead-letter/ack:
+    post:
+      summary: Acknowledge dead-lettered outbox events for operator triage
+      security:
+        - WithdrawAdminApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeOutboxDeadLetterRequest'
+      responses:
+        '200':
+          description: Dead-letter acknowledgement result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acknowledgedCount:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-jobs/external-sync/retry:
@@ -522,6 +746,65 @@ paths:
                 $ref: '#/components/schemas/ReconciliationReport'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/network-fees:
+    get:
+      summary: List recorded on-chain network fee receipts for withdrawals and sweeps
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: referenceType
+          required: false
+          schema:
+            type: string
+            enum: [withdrawal, sweep]
+        - in: query
+          name: referenceId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Network fee receipts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkFeeReceiptListResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/system/network-fees/daily-snapshots:
+    get:
+      summary: List daily reconciliation snapshots comparing fee journals and actual network fee receipts
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: days
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+      responses:
+        '200':
+          description: Daily network fee reconciliation snapshots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkFeeDailySnapshotListResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweeps:
     get:
       summary: List planned and executed sweep records
@@ -772,6 +1055,37 @@ paths:
                 $ref: '#/components/schemas/BalanceResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+  /api/wallets/timeline:
+    get:
+      summary: Get wallet timeline by userId or walletAddress
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: walletAddress
+          required: false
+          schema:
+            type: string
+            pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Wallet timeline response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletTimelineResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
   /api/wallets/{userId}/balance:
     get:
       summary: Get wallet balance by userId path
@@ -898,9 +1212,32 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Withdrawal'
+  /api/withdrawals/offline-pending:
+    get:
+      summary: List admin-approved withdrawals waiting for offline signing
+      responses:
+        '200':
+          description: Offline signing pending withdrawals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Withdrawal'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/withdrawals/{withdrawalId}/approve:
     post:
       summary: Approve withdrawal
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawApproveRequest'
       parameters:
         - in: path
           name: withdrawalId
@@ -1052,6 +1389,51 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/withdrawals/{withdrawalId}/offline-submit:
+    post:
+      summary: Submit an externally broadcast offline-signed withdrawal tx hash
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+          description: Required when withdraw admin API key protection is enabled.
+        - in: header
+          name: X-Admin-Id
+          required: false
+          schema:
+            type: string
+          description: Optional actor identifier. Overrides request body actorId when present.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawOfflineSubmitRequest'
+      responses:
+        '200':
+          description: Offline broadcast submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal:
+                    $ref: '#/components/schemas/Withdrawal'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
   /api/withdrawals/{withdrawalId}/approvals:
     get:
       summary: List approval records for a withdrawal
@@ -1080,6 +1462,32 @@ paths:
                     items:
                       $ref: '#/components/schemas/WithdrawalApproval'
         '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/internal/withdrawals/coin-manage/{withdrawalId}/state:
+    get:
+      summary: Poll canonical withdrawal state for foxya reconciliation
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+          description: Required when foxya internal withdrawal API key protection is enabled.
+      responses:
+        '200':
+          description: Canonical withdrawal state for foxya fallback polling
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawBridgeStateResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
           $ref: '#/components/responses/ErrorResponse'
   /api/withdrawals/policies/addresses:
     get:
@@ -1325,6 +1733,24 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+    WithdrawOfflineSubmitRequest:
+      type: object
+      required: [txHash]
+      properties:
+        txHash:
+          type: string
+          minLength: 8
+          maxLength: 128
+        note:
+          type: string
+          maxLength: 500
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 64
+    WithdrawApprovalReasonCode:
+      type: string
+      enum: [manual_review_passed, high_value_verified, trusted_destination_verified, account_activity_verified, ops_override]
     WithdrawAddressPolicyType:
       type: string
       enum: [blacklist, whitelist, internal_blocked]
@@ -1373,7 +1799,10 @@ components:
           pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
         status:
           type: string
-          enum: [requested, review_required, approved, broadcasted, confirmed, failed, rejected]
+          enum: [LEDGER_RESERVED, PENDING_ADMIN, ADMIN_APPROVED, TX_BROADCASTED, COMPLETED, FAILED, REJECTED]
+        displayStatus:
+          type: string
+          enum: [submitted, under_review, approved, sending, completed, failed, rejected]
         txHash:
           type: string
           nullable: true
@@ -1438,10 +1867,36 @@ components:
         actorType:
           type: string
           enum: [admin, system]
+        reasonCode:
+          $ref: '#/components/schemas/WithdrawApprovalReasonCode'
         note:
           type: string
           nullable: true
         createdAt:
+          type: string
+          format: date-time
+    WithdrawBridgeStateResponse:
+      type: object
+      required: [schemaVersion, withdrawalId, externalTransferId, status, txHash, failedReason, updatedAt]
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['1.0.0']
+        withdrawalId:
+          type: string
+        externalTransferId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PROCESSING, SENT, COMPLETED, FAILED]
+        txHash:
+          type: string
+          nullable: true
+        failedReason:
+          type: string
+          nullable: true
+        updatedAt:
           type: string
           format: date-time
     AuditLog:
@@ -1468,6 +1923,16 @@ components:
         createdAt:
           type: string
           format: date-time
+    WithdrawApproveRequest:
+      type: object
+      properties:
+        adminId:
+          type: string
+        reasonCode:
+          $ref: '#/components/schemas/WithdrawApprovalReasonCode'
+        note:
+          type: string
+          maxLength: 500
     WithdrawAddressPolicy:
       type: object
       properties:
@@ -2007,6 +2472,357 @@ components:
         updatedAt:
           type: string
           format: date-time
+    WalletTimelineEntry:
+      type: object
+      properties:
+        timelineId:
+          type: string
+        entryType:
+          type: string
+          enum: [deposit, withdrawal, internal_transfer_in, internal_transfer_out]
+        amount:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        txHash:
+          type: string
+          nullable: true
+        blockNumber:
+          type: integer
+          nullable: true
+        counterpartyUserId:
+          type: string
+          nullable: true
+        toAddress:
+          type: string
+          nullable: true
+        depositId:
+          type: string
+          nullable: true
+        withdrawalId:
+          type: string
+          nullable: true
+        ledgerTxId:
+          type: string
+          nullable: true
+        displayStatus:
+          type: string
+          enum: [submitted, under_review, approved, sending, completed, failed, rejected]
+          nullable: true
+    WalletTimelineResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTimelineEntry'
+    NetworkFeeReceipt:
+      type: object
+      properties:
+        feeReceiptId:
+          type: string
+        referenceType:
+          type: string
+          enum: [withdrawal, sweep]
+        referenceId:
+          type: string
+        txHash:
+          type: string
+        currencyCode:
+          type: string
+          enum: [TRX]
+        feeSun:
+          type: string
+        feeAmount:
+          type: string
+        energyUsed:
+          type: integer
+        bandwidthUsed:
+          type: integer
+        confirmedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    NetworkFeeReceiptListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NetworkFeeReceipt'
+        summary:
+          type: object
+          properties:
+            currencyCode:
+              type: string
+              enum: [TRX]
+            totalFeeSun:
+              type: string
+            totalFeeAmount:
+              type: string
+            byReferenceType:
+              type: object
+              properties:
+                withdrawal:
+                  type: string
+                sweep:
+                  type: string
+    NetworkFeeDailySnapshotByReferenceType:
+      type: object
+      properties:
+        ledgerFeeSun:
+          type: string
+        ledgerFeeAmount:
+          type: string
+        actualFeeSun:
+          type: string
+        actualFeeAmount:
+          type: string
+        ledgerFeeCount:
+          type: integer
+        actualFeeCount:
+          type: integer
+    NetworkFeeDailySnapshot:
+      type: object
+      properties:
+        snapshotDate:
+          type: string
+        currencyCode:
+          type: string
+          enum: [TRX]
+        ledgerFeeSun:
+          type: string
+        ledgerFeeAmount:
+          type: string
+        actualFeeSun:
+          type: string
+        actualFeeAmount:
+          type: string
+        gapFeeSun:
+          type: string
+        gapFeeAmount:
+          type: string
+        ledgerFeeCount:
+          type: integer
+        actualFeeCount:
+          type: integer
+        status:
+          type: string
+          enum: [balanced, underbooked, overbooked]
+        byReferenceType:
+          type: object
+          properties:
+            withdrawal:
+              $ref: '#/components/schemas/NetworkFeeDailySnapshotByReferenceType'
+            sweep:
+              $ref: '#/components/schemas/NetworkFeeDailySnapshotByReferenceType'
+    NetworkFeeDailySnapshotListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NetworkFeeDailySnapshot'
+        summary:
+          type: object
+          properties:
+            currencyCode:
+              type: string
+              enum: [TRX]
+            totalLedgerFeeSun:
+              type: string
+            totalLedgerFeeAmount:
+              type: string
+            totalActualFeeSun:
+              type: string
+            totalActualFeeAmount:
+              type: string
+            totalGapFeeSun:
+              type: string
+            totalGapFeeAmount:
+              type: string
+    OutboxEvent:
+      type: object
+      properties:
+        outboxEventId:
+          type: string
+        eventType:
+          type: string
+        aggregateType:
+          type: string
+        aggregateId:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, published, dead_lettered]
+        attempts:
+          type: integer
+        availableAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        processingStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deadLetteredAt:
+          type: string
+          format: date-time
+          nullable: true
+        deadLetterAcknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deadLetterAcknowledgedBy:
+          type: string
+          nullable: true
+        deadLetterNote:
+          type: string
+          nullable: true
+        deadLetterCategory:
+          type: string
+          enum: [external_dependency, validation, state_conflict, network, unknown]
+          nullable: true
+        incidentRef:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+    OutboxStatusResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            pendingCount:
+              type: integer
+            processingCount:
+              type: integer
+            publishedCount:
+              type: integer
+            deadLetteredCount:
+              type: integer
+            deadLetterAcknowledgedCount:
+              type: integer
+            deadLetterUnacknowledgedCount:
+              type: integer
+            oldestPendingCreatedAt:
+              type: string
+              format: date-time
+              nullable: true
+            oldestDeadLetteredAt:
+              type: string
+              format: date-time
+              nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutboxEvent'
+    WalletMonitoringHistoryPoint:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+        collectorName:
+          type: string
+        walletCode:
+          type: string
+        address:
+          type: string
+        tokenSymbol:
+          type: string
+        tokenContractAddress:
+          type: string
+          nullable: true
+        tokenBalance:
+          type: string
+          nullable: true
+        tokenRawBalance:
+          type: string
+          nullable: true
+        tokenDecimals:
+          type: integer
+          nullable: true
+        trxBalance:
+          type: string
+          nullable: true
+        trxRawBalance:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ok, error]
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ReplayOutboxRequest:
+      type: object
+      properties:
+        outboxEventIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        actorId:
+          type: string
+    RecoverOutboxProcessingRequest:
+      type: object
+      properties:
+        timeoutSec:
+          type: integer
+          minimum: 1
+          maximum: 86400
+        actorId:
+          type: string
+    AcknowledgeOutboxDeadLetterRequest:
+      type: object
+      properties:
+        outboxEventIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        actorId:
+          type: string
+        note:
+          type: string
+          maxLength: 500
+        category:
+          type: string
+          enum: [external_dependency, validation, state_conflict, network, unknown]
+        incidentRef:
+          type: string
+          maxLength: 128
     ErrorResponse:
       type: object
       properties:
@@ -2064,6 +2880,14 @@ components:
               type: number
             withdrawDailyLimitKori:
               type: number
+            coldWithdrawMinKori:
+              type: number
+            withdrawMinTrxSun:
+              type: string
+            withdrawMinBandwidth:
+              type: integer
+            withdrawMinEnergy:
+              type: integer
             tronFeeLimitSun:
               type: integer
             hotWalletAlertMinKori:
@@ -2168,6 +2992,13 @@ components:
               type: boolean
             hotWalletPrivateKeyConfigured:
               type: boolean
+            withdrawSignerMode:
+              type: string
+              enum: [hot, offline_stub, hybrid]
+            withdrawRequestApiKeyConfigured:
+              type: boolean
+            withdrawAdminApiKeyConfigured:
+              type: boolean
         sandbox:
           type: object
           properties:
@@ -2193,21 +3024,29 @@ components:
                   properties:
                     ready:
                       type: boolean
+                    signerMode:
+                      type: string
+                      enum: [hot, offline_stub, hybrid]
+                    hotSigningEnabled:
+                      type: boolean
+                    signerHealthy:
+                      type: boolean
+                    signerAddress:
+                      type: string
+                      nullable: true
+                    coldWithdrawMinKori:
+                      type: string
                     failures:
                       type: array
                       items:
                         type: string
                     trxBalanceSun:
                       type: string
-                    trxBalance:
-                      type: string
                     availableBandwidth:
                       type: integer
                     availableEnergy:
                       type: integer
                     minTrxSun:
-                      type: string
-                    minTrx:
                       type: string
                     minBandwidth:
                       type: integer

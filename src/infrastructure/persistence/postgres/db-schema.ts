@@ -101,6 +101,7 @@ export interface WithdrawalApprovalsTable {
   withdraw_id: string;
   admin_id: string;
   actor_type: 'admin' | 'system';
+  reason_code: 'manual_review_passed' | 'high_value_verified' | 'trusted_destination_verified' | 'account_activity_verified' | 'ops_override';
   note: string | null;
   created_at: string;
 }
@@ -254,6 +255,7 @@ export interface LedgerJournalsTable {
   journal_type: string;
   reference_type: string;
   reference_id: string;
+  currency_code: string;
   description: string | null;
   created_at: string;
 }
@@ -265,6 +267,40 @@ export interface LedgerPostingsTable {
   entry_side: 'debit' | 'credit';
   amount: string;
   created_at: string;
+}
+
+export interface NetworkFeeReceiptsTable {
+  fee_receipt_id: string;
+  reference_type: 'withdrawal' | 'sweep';
+  reference_id: string;
+  tx_hash: string;
+  currency_code: 'TRX';
+  fee_sun: string;
+  energy_used: number;
+  bandwidth_used: number;
+  confirmed_at: string;
+  created_at: string;
+}
+
+export interface OutboxEventsTable {
+  outbox_event_id: string;
+  event_type: string;
+  aggregate_type: string;
+  aggregate_id: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'published' | 'dead_lettered';
+  attempts: number;
+  available_at: string;
+  processing_started_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  published_at: string | null;
+  dead_lettered_at: string | null;
+  dead_letter_acknowledged_at: string | null;
+  dead_letter_acknowledged_by: string | null;
+  dead_letter_note: string | null;
+  dead_letter_category: 'external_dependency' | 'validation' | 'state_conflict' | 'network' | 'unknown' | null;
+  incident_ref: string | null;
 }
 
 export interface KorionDatabase {
@@ -289,4 +325,6 @@ export interface KorionDatabase {
   ledger_accounts: LedgerAccountsTable;
   ledger_journals: LedgerJournalsTable;
   ledger_postings: LedgerPostingsTable;
+  network_fee_receipts: NetworkFeeReceiptsTable;
+  outbox_events: OutboxEventsTable;
 }

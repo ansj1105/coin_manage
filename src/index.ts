@@ -44,6 +44,8 @@ if (env.singletonWorkersEnabled) {
     deps.alertWorker.start();
   }
 
+  deps.outboxPublisherWorker.start();
+
   if (env.alertMonitor.enabled) {
     deps.externalAlertMonitorWorker.start();
   }

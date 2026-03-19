@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { BroadcastRequest, TronReceiptStatus } from './tron-client.js';
-import type { ResourceDelegationRequest, TronGateway, TronResourceType } from '../application/ports/tron-gateway.js';
+import type {
+  ResourceDelegationRequest,
+  TronGateway,
+  TronResourceType,
+  TronTransactionReceipt
+} from '../application/ports/tron-gateway.js';
 
 export class MockTronClient implements TronGateway {
   private readonly delegatedResources = new Map<string, bigint>();
@@ -27,13 +32,17 @@ export class MockTronClient implements TronGateway {
   }
 
   async getTransactionReceipt(txHash: string): Promise<TronReceiptStatus> {
+    return (await this.getTransactionReceiptDetails(txHash)).status;
+  }
+
+  async getTransactionReceiptDetails(txHash: string): Promise<TronTransactionReceipt> {
     if (txHash.startsWith('pending-')) {
-      return 'pending';
+      return { status: 'pending', feeSun: 0n, energyUsed: 0, bandwidthUsed: 0 };
     }
     if (txHash.startsWith('failed-')) {
-      return 'failed';
+      return { status: 'failed', feeSun: 1_500_000n, energyUsed: 5000, bandwidthUsed: 350 };
     }
-    return 'confirmed';
+    return { status: 'confirmed', feeSun: 1_500_000n, energyUsed: 5000, bandwidthUsed: 350 };
   }
 
   async getAccountResources(): Promise<{

@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 
+export const withdrawApprovalReasonCodeSchema = z.enum([
+  'manual_review_passed',
+  'high_value_verified',
+  'trusted_destination_verified',
+  'account_activity_verified',
+  'ops_override'
+]);
+
 export const withdrawRequestSchema = z
   .object({
     userId: z.string().min(1).optional(),
@@ -16,12 +24,19 @@ export const withdrawRequestSchema = z
 
 export const withdrawApproveSchema = z.object({
   adminId: z.string().min(1).optional(),
+  reasonCode: withdrawApprovalReasonCodeSchema.optional(),
   note: z.string().max(500).optional()
 });
 
 export const withdrawExternalAuthConfirmSchema = z.object({
   provider: z.string().min(1).max(64),
   requestId: z.string().min(1).max(128),
+  actorId: z.string().min(1).max(64).optional()
+});
+
+export const withdrawOfflineSubmitSchema = z.object({
+  txHash: z.string().min(8).max(128),
+  note: z.string().max(500).optional(),
   actorId: z.string().min(1).max(64).optional()
 });
 

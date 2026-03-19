@@ -3,7 +3,13 @@ import { DomainError } from '../../domain/errors/domain-error.js';
 import { env } from '../../config/env.js';
 import { getBlockchainNetworkConfig } from '../../config/blockchain-networks.js';
 import { getEffectiveKoriTokenContractAddress, getEffectiveTronApiUrl } from '../../config/runtime-settings.js';
-import type { BroadcastRequest, ResourceDelegationRequest, TronGateway, TronResourceType } from '../../application/ports/tron-gateway.js';
+import type {
+  BroadcastRequest,
+  ResourceDelegationRequest,
+  TronGateway,
+  TronResourceType,
+  TronTransactionReceipt
+} from '../../application/ports/tron-gateway.js';
 
 const TRC20_ABI = [
   {
@@ -86,14 +92,25 @@ export class TronWebTrc20Gateway implements TronGateway {
   }
 
   async getTransactionReceipt(txHash: string): Promise<'pending' | 'confirmed' | 'failed'> {
+    return (await this.getTransactionReceiptDetails(txHash)).status;
+  }
+
+  async getTransactionReceiptDetails(txHash: string): Promise<TronTransactionReceipt> {
     const info = await this.createTronWeb(getEffectiveTronApiUrl()).trx.getTransactionInfo(txHash);
     if (!info || Object.keys(info).length === 0) {
-      return 'pending';
+      return {
+        status: 'pending',
+        feeSun: 0n,
+        energyUsed: 0,
+        bandwidthUsed: 0
+      };
     }
-    if (info.result === 'FAILED') {
-      return 'failed';
-    }
-    return 'confirmed';
+    return {
+      status: info.result === 'FAILED' ? 'failed' : 'confirmed',
+      feeSun: BigInt(info.fee ?? 0),
+      energyUsed: Number(info.receipt?.energy_usage_total ?? 0),
+      bandwidthUsed: Number(info.receipt?.net_usage ?? 0)
+    };
   }
 
   async getAccountResources(address: string, network?: 'mainnet' | 'testnet'): Promise<{

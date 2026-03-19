@@ -12,6 +12,13 @@ class RetryableWithdrawDispatchError extends Error {
   }
 }
 
+class ManualSigningRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ManualSigningRequiredError';
+  }
+}
+
 export class WithdrawDispatchWorker {
   constructor(
     private readonly ledger: LedgerRepository,
@@ -105,6 +112,10 @@ export class WithdrawDispatchWorker {
     const readiness = await this.withdrawGuardService.getHotWalletReadiness();
     if (readiness.ready) {
       return;
+    }
+
+    if (readiness.failures.includes('offline_signing_required')) {
+      throw new ManualSigningRequiredError('withdrawal requires offline signing');
     }
 
     await this.alertService.notifyWithdrawalResourceLow({

@@ -1,15 +1,19 @@
 import { formatKoriAmount, parseKoriAmount } from '../../domain/value-objects/money.js';
 import { buildWithdrawalStateChangedContract } from '../../contracts/ledger-contracts.js';
+import type { WithdrawBridgeStateResponseContract } from '../../contracts/withdraw-bridge-contracts.js';
 import { env } from '../../config/env.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
 import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
+import type { WithdrawalSigner } from '../ports/withdrawal-signer.js';
 import type { ExternalWithdrawalSyncClient } from '../ports/external-withdrawal-sync-client.js';
 import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 import { WithdrawGuardService } from './withdraw-guard-service.js';
 import type { WithdrawPolicyService } from './withdraw-policy-service.js';
+import { mapWithdrawalToSyncStatus } from '../../domain/ledger/withdraw-sync-status.js';
+import { DomainError } from '../../domain/errors/domain-error.js';
 
 export class WithdrawService {
   constructor(
@@ -21,7 +25,8 @@ export class WithdrawService {
     private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
     private readonly withdrawGuardService = new WithdrawGuardService(tronGateway),
     private readonly withdrawPolicyService?: WithdrawPolicyService,
-    private readonly externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient
+    private readonly externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient,
+    private readonly withdrawalSigner?: WithdrawalSigner
   ) {}
 
   async request(input: {
@@ -43,7 +48,8 @@ export class WithdrawService {
     });
     await this.withdrawGuardService.assertRequestAllowed({
       toAddress: input.toAddress,
-      walletAddress: input.walletAddress
+      walletAddress: input.walletAddress,
+      amount: parseKoriAmount(input.amountKori)
     });
     const riskAssessment = this.assessRisk(input);
     const result = await this.ledger.requestWithdrawal({
@@ -113,11 +119,23 @@ export class WithdrawService {
 
   async approve(
     withdrawalId: string,
-    input: { adminId?: string; actorType?: 'admin' | 'system'; note?: string } = {}
+    input: {
+      adminId?: string;
+      actorType?: 'admin' | 'system';
+      reasonCode?:
+        | 'manual_review_passed'
+        | 'high_value_verified'
+        | 'trusted_destination_verified'
+        | 'account_activity_verified'
+        | 'ops_override';
+      note?: string;
+    } = {}
   ) {
+    const reasonCode = input.reasonCode ?? 'manual_review_passed';
     const result = await this.ledger.approveWithdrawal(withdrawalId, {
       adminId: input.adminId ?? 'admin-unknown',
       actorType: input.actorType ?? 'admin',
+      reasonCode,
       note: input.note
     });
     await this.publishWithdrawalStateChange(result.withdrawal, result.approval.createdAt);
@@ -128,6 +146,7 @@ export class WithdrawService {
       actorType: input.actorType ?? 'admin',
       actorId: input.adminId ?? 'admin-unknown',
       metadata: {
+        reasonCode,
         note: input.note ?? '',
         approvalCount: result.withdrawal.approvalCount.toString(),
         requiredApprovals: result.withdrawal.requiredApprovals.toString()
@@ -152,10 +171,15 @@ export class WithdrawService {
     }
 
     await this.withdrawGuardService.assertBroadcastAllowed({
-      toAddress: current.toAddress
+      toAddress: current.toAddress,
+      amount: current.amount
     });
 
-    const { txHash } = await this.tronGateway.broadcastTransfer({
+    const signer = this.withdrawalSigner ?? {
+      broadcastWithdrawal: (request: { toAddress: string; amount: bigint }) => this.tronGateway.broadcastTransfer(request)
+    };
+    const { txHash } = await signer.broadcastWithdrawal({
+      withdrawalId,
       toAddress: current.toAddress,
       amount: current.amount
     });
@@ -175,8 +199,11 @@ export class WithdrawService {
     return updated;
   }
 
-  async confirm(withdrawalId: string) {
-    const updated = await this.ledger.confirmWithdrawal(withdrawalId);
+  async confirm(
+    withdrawalId: string,
+    input?: { networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } }
+  ) {
+    const updated = await this.ledger.confirmWithdrawal(withdrawalId, input);
     await this.publishWithdrawalStateChange(updated, new Date().toISOString());
     await this.ledger.appendAuditLog({
       entityType: 'withdrawal',
@@ -209,6 +236,70 @@ export class WithdrawService {
 
   async get(withdrawalId: string) {
     return this.ledger.getWithdrawal(withdrawalId);
+  }
+
+  async listOfflineSigningPending() {
+    const withdrawals = await this.ledger.listWithdrawalsByStatuses(['ADMIN_APPROVED']);
+    return withdrawals.filter((withdrawal) => this.withdrawGuardService.requiresOfflineSigning(withdrawal.amount));
+  }
+
+  async submitOfflineBroadcast(
+    withdrawalId: string,
+    input: { txHash: string; note?: string; actorId?: string }
+  ) {
+    const current = await this.ledger.getWithdrawal(withdrawalId);
+    if (!current) {
+      return undefined;
+    }
+    if (current.status !== 'ADMIN_APPROVED') {
+      throw new DomainError(409, 'WITHDRAW_INVALID_STATE', `withdrawal is not dispatchable in state ${current.status}`);
+    }
+    if (!this.withdrawGuardService.requiresOfflineSigning(current.amount)) {
+      throw new DomainError(409, 'WITHDRAW_OFFLINE_SIGN_NOT_REQUIRED', 'withdrawal does not require offline signing');
+    }
+
+    const updated = await this.ledger.broadcastWithdrawal(withdrawalId, input.txHash);
+    await this.publishWithdrawalStateChange(updated, new Date().toISOString());
+    await this.ledger.appendAuditLog({
+      entityType: 'withdrawal',
+      entityId: withdrawalId,
+      action: 'withdraw.broadcast.offline_submitted',
+      actorType: 'admin',
+      actorId: input.actorId ?? 'admin-unknown',
+      metadata: {
+        txHash: input.txHash,
+        note: input.note ?? ''
+      }
+    });
+    return updated;
+  }
+
+  async getFoxyaPollingState(
+    withdrawalId: string
+  ): Promise<
+    | Omit<WithdrawBridgeStateResponseContract, 'schemaVersion'>
+    | undefined
+  > {
+    const withdrawal = await this.ledger.getWithdrawal(withdrawalId);
+    if (!withdrawal) {
+      return undefined;
+    }
+
+    return {
+      withdrawalId: withdrawal.withdrawalId,
+      externalTransferId: null,
+      status: mapWithdrawalToSyncStatus(withdrawal),
+      txHash: withdrawal.txHash ?? null,
+      failedReason: withdrawal.failReason ?? null,
+      updatedAt:
+        withdrawal.confirmedAt ??
+        withdrawal.failedAt ??
+        withdrawal.broadcastedAt ??
+        withdrawal.approvedAt ??
+        withdrawal.externalAuthConfirmedAt ??
+        withdrawal.reviewRequiredAt ??
+        withdrawal.createdAt
+    };
   }
 
   async listPendingApprovals() {
@@ -256,13 +347,20 @@ export class WithdrawService {
         continue;
       }
 
-      const receipt = await this.tronGateway.getTransactionReceipt(withdrawal.txHash);
-      if (receipt === 'confirmed') {
-        await this.confirm(withdrawal.withdrawalId);
+      const receipt = await this.tronGateway.getTransactionReceiptDetails(withdrawal.txHash);
+      if (receipt.status === 'confirmed') {
+        await this.confirm(withdrawal.withdrawalId, {
+          networkFee: {
+            txHash: withdrawal.txHash,
+            feeSun: receipt.feeSun,
+            energyUsed: receipt.energyUsed,
+            bandwidthUsed: receipt.bandwidthUsed
+          }
+        });
         confirmed.push(withdrawal.withdrawalId);
         continue;
       }
-      if (receipt === 'failed') {
+      if (receipt.status === 'failed') {
         await this.fail(withdrawal.withdrawalId, 'on-chain receipt reported failure');
         failed.push(withdrawal.withdrawalId);
         continue;
@@ -328,8 +426,6 @@ export class WithdrawService {
     withdrawal: Parameters<typeof buildWithdrawalStateChangedContract>[0],
     occurredAt: string
   ) {
-    this.eventPublisher.publish('withdrawal.state.changed', buildWithdrawalStateChangedContract(withdrawal, occurredAt));
-
     if (!this.externalWithdrawalSyncClient) {
       return;
     }

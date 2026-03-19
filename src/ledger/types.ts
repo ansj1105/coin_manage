@@ -96,6 +96,12 @@ export interface WithdrawalApproval {
   withdrawalId: string;
   adminId: string;
   actorType: 'admin' | 'system';
+  reasonCode:
+    | 'manual_review_passed'
+    | 'high_value_verified'
+    | 'trusted_destination_verified'
+    | 'account_activity_verified'
+    | 'ops_override';
   note?: string;
   createdAt: string;
 }
@@ -137,6 +143,75 @@ export interface SweepRecord {
   lastAttemptAt?: string;
   broadcastedAt?: string;
   confirmedAt?: string;
+}
+
+export interface NetworkFeeReceipt {
+  feeReceiptId: string;
+  referenceType: 'withdrawal' | 'sweep';
+  referenceId: string;
+  txHash: string;
+  currencyCode: 'TRX';
+  feeSun: bigint;
+  energyUsed: number;
+  bandwidthUsed: number;
+  confirmedAt: string;
+  createdAt: string;
+}
+
+export interface NetworkFeeDailySnapshot {
+  snapshotDate: string;
+  currencyCode: 'TRX';
+  ledgerFeeSun: bigint;
+  actualFeeSun: bigint;
+  gapFeeSun: bigint;
+  ledgerFeeCount: number;
+  actualFeeCount: number;
+  byReferenceType: {
+    withdrawal: {
+      ledgerFeeSun: bigint;
+      actualFeeSun: bigint;
+      ledgerFeeCount: number;
+      actualFeeCount: number;
+    };
+    sweep: {
+      ledgerFeeSun: bigint;
+      actualFeeSun: bigint;
+      ledgerFeeCount: number;
+      actualFeeCount: number;
+    };
+  };
+}
+
+export interface OutboxEvent {
+  outboxEventId: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'published' | 'dead_lettered';
+  attempts: number;
+  availableAt: string;
+  createdAt: string;
+  processingStartedAt?: string;
+  publishedAt?: string;
+  deadLetteredAt?: string;
+  deadLetterAcknowledgedAt?: string;
+  deadLetterAcknowledgedBy?: string;
+  deadLetterNote?: string;
+  deadLetterCategory?: 'external_dependency' | 'validation' | 'state_conflict' | 'network' | 'unknown';
+  incidentRef?: string;
+  lastError?: string;
+}
+
+export interface OutboxEventSummary {
+  pendingCount: number;
+  processingCount: number;
+  publishedCount: number;
+  deadLetteredCount: number;
+  deadLetterAcknowledgedCount: number;
+  deadLetterUnacknowledgedCount: number;
+  oldestPendingCreatedAt?: string;
+  oldestDeadLetteredAt?: string;
 }
 
 export interface LedgerSummary {

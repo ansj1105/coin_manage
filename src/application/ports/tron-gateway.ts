@@ -25,6 +25,13 @@ export interface ResourceDelegationRequest {
 
 export type TronReceiptStatus = 'pending' | 'confirmed' | 'failed';
 
+export interface TronTransactionReceipt {
+  status: TronReceiptStatus;
+  feeSun: bigint;
+  energyUsed: number;
+  bandwidthUsed: number;
+}
+
 export interface TronAccountResources {
   trxBalanceSun: bigint;
   energyLimit: number;
@@ -39,6 +46,7 @@ export interface TronGateway {
   delegateResource(request: ResourceDelegationRequest): Promise<{ txHash: string }>;
   undelegateResource(request: ResourceDelegationRequest): Promise<{ txHash: string }>;
   getTransactionReceipt(txHash: string): Promise<TronReceiptStatus>;
+  getTransactionReceiptDetails(txHash: string): Promise<TronTransactionReceipt>;
   getAccountResources(address: string, network?: BlockchainNetwork): Promise<TronAccountResources>;
   getCanDelegatedMaxSize(
     address: string,

@@ -3,7 +3,8 @@ import type { Kysely } from 'kysely';
 import type {
   CollectorRunRecord,
   MonitoringRepository,
-  StoredWalletMonitoringSnapshot
+  StoredWalletMonitoringSnapshot,
+  WalletMonitoringHistoryPoint
 } from '../../../application/ports/monitoring-repository.js';
 import type { KorionDatabase } from './db-schema.js';
 
@@ -145,6 +146,44 @@ export class PostgresMonitoringRepository implements MonitoringRepository {
       startedAt: row.started_at,
       finishedAt: row.finished_at,
       errorMessage: row.error_message ?? undefined
+    }));
+  }
+
+  async getWalletSnapshotHistory(input: {
+    walletCodes?: string[];
+    createdFrom?: string;
+    createdTo?: string;
+    limit?: number;
+  }): Promise<WalletMonitoringHistoryPoint[]> {
+    let query = this.db.selectFrom('wallet_monitor_history').selectAll();
+
+    if (input.walletCodes?.length) {
+      query = query.where('wallet_code', 'in', input.walletCodes);
+    }
+    if (input.createdFrom) {
+      query = query.where('created_at', '>=', input.createdFrom);
+    }
+    if (input.createdTo) {
+      query = query.where('created_at', '<=', input.createdTo);
+    }
+
+    const rows = await query.orderBy('created_at desc').limit(input.limit ?? 500).execute();
+    return rows.map((row) => ({
+      snapshotId: row.snapshot_id,
+      collectorName: row.collector_name,
+      walletCode: row.wallet_code,
+      address: row.address,
+      tokenSymbol: row.token_symbol,
+      tokenContractAddress: row.token_contract_address,
+      tokenBalance: row.token_balance,
+      tokenRawBalance: row.token_raw_balance,
+      tokenDecimals: row.token_decimals,
+      trxBalance: row.trx_balance,
+      trxRawBalance: row.trx_raw_balance,
+      fetchedAt: row.fetched_at,
+      status: row.status,
+      error: row.error_message ?? undefined,
+      createdAt: row.created_at
     }));
   }
 }

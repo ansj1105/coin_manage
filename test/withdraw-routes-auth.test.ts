@@ -22,6 +22,8 @@ const createTestRouter = () =>
       confirmExternalAuth: vi.fn(),
       broadcast: vi.fn(),
       confirm: vi.fn(),
+      listOfflineSigningPending: vi.fn().mockResolvedValue([]),
+      submitOfflineBroadcast: vi.fn(),
       listAddressPolicies: vi.fn().mockResolvedValue([]),
       upsertAddressPolicy: vi.fn(),
       deleteAddressPolicy: vi.fn(),

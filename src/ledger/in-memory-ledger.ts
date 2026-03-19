@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError } from '../core/domain-error.js';
 import { sumBigInt } from '../core/money.js';
+import { buildDepositStateChangedContract, buildWithdrawalStateChangedContract } from '../contracts/ledger-contracts.js';
 import type {
   Account,
   ApprovalDecisionResult,
@@ -9,6 +10,9 @@ import type {
   DepositApplyResult,
   LedgerSummary,
   LedgerTransaction,
+  NetworkFeeDailySnapshot,
+  NetworkFeeReceipt,
+  OutboxEvent,
   SweepRecord,
   TransferResult,
   TxJob,
@@ -54,6 +58,17 @@ export class InMemoryLedger {
   private readonly approvalsByWithdrawalId = new Map<string, WithdrawalApproval[]>();
   private readonly auditLogs = new Map<string, AuditLog>();
   private readonly sweepRecords = new Map<string, SweepRecord>();
+  private readonly networkFeeReceipts = new Map<string, NetworkFeeReceipt>();
+  private readonly networkFeeJournals = new Map<
+    string,
+    {
+      snapshotDate: string;
+      referenceType: 'withdrawal' | 'sweep';
+      feeSun: bigint;
+      createdAt: string;
+    }
+  >();
+  private readonly outboxEvents = new Map<string, OutboxEvent>();
 
   private lock: Promise<void> = Promise.resolve();
 
@@ -147,6 +162,8 @@ export class InMemoryLedger {
     userId: string;
     amount: bigint;
     txHash: string;
+    toAddress?: string;
+    walletAddress?: string;
     blockNumber: number;
     nowIso?: string;
   }): Promise<DepositApplyResult> {
@@ -183,6 +200,23 @@ export class InMemoryLedger {
       };
 
       this.depositsByTxHash.set(input.txHash, deposit);
+      this.enqueueOutboxEvent({
+        eventType: 'deposit.state.changed',
+        aggregateType: 'deposit',
+        aggregateId: deposit.depositId,
+        payload: buildDepositStateChangedContract({
+          depositId: deposit.depositId,
+          userId: deposit.userId,
+          walletAddress: input.walletAddress ?? input.toAddress ?? '',
+          txHash: deposit.txHash,
+          toAddress: input.toAddress ?? '',
+          status: deposit.status,
+          amount: deposit.amount,
+          blockNumber: deposit.blockNumber,
+          occurredAt: deposit.createdAt
+        }),
+        occurredAt: deposit.createdAt
+      });
       return { deposit: { ...deposit }, duplicated: false };
     });
   }
@@ -341,6 +375,13 @@ export class InMemoryLedger {
       this.withdrawals.set(withdrawal.withdrawalId, withdrawal);
       this.withdrawalByIdempotencyKey.set(input.idempotencyKey, withdrawal.withdrawalId);
       this.approvalsByWithdrawalId.set(withdrawal.withdrawalId, []);
+      this.enqueueOutboxEvent({
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawal.withdrawalId,
+        payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), withdrawal.createdAt),
+        occurredAt: withdrawal.createdAt
+      });
 
       return { withdrawal: this.cloneWithdrawal(withdrawal), duplicated: false };
     });
@@ -358,6 +399,13 @@ export class InMemoryLedger {
         withdrawal.externalAuthProvider = input.provider;
         withdrawal.externalAuthRequestId = input.requestId;
         withdrawal.externalAuthConfirmedAt = nowIso;
+        this.enqueueOutboxEvent({
+          eventType: 'withdrawal.state.changed',
+          aggregateType: 'withdrawal',
+          aggregateId: withdrawalId,
+          payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), nowIso),
+          occurredAt: nowIso
+        });
         return this.cloneWithdrawal(withdrawal);
       }
 
@@ -382,7 +430,12 @@ export class InMemoryLedger {
 
   async approveWithdrawal(
     withdrawalId: string,
-    input: { adminId: string; actorType: 'admin' | 'system'; note?: string },
+    input: {
+      adminId: string;
+      actorType: 'admin' | 'system';
+      reasonCode?: 'manual_review_passed' | 'high_value_verified' | 'trusted_destination_verified' | 'account_activity_verified' | 'ops_override';
+      note?: string;
+    },
     nowIso = new Date().toISOString()
   ): Promise<ApprovalDecisionResult> {
     return this.withLock(() => {
@@ -401,6 +454,7 @@ export class InMemoryLedger {
         withdrawalId,
         adminId: input.adminId,
         actorType: input.actorType,
+        reasonCode: input.reasonCode ?? 'manual_review_passed',
         note: input.note,
         createdAt: nowIso
       };
@@ -414,6 +468,13 @@ export class InMemoryLedger {
         withdrawal.status = 'ADMIN_APPROVED';
         withdrawal.approvedAt = nowIso;
       }
+      this.enqueueOutboxEvent({
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), approval.createdAt),
+        occurredAt: approval.createdAt
+      });
 
       return {
         withdrawal: this.cloneWithdrawal(withdrawal),
@@ -432,11 +493,22 @@ export class InMemoryLedger {
       withdrawal.status = 'TX_BROADCASTED';
       withdrawal.txHash = txHash;
       withdrawal.broadcastedAt = nowIso;
+      this.enqueueOutboxEvent({
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), nowIso),
+        occurredAt: nowIso
+      });
       return this.cloneWithdrawal(withdrawal);
     });
   }
 
-  async confirmWithdrawal(withdrawalId: string, nowIso = new Date().toISOString()): Promise<Withdrawal> {
+  async confirmWithdrawal(
+    withdrawalId: string,
+    input?: { networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso = new Date().toISOString()
+  ): Promise<Withdrawal> {
     return this.withLock(() => {
       const withdrawal = this.getMutableWithdrawal(withdrawalId);
       if (withdrawal.status !== 'TX_BROADCASTED') {
@@ -460,6 +532,34 @@ export class InMemoryLedger {
 
       withdrawal.status = 'COMPLETED';
       withdrawal.confirmedAt = nowIso;
+      if (input?.networkFee && withdrawal.txHash) {
+        const feeReceiptId = `${withdrawalId}:${withdrawal.txHash}`;
+        this.networkFeeReceipts.set(feeReceiptId, {
+          feeReceiptId,
+          referenceType: 'withdrawal',
+          referenceId: withdrawalId,
+          txHash: input.networkFee.txHash,
+          currencyCode: 'TRX',
+          feeSun: input.networkFee.feeSun,
+          energyUsed: input.networkFee.energyUsed,
+          bandwidthUsed: input.networkFee.bandwidthUsed,
+          confirmedAt: nowIso,
+          createdAt: nowIso
+        });
+        this.networkFeeJournals.set(feeReceiptId, {
+          snapshotDate: nowIso.slice(0, 10),
+          referenceType: 'withdrawal',
+          feeSun: input.networkFee.feeSun,
+          createdAt: nowIso
+        });
+      }
+      this.enqueueOutboxEvent({
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), nowIso),
+        occurredAt: nowIso
+      });
       return this.cloneWithdrawal(withdrawal);
     });
   }
@@ -489,6 +589,13 @@ export class InMemoryLedger {
       withdrawal.status = 'FAILED';
       withdrawal.failedAt = nowIso;
       withdrawal.failReason = reason;
+      this.enqueueOutboxEvent({
+        eventType: 'withdrawal.state.changed',
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        payload: buildWithdrawalStateChangedContract(this.cloneWithdrawal(withdrawal), nowIso),
+        occurredAt: nowIso
+      });
       return this.cloneWithdrawal(withdrawal);
     });
   }
@@ -496,6 +603,14 @@ export class InMemoryLedger {
   async getWithdrawal(withdrawalId: string): Promise<Withdrawal | undefined> {
     const withdrawal = this.withdrawals.get(withdrawalId);
     return withdrawal ? this.cloneWithdrawal(withdrawal) : undefined;
+  }
+
+  async listWithdrawalsByUser(userId: string, limit = 50): Promise<Withdrawal[]> {
+    return Array.from(this.withdrawals.values())
+      .filter((withdrawal) => withdrawal.userId === userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit)
+      .map((withdrawal) => this.cloneWithdrawal(withdrawal));
   }
 
   async listWithdrawalsByStatuses(statuses: WithdrawalStatus[]): Promise<Withdrawal[]> {
@@ -524,6 +639,27 @@ export class InMemoryLedger {
       )
       .filter((withdrawal) => new Date(withdrawal.createdAt).getTime() <= threshold)
       .map((withdrawal) => this.cloneWithdrawal(withdrawal));
+  }
+
+  async listDepositsByUser(userId: string, limit = 50): Promise<Deposit[]> {
+    return Array.from(this.depositsByTxHash.values())
+      .filter((deposit) => deposit.userId === userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit)
+      .map((deposit) => ({ ...deposit }));
+  }
+
+  async listTransactionsByUser(
+    userId: string,
+    input: { types?: LedgerTransaction['type'][]; limit?: number } = {}
+  ): Promise<LedgerTransaction[]> {
+    const typeSet = input.types ? new Set(input.types) : undefined;
+    return Array.from(this.transactions.values())
+      .filter((transaction) => transaction.userId === userId)
+      .filter((transaction) => (typeSet ? typeSet.has(transaction.type) : true))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, input.limit ?? 50)
+      .map((transaction) => ({ ...transaction }));
   }
 
   async enqueueJob(type: TxJob['type'], payload: Record<string, string>, nowIso = new Date().toISOString()): Promise<TxJob> {
@@ -621,12 +757,20 @@ export class InMemoryLedger {
   async listAuditLogs(input?: {
     entityType?: AuditLog['entityType'];
     entityId?: string;
+    actorId?: string;
+    action?: string;
+    createdFrom?: string;
+    createdTo?: string;
     limit?: number;
   }): Promise<AuditLog[]> {
     const limit = input?.limit ?? 100;
     return Array.from(this.auditLogs.values())
       .filter((log) => (input?.entityType ? log.entityType === input.entityType : true))
       .filter((log) => (input?.entityId ? log.entityId === input.entityId : true))
+      .filter((log) => (input?.actorId ? log.actorId === input.actorId : true))
+      .filter((log) => (input?.action ? log.action === input.action : true))
+      .filter((log) => (input?.createdFrom ? log.createdAt >= input.createdFrom : true))
+      .filter((log) => (input?.createdTo ? log.createdAt <= input.createdTo : true))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, limit)
       .map((log) => ({ ...log, metadata: { ...log.metadata } }));
@@ -724,15 +868,41 @@ export class InMemoryLedger {
     });
   }
 
-  async confirmSweep(sweepId: string, note?: string, nowIso = new Date().toISOString()): Promise<SweepRecord> {
+  async confirmSweep(
+    sweepId: string,
+    input?: string | { note?: string; networkFee?: { txHash: string; feeSun: bigint; energyUsed: number; bandwidthUsed: number } },
+    nowIso = new Date().toISOString()
+  ): Promise<SweepRecord> {
     return this.withLock(() => {
+      const payload = typeof input === 'string' ? { note: input } : input;
       const sweep = this.getMutableSweep(sweepId);
       if (!['planned', 'broadcasted'].includes(sweep.status)) {
         throw new DomainError(409, 'INVALID_STATE', 'sweep must be planned or broadcasted');
       }
       sweep.status = 'confirmed';
-      sweep.note = note ?? sweep.note;
+      sweep.note = payload?.note ?? sweep.note;
       sweep.confirmedAt = nowIso;
+      if (payload?.networkFee && sweep.txHash) {
+        const feeReceiptId = `${sweepId}:${sweep.txHash}`;
+        this.networkFeeReceipts.set(feeReceiptId, {
+          feeReceiptId,
+          referenceType: 'sweep',
+          referenceId: sweepId,
+          txHash: payload.networkFee.txHash,
+          currencyCode: 'TRX',
+          feeSun: payload.networkFee.feeSun,
+          energyUsed: payload.networkFee.energyUsed,
+          bandwidthUsed: payload.networkFee.bandwidthUsed,
+          confirmedAt: nowIso,
+          createdAt: nowIso
+        });
+        this.networkFeeJournals.set(feeReceiptId, {
+          snapshotDate: nowIso.slice(0, 10),
+          referenceType: 'sweep',
+          feeSun: payload.networkFee.feeSun,
+          createdAt: nowIso
+        });
+      }
       return this.cloneSweep(sweep);
     });
   }
@@ -747,6 +917,248 @@ export class InMemoryLedger {
       sweep.note = reason;
       sweep.confirmedAt = nowIso;
       return this.cloneSweep(sweep);
+    });
+  }
+
+  async listNetworkFeeReceipts(input: {
+    referenceType?: NetworkFeeReceipt['referenceType'];
+    referenceId?: string;
+    limit?: number;
+  } = {}): Promise<NetworkFeeReceipt[]> {
+    return Array.from(this.networkFeeReceipts.values())
+      .filter((item) => (input.referenceType ? item.referenceType === input.referenceType : true))
+      .filter((item) => (input.referenceId ? item.referenceId === input.referenceId : true))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, input.limit ?? 100)
+      .map((item) => ({ ...item }));
+  }
+
+  async listNetworkFeeDailySnapshots(input: { days?: number } = {}): Promise<NetworkFeeDailySnapshot[]> {
+    const dayLimit = input.days ?? 7;
+    const actualByDate = new Map<string, NetworkFeeDailySnapshot>();
+
+    const ensureSnapshot = (snapshotDate: string) => {
+      const existing = actualByDate.get(snapshotDate);
+      if (existing) {
+        return existing;
+      }
+      const created: NetworkFeeDailySnapshot = {
+        snapshotDate,
+        currencyCode: 'TRX',
+        ledgerFeeSun: 0n,
+        actualFeeSun: 0n,
+        gapFeeSun: 0n,
+        ledgerFeeCount: 0,
+        actualFeeCount: 0,
+        byReferenceType: {
+          withdrawal: {
+            ledgerFeeSun: 0n,
+            actualFeeSun: 0n,
+            ledgerFeeCount: 0,
+            actualFeeCount: 0
+          },
+          sweep: {
+            ledgerFeeSun: 0n,
+            actualFeeSun: 0n,
+            ledgerFeeCount: 0,
+            actualFeeCount: 0
+          }
+        }
+      };
+      actualByDate.set(snapshotDate, created);
+      return created;
+    };
+
+    for (const receipt of this.networkFeeReceipts.values()) {
+      const snapshot = ensureSnapshot(receipt.confirmedAt.slice(0, 10));
+      snapshot.actualFeeSun += receipt.feeSun;
+      snapshot.actualFeeCount += 1;
+      snapshot.byReferenceType[receipt.referenceType].actualFeeSun += receipt.feeSun;
+      snapshot.byReferenceType[receipt.referenceType].actualFeeCount += 1;
+    }
+
+    for (const journal of this.networkFeeJournals.values()) {
+      const snapshot = ensureSnapshot(journal.snapshotDate);
+      snapshot.ledgerFeeSun += journal.feeSun;
+      snapshot.ledgerFeeCount += 1;
+      snapshot.byReferenceType[journal.referenceType].ledgerFeeSun += journal.feeSun;
+      snapshot.byReferenceType[journal.referenceType].ledgerFeeCount += 1;
+    }
+
+    return Array.from(actualByDate.values())
+      .map((item) => ({
+        ...item,
+        gapFeeSun: item.actualFeeSun - item.ledgerFeeSun
+      }))
+      .sort((left, right) => right.snapshotDate.localeCompare(left.snapshotDate))
+      .slice(0, dayLimit);
+  }
+
+  async claimPendingOutboxEvents(limit: number, nowIso = new Date().toISOString()): Promise<OutboxEvent[]> {
+    return this.withLock(() => {
+      const claimed = Array.from(this.outboxEvents.values())
+        .filter((event) => event.status === 'pending' && event.availableAt <= nowIso)
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(0, limit);
+
+      for (const event of claimed) {
+        event.status = 'processing';
+        event.attempts += 1;
+        event.processingStartedAt = nowIso;
+      }
+
+      return claimed.map((event) => ({ ...event, payload: { ...event.payload } }));
+    });
+  }
+
+  async markOutboxEventPublished(outboxEventId: string, nowIso = new Date().toISOString()): Promise<void> {
+    await this.withLock(() => {
+      const event = this.outboxEvents.get(outboxEventId);
+      if (!event) {
+        return;
+      }
+      event.status = 'published';
+      event.processingStartedAt = undefined;
+      event.publishedAt = nowIso;
+      event.deadLetteredAt = undefined;
+      event.lastError = undefined;
+    });
+  }
+
+  async rescheduleOutboxEvent(outboxEventId: string, error: string, availableAt: string): Promise<void> {
+    await this.withLock(() => {
+      const event = this.outboxEvents.get(outboxEventId);
+      if (!event) {
+        return;
+      }
+      event.status = 'pending';
+      event.availableAt = availableAt;
+      event.processingStartedAt = undefined;
+      event.lastError = error;
+    });
+  }
+
+  async deadLetterOutboxEvent(outboxEventId: string, error: string, deadLetteredAt = new Date().toISOString()): Promise<void> {
+    await this.withLock(() => {
+      const event = this.outboxEvents.get(outboxEventId);
+      if (!event) {
+        return;
+      }
+      event.status = 'dead_lettered';
+      event.processingStartedAt = undefined;
+      event.deadLetteredAt = deadLetteredAt;
+      event.deadLetterAcknowledgedAt = undefined;
+      event.deadLetterAcknowledgedBy = undefined;
+      event.deadLetterNote = undefined;
+      event.deadLetterCategory = undefined;
+      event.incidentRef = undefined;
+      event.lastError = error;
+    });
+  }
+
+  async listOutboxEvents(input: { status?: OutboxEvent['status']; limit?: number } = {}): Promise<OutboxEvent[]> {
+    return Array.from(this.outboxEvents.values())
+      .filter((event) => (input.status ? event.status === input.status : true))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, input.limit ?? 100)
+      .map((event) => ({ ...event, payload: { ...event.payload } }));
+  }
+
+  async getOutboxEventSummary() {
+    const events = Array.from(this.outboxEvents.values());
+    return {
+      pendingCount: events.filter((event) => event.status === 'pending').length,
+      processingCount: events.filter((event) => event.status === 'processing').length,
+      publishedCount: events.filter((event) => event.status === 'published').length,
+      deadLetteredCount: events.filter((event) => event.status === 'dead_lettered').length,
+      deadLetterAcknowledgedCount: events.filter((event) => event.status === 'dead_lettered' && event.deadLetterAcknowledgedAt).length,
+      deadLetterUnacknowledgedCount: events.filter((event) => event.status === 'dead_lettered' && !event.deadLetterAcknowledgedAt).length,
+      oldestPendingCreatedAt: events
+        .filter((event) => event.status === 'pending')
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0]?.createdAt,
+      oldestDeadLetteredAt: events
+        .filter((event) => event.status === 'dead_lettered')
+        .sort((left, right) => (left.deadLetteredAt ?? '').localeCompare(right.deadLetteredAt ?? ''))[0]?.deadLetteredAt
+    };
+  }
+
+  async replayOutboxEvents(input: {
+    outboxEventIds?: string[];
+    status?: OutboxEvent['status'];
+    limit?: number;
+    nowIso?: string;
+  }): Promise<number> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    return this.withLock(() => {
+      const idSet = input.outboxEventIds ? new Set(input.outboxEventIds) : undefined;
+      const candidates = Array.from(this.outboxEvents.values())
+        .filter((event) => (input.status ? event.status === input.status : true))
+        .filter((event) => (idSet ? idSet.has(event.outboxEventId) : true))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(0, input.limit ?? (idSet?.size ?? 100));
+
+      for (const event of candidates) {
+        event.status = 'pending';
+        event.availableAt = nowIso;
+        event.processingStartedAt = undefined;
+        event.deadLetteredAt = undefined;
+        event.deadLetterAcknowledgedAt = undefined;
+        event.deadLetterAcknowledgedBy = undefined;
+        event.deadLetterNote = undefined;
+        event.deadLetterCategory = undefined;
+        event.incidentRef = undefined;
+      }
+
+      return candidates.length;
+    });
+  }
+
+  async recoverStaleProcessingOutboxEvents(timeoutSec: number, nowIso = new Date().toISOString()): Promise<number> {
+    const threshold = new Date(Date.parse(nowIso) - timeoutSec * 1000).toISOString();
+    return this.withLock(() => {
+      const candidates = Array.from(this.outboxEvents.values()).filter(
+        (event) => event.status === 'processing' && event.processingStartedAt && event.processingStartedAt <= threshold
+      );
+
+      for (const event of candidates) {
+        event.status = 'pending';
+        event.availableAt = nowIso;
+        event.processingStartedAt = undefined;
+        event.lastError = event.lastError ?? 'processing timeout recovered';
+      }
+
+      return candidates.length;
+    });
+  }
+
+  async acknowledgeDeadLetterOutboxEvents(input: {
+    outboxEventIds?: string[];
+    limit?: number;
+    actorId: string;
+    note?: string;
+    category?: OutboxEvent['deadLetterCategory'];
+    incidentRef?: string;
+    nowIso?: string;
+  }): Promise<number> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    return this.withLock(() => {
+      const idSet = input.outboxEventIds ? new Set(input.outboxEventIds) : undefined;
+      const candidates = Array.from(this.outboxEvents.values())
+        .filter((event) => event.status === 'dead_lettered')
+        .filter((event) => !event.deadLetterAcknowledgedAt)
+        .filter((event) => (idSet ? idSet.has(event.outboxEventId) : true))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(0, input.limit ?? (idSet?.size ?? 100));
+
+      for (const event of candidates) {
+        event.deadLetterAcknowledgedAt = nowIso;
+        event.deadLetterAcknowledgedBy = input.actorId;
+        event.deadLetterNote = input.note;
+        event.deadLetterCategory = input.category;
+        event.incidentRef = input.incidentRef;
+      }
+
+      return candidates.length;
     });
   }
 
@@ -838,6 +1250,33 @@ export class InMemoryLedger {
 
   private cloneSweep(sweep: SweepRecord): SweepRecord {
     return { ...sweep };
+  }
+
+  private enqueueOutboxEvent(input: {
+    eventType: string;
+    aggregateType: string;
+    aggregateId: string;
+    payload: Record<string, unknown>;
+    occurredAt: string;
+  }) {
+    const outboxEventId = randomUUID();
+    this.outboxEvents.set(outboxEventId, {
+      outboxEventId,
+      eventType: input.eventType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId,
+      payload: { ...input.payload },
+      status: 'pending',
+      attempts: 0,
+      availableAt: input.occurredAt,
+      createdAt: input.occurredAt,
+      processingStartedAt: undefined,
+      deadLetterAcknowledgedAt: undefined,
+      deadLetterAcknowledgedBy: undefined,
+      deadLetterNote: undefined,
+      deadLetterCategory: undefined,
+      incidentRef: undefined
+    });
   }
 
   private async withLock<T>(work: () => T): Promise<T> {

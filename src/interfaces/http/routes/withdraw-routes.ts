@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { WithdrawService } from '../../../application/services/withdraw-service.js';
 import { env } from '../../../config/env.js';
+import type { Withdrawal } from '../../../domain/ledger/types.js';
+import { mapWithdrawalDisplayStatus } from '../../../domain/ledger/withdraw-display-status.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { requireIdempotencyKey, zodToDomainError } from '../../../core/validation.js';
@@ -10,6 +12,7 @@ import {
   withdrawAddressPolicyUpsertSchema,
   withdrawApproveSchema,
   withdrawExternalAuthConfirmSchema,
+  withdrawOfflineSubmitSchema,
   withdrawRequestSchema
 } from '../schemas/withdraw-schemas.js';
 import {
@@ -22,6 +25,12 @@ type WithdrawRouteSecurityOptions = {
   requestApiKey?: string;
   adminApiKey?: string;
 };
+
+const serializeWithdrawal = (withdrawal: Withdrawal) => ({
+  ...withdrawal,
+  amount: formatKoriAmount(withdrawal.amount),
+  displayStatus: mapWithdrawalDisplayStatus(withdrawal)
+});
 
 export const createWithdrawRoutes = (
   withdrawService: WithdrawService,
@@ -62,10 +71,7 @@ export const createWithdrawRoutes = (
 
       res.status(result.duplicated ? 200 : 201).json({
         duplicated: result.duplicated,
-        withdrawal: {
-          ...result.withdrawal,
-          amount: formatKoriAmount(result.withdrawal.amount)
-        }
+        withdrawal: serializeWithdrawal(result.withdrawal)
       });
     } catch (error) {
       next(error);
@@ -77,8 +83,7 @@ export const createWithdrawRoutes = (
       const withdrawals = await withdrawService.listPendingApprovals();
       res.json({
         withdrawals: withdrawals.map((withdrawal) => ({
-          ...withdrawal,
-          amount: formatKoriAmount(withdrawal.amount)
+          ...serializeWithdrawal(withdrawal)
         }))
       });
     } catch (error) {
@@ -104,14 +109,12 @@ export const createWithdrawRoutes = (
 
       const result = await withdrawService.approve(req.params.withdrawalId, {
         adminId: readWithdrawAdminActorId(req) ?? parsed.data.adminId,
+        reasonCode: parsed.data.reasonCode,
         note: parsed.data.note
       });
       res.json({
         approval: result.approval,
-        withdrawal: {
-          ...result.withdrawal,
-          amount: formatKoriAmount(result.withdrawal.amount)
-        },
+        withdrawal: serializeWithdrawal(result.withdrawal),
         finalized: result.finalized
       });
     } catch (error) {
@@ -131,10 +134,7 @@ export const createWithdrawRoutes = (
         actorId: readWithdrawActorId(req) ?? parsed.data.actorId
       });
       res.json({
-        withdrawal: {
-          ...withdrawal,
-          amount: formatKoriAmount(withdrawal.amount)
-        }
+        withdrawal: serializeWithdrawal(withdrawal)
       });
     } catch (error) {
       next(error);
@@ -148,10 +148,7 @@ export const createWithdrawRoutes = (
         throw new DomainError(404, 'NOT_FOUND', 'withdrawal not found');
       }
       res.json({
-        withdrawal: {
-          ...withdrawal,
-          amount: formatKoriAmount(withdrawal.amount)
-        }
+        withdrawal: serializeWithdrawal(withdrawal)
       });
     } catch (error) {
       next(error);
@@ -162,10 +159,43 @@ export const createWithdrawRoutes = (
     try {
       const withdrawal = await withdrawService.confirm(req.params.withdrawalId);
       res.json({
-        withdrawal: {
-          ...withdrawal,
-          amount: formatKoriAmount(withdrawal.amount)
-        }
+        withdrawal: serializeWithdrawal(withdrawal)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/offline-pending', requireAdminApiKey, async (_req, res, next) => {
+    try {
+      const withdrawals = await withdrawService.listOfflineSigningPending();
+      res.json({
+        withdrawals: withdrawals.map((withdrawal) => ({
+          ...serializeWithdrawal(withdrawal)
+        }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/:withdrawalId/offline-submit', requireAdminApiKey, async (req, res, next) => {
+    try {
+      const parsed = withdrawOfflineSubmitSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+
+      const withdrawal = await withdrawService.submitOfflineBroadcast(req.params.withdrawalId, {
+        ...parsed.data,
+        actorId: readWithdrawAdminActorId(req) ?? readWithdrawActorId(req) ?? parsed.data.actorId
+      });
+      if (!withdrawal) {
+        throw new DomainError(404, 'NOT_FOUND', 'withdrawal not found');
+      }
+
+      res.json({
+        withdrawal: serializeWithdrawal(withdrawal)
       });
     } catch (error) {
       next(error);
@@ -233,10 +263,7 @@ export const createWithdrawRoutes = (
         throw new DomainError(404, 'NOT_FOUND', 'withdrawal not found');
       }
       res.json({
-        withdrawal: {
-          ...withdrawal,
-          amount: formatKoriAmount(withdrawal.amount)
-        }
+        withdrawal: serializeWithdrawal(withdrawal)
       });
     } catch (error) {
       next(error);

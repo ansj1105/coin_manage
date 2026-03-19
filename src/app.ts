@@ -8,6 +8,7 @@ import { createDepositRoutes } from './interfaces/http/routes/deposit-routes.js'
 import { createOnchainRoutes } from './interfaces/http/routes/onchain-routes.js';
 import { createSchedulerRoutes } from './interfaces/http/routes/scheduler-routes.js';
 import { createSystemRoutes } from './interfaces/http/routes/system-routes.js';
+import { createInternalWithdrawRoutes } from './interfaces/http/routes/internal-withdraw-routes.js';
 import { createWalletRoutes } from './interfaces/http/routes/wallet-routes.js';
 import { createWithdrawRoutes } from './interfaces/http/routes/withdraw-routes.js';
 import { createVirtualWalletRoutes } from './interfaces/http/routes/virtual-wallet-routes.js';
@@ -53,6 +54,12 @@ export const createApp = (deps: AppDependencies): express.Express => {
   app.use('/api/virtual-wallets', createVirtualWalletRoutes(deps.virtualWalletService));
   app.use('/api/wallets', createWalletRoutes(deps.walletService, deps.accountReconciliationService));
   app.use('/api/withdrawals', createWithdrawRoutes(deps.withdrawService));
+  app.use(
+    '/api/internal/withdrawals',
+    createInternalWithdrawRoutes(deps.withdrawService, {
+      internalApiKey: env.foxyaInternalWithdrawalApiKey
+    })
+  );
   app.use('/api/scheduler', createSchedulerRoutes(deps.schedulerService));
 
   app.use(notFoundHandler);

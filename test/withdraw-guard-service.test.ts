@@ -25,8 +25,10 @@ describe('WithdrawGuardService', () => {
   it('rejects managed destination wallets at request time', async () => {
     const service = new WithdrawGuardService(new MockTronGateway(), {
       tronGatewayMode: 'trc20',
+      signerMode: 'hot',
       hotWalletAddress: HOT_WALLET_ADDRESS,
       hotWalletPrivateKey: VALID_PRIVATE_KEY,
+      coldWithdrawMinAmount: 1_000_000_000n,
       minTrxSun: 5_000_000n,
       minBandwidth: 500,
       minEnergy: 10_000,
@@ -41,8 +43,10 @@ describe('WithdrawGuardService', () => {
   it('opens the request circuit when signer or resources are unhealthy', async () => {
     const service = new WithdrawGuardService(new LowResourceGateway(), {
       tronGatewayMode: 'trc20',
+      signerMode: 'hot',
       hotWalletAddress: HOT_WALLET_ADDRESS,
       hotWalletPrivateKey: VALID_PRIVATE_KEY,
+      coldWithdrawMinAmount: 1_000_000_000n,
       minTrxSun: 5_000_000n,
       minBandwidth: 500,
       minEnergy: 10_000,
@@ -57,8 +61,10 @@ describe('WithdrawGuardService', () => {
   it('reports signer mismatch in readiness', async () => {
     const service = new WithdrawGuardService(new MockTronGateway(), {
       tronGatewayMode: 'trc20',
+      signerMode: 'hot',
       hotWalletAddress: HOT_WALLET_ADDRESS,
       hotWalletPrivateKey: '1111111111111111111111111111111111111111111111111111111111111111',
+      coldWithdrawMinAmount: 1_000_000_000n,
       minTrxSun: 5_000_000n,
       minBandwidth: 500,
       minEnergy: 10_000,
@@ -68,5 +74,41 @@ describe('WithdrawGuardService', () => {
     const readiness = await service.getHotWalletReadiness();
     expect(readiness.ready).toBe(false);
     expect(readiness.failures).toContain('signer_unhealthy');
+  });
+
+  it('skips hot-wallet readiness checks for withdrawals routed to offline signing', async () => {
+    const service = new WithdrawGuardService(new LowResourceGateway(), {
+      tronGatewayMode: 'trc20',
+      signerMode: 'hybrid',
+      hotWalletAddress: HOT_WALLET_ADDRESS,
+      hotWalletPrivateKey: VALID_PRIVATE_KEY,
+      coldWithdrawMinAmount: 10_000_000n,
+      minTrxSun: 5_000_000n,
+      minBandwidth: 500,
+      minEnergy: 10_000,
+      restrictedDestinationAddresses: []
+    });
+
+    await expect(
+      service.assertRequestAllowed({ toAddress: VALID_TRON_ADDRESS, amount: 10_000_000n })
+    ).resolves.toBeUndefined();
+  });
+
+  it('blocks broadcast when offline signing is required', async () => {
+    const service = new WithdrawGuardService(new MockTronGateway(), {
+      tronGatewayMode: 'trc20',
+      signerMode: 'hybrid',
+      hotWalletAddress: HOT_WALLET_ADDRESS,
+      hotWalletPrivateKey: VALID_PRIVATE_KEY,
+      coldWithdrawMinAmount: 10_000_000n,
+      minTrxSun: 5_000_000n,
+      minBandwidth: 500,
+      minEnergy: 10_000,
+      restrictedDestinationAddresses: []
+    });
+
+    await expect(service.assertBroadcastAllowed({ toAddress: VALID_TRON_ADDRESS, amount: 10_000_000n })).rejects.toMatchObject({
+      code: 'WITHDRAW_OFFLINE_SIGN_REQUIRED'
+    } satisfies Partial<DomainError>);
   });
 });
