@@ -66,17 +66,14 @@ describe('sweep bot service', () => {
       })),
       failSweep: vi.fn()
     };
-    const foxyaWalletRepository = {
-      getWalletSignerByAddress: vi.fn(async () => ({
-        userId: 'user-1',
-        currencyId: 3,
-        address: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9i',
-        privateKey: 'test-deposit-wallet-private-key'
-      }))
-    };
     const tronGateway = {
-      broadcastTransfer: vi.fn(async () => ({ txHash: 'mock-sweep-tx-1' })),
       getTransactionReceipt: vi.fn(async () => 'confirmed' as const),
+      getTransactionReceiptDetails: vi.fn(async () => ({
+        status: 'confirmed' as const,
+        feeSun: 1000n,
+        energyUsed: 0,
+        bandwidthUsed: 0
+      })),
       getAccountResources: vi.fn(async () => ({
         trxBalanceSun: 100_000_000n,
         energyLimit: 100_000,
@@ -93,7 +90,10 @@ describe('sweep bot service', () => {
     const service = new SweepBotService(
       depositMonitorRepository,
       foxyaClient as any,
-      foxyaWalletRepository as any,
+      {
+        broadcastActivationReclaim: vi.fn(),
+        broadcastFoxyaSweep: vi.fn(async () => ({ txHash: 'mock-sweep-tx-1' }))
+      } as any,
       ledger,
       tronGateway as any,
       new AlertService(),
@@ -154,17 +154,14 @@ describe('sweep bot service', () => {
       registerDeposit: vi.fn(),
       completeDeposit: vi.fn()
     };
-    const foxyaWalletRepository = {
-      getWalletSignerByAddress: vi.fn(async () => ({
-        userId: 'user-2',
-        currencyId: 3,
-        address: 'TXnrtSwBizyb4R3AqZpVN5DkiFxFJk7U9j',
-        privateKey: 'test-deposit-wallet-private-key-2'
-      }))
-    };
     const tronGateway = {
-      broadcastTransfer: vi.fn(async () => ({ txHash: 'should-not-broadcast' })),
       getTransactionReceipt: vi.fn(async () => 'pending' as const),
+      getTransactionReceiptDetails: vi.fn(async () => ({
+        status: 'pending' as const,
+        feeSun: 0n,
+        energyUsed: 0,
+        bandwidthUsed: 0
+      })),
       getAccountResources: vi.fn(async () => ({
         trxBalanceSun: 1_000_000n,
         energyLimit: 1000,
@@ -181,7 +178,10 @@ describe('sweep bot service', () => {
     const service = new SweepBotService(
       depositMonitorRepository,
       foxyaClient as any,
-      foxyaWalletRepository as any,
+      {
+        broadcastActivationReclaim: vi.fn(),
+        broadcastFoxyaSweep: vi.fn(async () => ({ txHash: 'should-not-broadcast' }))
+      } as any,
       ledger,
       tronGateway as any,
       new AlertService(),

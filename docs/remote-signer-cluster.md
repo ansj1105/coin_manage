@@ -46,6 +46,18 @@ PORT=3000
 WITHDRAW_SIGNER_API_KEY=replace-with-shared-internal-key
 HOT_WALLET_ADDRESS=replace-with-hot-wallet-address
 HOT_WALLET_PRIVATE_KEY=replace-with-hot-wallet-private-key
+COIN_MANAGE_DB_HOST=coin-manage-postgres-host
+COIN_MANAGE_DB_PORT=5432
+COIN_MANAGE_DB_NAME=korion
+COIN_MANAGE_DB_USER=korion
+COIN_MANAGE_DB_PASSWORD=replace-with-db-password
+COIN_MANAGE_VIRTUAL_WALLET_ENCRYPTION_KEY=replace-with-virtual-wallet-key
+FOXYA_DB_HOST=foxya-db-host
+FOXYA_DB_PORT=5432
+FOXYA_DB_NAME=foxya
+FOXYA_DB_USER=foxya
+FOXYA_DB_PASSWORD=replace-with-db-password
+FOXYA_ENCRYPTION_KEY=replace-with-foxya-encryption-key
 TRON_API_URL=https://api.trongrid.io
 MAINNET_TRON_API_URL=https://api.trongrid.io
 TESTNET_TRON_API_URL=https://nile.trongrid.io
@@ -77,6 +89,6 @@ curl -sS \
 
 ## 현재 한계
 
-- 현재 `ledger-signer`는 hot-wallet 서명 경계만 담당한다.
-- `sweep`, `activation reclaim` 같은 per-wallet signer lookup은 아직 `coin_manage` 내부 저장소 의존이 남아 있다.
-- 다음 단계는 signer service가 `foxya user_wallets`, `coin_manage virtual_wallet_bindings`의 키 조회/복호화 책임까지 가져가는 것이다.
+- `ledger-signer`는 이제 hot-wallet 서명과 per-wallet 서명 경계를 모두 담당한다.
+- signer 서비스가 `coin_manage virtual_wallet_bindings`, `foxya user_wallets`를 직접 조회하므로 DB 자격 증명과 암호화 키가 별도로 필요하다.
+- 아직 HSM/MPC, signer HA, signer 전용 audit stream까지는 가지 않았다.

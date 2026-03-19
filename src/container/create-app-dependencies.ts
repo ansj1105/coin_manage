@@ -34,6 +34,7 @@ import { WithdrawPolicyService } from '../application/services/withdraw-policy-s
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
 import { HotWalletWithdrawalSigner } from '../infrastructure/blockchain/hot-wallet-withdrawal-signer.js';
+import { HttpPerWalletSigner } from '../infrastructure/integration/http-per-wallet-signer.js';
 import { HttpRemoteSigningTronGateway } from '../infrastructure/integration/http-remote-signing-tron-gateway.js';
 import { HttpWithdrawalSigner } from '../infrastructure/integration/http-withdrawal-signer.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
@@ -62,7 +63,9 @@ import { PostgresVirtualWalletRepository } from '../infrastructure/persistence/p
 import { createPostgresDb, createPostgresPool } from '../infrastructure/persistence/postgres/postgres-pool.js';
 import { BullmqWithdrawJobQueue } from '../infrastructure/queue/bullmq-withdraw-job-queue.js';
 import { AesGcmVirtualWalletKeyCipher } from '../infrastructure/security/virtual-wallet-key-cipher.js';
+import { LocalPerWalletSigner } from '../infrastructure/signing/local-per-wallet-signer.js';
 import type { BlockchainReader } from '../application/ports/blockchain-reader.js';
+import type { PerWalletSigner } from '../application/ports/per-wallet-signer.js';
 import type { TronGateway } from '../application/ports/tron-gateway.js';
 import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
 import type { WithdrawalSigner } from '../application/ports/withdrawal-signer.js';
@@ -156,6 +159,22 @@ const createWithdrawalSigner = (tronGateway: TronGateway, overrides: AppDependen
   }
 
   return new HotWalletWithdrawalSigner(tronGateway);
+};
+
+const createPerWalletSigner = (
+  virtualWalletRepository: PostgresVirtualWalletRepository | InMemoryVirtualWalletRepository,
+  foxyaWalletRepository: PostgresFoxyaWalletRepository | undefined,
+  tronGateway: TronGateway
+): PerWalletSigner => {
+  if (env.withdrawSignerBackend === 'remote') {
+    if (!env.withdrawSignerApiUrl) {
+      throw new Error('WITHDRAW_SIGNER_API_URL is required when WITHDRAW_SIGNER_BACKEND=remote');
+    }
+
+    return new HttpPerWalletSigner(env.withdrawSignerApiUrl, env.withdrawSignerApiKey);
+  }
+
+  return new LocalPerWalletSigner(virtualWalletRepository, foxyaWalletRepository, tronGateway);
 };
 
 const resolveFoxyaInternalWithdrawalApiKey = () => {
@@ -253,7 +272,13 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     alertService,
     env.activationGrantIntervalSec * 1000
   );
-  const activationReclaimService = new ActivationReclaimService(virtualWalletRepository, tronGateway, alertService);
+  const perWalletSigner = createPerWalletSigner(virtualWalletRepository, foxyaWalletRepository, tronGateway);
+  const activationReclaimService = new ActivationReclaimService(
+    virtualWalletRepository,
+    tronGateway,
+    perWalletSigner,
+    alertService
+  );
   const activationReclaimWorker = new ActivationReclaimWorker(
     activationReclaimService,
     alertService,
@@ -374,7 +399,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const sweepBotService = new SweepBotService(
     depositMonitorRepository,
     foxyaClient,
-    foxyaWalletRepository,
+    perWalletSigner,
     ledger,
     tronGateway,
     alertService

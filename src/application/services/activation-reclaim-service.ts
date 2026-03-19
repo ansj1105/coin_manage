@@ -1,5 +1,5 @@
-import { DomainError } from '../../domain/errors/domain-error.js';
 import { env } from '../../config/env.js';
+import type { PerWalletSigner } from '../ports/per-wallet-signer.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
 import type { VirtualWalletRepository } from '../ports/virtual-wallet-repository.js';
 import { AlertService } from './alert-service.js';
@@ -17,6 +17,7 @@ export class ActivationReclaimService {
   constructor(
     private readonly virtualWalletRepository: VirtualWalletRepository,
     private readonly tronGateway: TronGateway,
+    private readonly perWalletSigner: PerWalletSigner,
     private readonly alertService: AlertService,
     private readonly options: ActivationReclaimOptions = {
       enabled: env.activationReclaimEnabled,
@@ -58,29 +59,17 @@ export class ActivationReclaimService {
       }
 
       try {
-        const signer = await this.virtualWalletRepository.getWalletSignerByAddress({
-          address: binding.walletAddress,
-          currencyId: binding.currencyId,
-          network: binding.network
-        });
-        if (!signer?.privateKey) {
-          throw new DomainError(
-            500,
-            'VIRTUAL_WALLET_SIGNER_NOT_FOUND',
-            'virtual wallet signer is required for activation reclaim'
-          );
-        }
-
         await this.virtualWalletRepository.markActivationReclaimPending({
           virtualWalletId: binding.virtualWalletId
         });
 
-        const { txHash } = await this.tronGateway.broadcastNativeTransfer({
+        const { txHash } = await this.perWalletSigner.broadcastActivationReclaim({
+          virtualWalletId: binding.virtualWalletId,
+          walletAddress: binding.walletAddress,
+          currencyId: binding.currencyId,
           toAddress: binding.sweepTargetAddress,
-          amount: reclaimAmountSun,
+          amountSun: reclaimAmountSun,
           network: binding.network,
-          fromAddress: signer.address,
-          fromPrivateKey: signer.privateKey
         });
         await this.virtualWalletRepository.markActivationReclaimed({
           virtualWalletId: binding.virtualWalletId,

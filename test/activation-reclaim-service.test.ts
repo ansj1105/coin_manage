@@ -60,12 +60,21 @@ describe('activation reclaim service', () => {
       amountTrx: 1
     }).runCycle();
 
-    const result = await new ActivationReclaimService(repository, new MockTronGateway(), new AlertService(), {
-      enabled: true,
-      cycleLimit: 10,
-      amountTrx: 1,
-      minAvailableBandwidth: 300
-    }).runCycle();
+    const result = await new ActivationReclaimService(
+      repository,
+      new MockTronGateway(),
+      {
+        broadcastActivationReclaim: vi.fn(async () => ({ txHash: 'mock-native-1' })),
+        broadcastFoxyaSweep: vi.fn()
+      } as any,
+      new AlertService(),
+      {
+        enabled: true,
+        cycleLimit: 10,
+        amountTrx: 1,
+        minAvailableBandwidth: 300
+      }
+    ).runCycle();
 
     expect(result.skipped).toBe(false);
     if (result.skipped) {
@@ -92,12 +101,21 @@ describe('activation reclaim service', () => {
       amountTrx: 1
     }).runCycle();
 
-    const result = await new ActivationReclaimService(repository, new LowBandwidthTronGateway(), new AlertService(), {
-      enabled: true,
-      cycleLimit: 10,
-      amountTrx: 1,
-      minAvailableBandwidth: 300
-    }).runCycle();
+    const result = await new ActivationReclaimService(
+      repository,
+      new LowBandwidthTronGateway(),
+      {
+        broadcastActivationReclaim: vi.fn(async () => ({ txHash: 'mock-native-2' })),
+        broadcastFoxyaSweep: vi.fn()
+      } as any,
+      new AlertService(),
+      {
+        enabled: true,
+        cycleLimit: 10,
+        amountTrx: 1,
+        minAvailableBandwidth: 300
+      }
+    ).runCycle();
 
     expect(result.skipped).toBe(false);
     if (result.skipped) {

@@ -1,7 +1,7 @@
 import type { DepositMonitorRepository } from '../ports/deposit-monitor-repository.js';
 import type { ExternalDepositClient } from '../ports/external-deposit-client.js';
-import type { FoxyaWalletRepository } from '../ports/foxya-wallet-repository.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
+import type { PerWalletSigner } from '../ports/per-wallet-signer.js';
 import type { SweepRecord } from '../../domain/ledger/types.js';
 import type { TronGateway } from '../ports/tron-gateway.js';
 import { env } from '../../config/env.js';
@@ -36,14 +36,14 @@ export class SweepBotService {
   constructor(
     private readonly depositMonitorRepository: DepositMonitorRepository,
     private readonly foxyaClient: ExternalDepositClient | undefined,
-    private readonly foxyaWalletRepository: FoxyaWalletRepository | undefined,
+    private readonly perWalletSigner: PerWalletSigner,
     private readonly ledger: LedgerRepository,
     private readonly tronGateway: TronGateway,
     private readonly alertService: AlertService,
     private readonly enabled = env.sweepBotEnabled
   ) {
     this.status.enabled = this.enabled;
-    this.status.configured = Boolean(this.foxyaClient && this.foxyaWalletRepository);
+    this.status.configured = Boolean(this.foxyaClient);
   }
 
   getStatus(): SweepBotStatus {
@@ -54,7 +54,7 @@ export class SweepBotService {
     if (!this.enabled) {
       return { skipped: true, reason: 'sweep bot disabled' };
     }
-    if (!this.foxyaClient || !this.foxyaWalletRepository) {
+    if (!this.foxyaClient) {
       return { skipped: true, reason: 'foxya sweep dependencies are not configured' };
     }
     if (this.running) {
@@ -242,7 +242,7 @@ export class SweepBotService {
   }
 
   private async executeSweep(sweep: SweepRecord): Promise<SweepStageResult> {
-    if (!this.foxyaClient || !this.foxyaWalletRepository) {
+    if (!this.foxyaClient) {
       return 'skipped';
     }
 
@@ -256,17 +256,9 @@ export class SweepBotService {
       return 'skipped';
     }
 
-    const signer = await this.foxyaWalletRepository.getWalletSignerByAddress({
-      address: sweep.sourceAddress,
-      currencyId: sweep.currencyId ?? 0
-    });
-    if (!signer?.privateKey) {
-      return 'skipped';
-    }
-
     const network = sweep.network ?? 'mainnet';
     const attemptedSweep = await this.ledger.recordSweepAttempt(sweep.sweepId, 'attempted by sweep executor');
-    const resources = await this.tronGateway.getAccountResources(signer.address, network);
+    const resources = await this.tronGateway.getAccountResources(sweep.sourceAddress, network);
     const availableEnergy = Math.max(resources.energyLimit - resources.energyUsed, 0);
     const availableBandwidth = Math.max(resources.bandwidthLimit - resources.bandwidthUsed, 0);
     const trxBalance = Number(resources.trxBalanceSun) / 1_000_000;
@@ -303,12 +295,12 @@ export class SweepBotService {
     }
 
     try {
-      const { txHash } = await this.tronGateway.broadcastTransfer({
+      const { txHash } = await this.perWalletSigner.broadcastFoxyaSweep({
+        sourceAddress: sweep.sourceAddress,
+        currencyId: sweep.currencyId ?? 0,
         toAddress: sweep.targetAddress,
-        amount: sweep.amount,
-        network,
-        fromAddress: signer.address,
-        fromPrivateKey: signer.privateKey
+        amountSun: sweep.amount,
+        network
       });
       await this.foxyaClient.submitSweep(depositId, txHash);
       await this.ledger.markSweepBroadcasted(sweep.sweepId, txHash, 'broadcasted by sweep executor');
