@@ -19,7 +19,7 @@ describe('http withdrawal signer', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const signer = new HttpWithdrawalSigner('http://withdraw-signer/api/internal/signer/withdrawals', 'signer-secret');
+    const signer = new HttpWithdrawalSigner('http://withdraw-signer/api/internal/signer', 'signer-secret');
     const result = await signer.broadcastWithdrawal({
       withdrawalId: 'wd-1',
       toAddress: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',

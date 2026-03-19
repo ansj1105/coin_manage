@@ -1,0 +1,15 @@
+services:
+  app-api:
+    environment:
+      WITHDRAW_SIGNER_BACKEND: remote
+      WITHDRAW_SIGNER_API_URL: ${WITHDRAW_SIGNER_API_URL:-http://ledger-signer:3000/api/internal/signer}
+
+  app-withdraw-worker:
+    environment:
+      WITHDRAW_SIGNER_BACKEND: remote
+      WITHDRAW_SIGNER_API_URL: ${WITHDRAW_SIGNER_API_URL:-http://ledger-signer:3000/api/internal/signer}
+
+  app-ops:
+    environment:
+      WITHDRAW_SIGNER_BACKEND: remote
+      WITHDRAW_SIGNER_API_URL: ${WITHDRAW_SIGNER_API_URL:-http://ledger-signer:3000/api/internal/signer}

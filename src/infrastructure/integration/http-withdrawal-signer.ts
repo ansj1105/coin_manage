@@ -13,7 +13,7 @@ export class HttpWithdrawalSigner implements WithdrawalSigner {
   ) {}
 
   async broadcastWithdrawal(request: WithdrawalSigningRequest): Promise<{ txHash: string }> {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/${request.withdrawalId}/broadcast`, {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/withdrawals/${request.withdrawalId}/broadcast`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
