@@ -34,6 +34,7 @@ import { WithdrawPolicyService } from '../application/services/withdraw-policy-s
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
 import { HotWalletWithdrawalSigner } from '../infrastructure/blockchain/hot-wallet-withdrawal-signer.js';
+import { HttpWithdrawalSigner } from '../infrastructure/integration/http-withdrawal-signer.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
 import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-event-reader.js';
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
@@ -63,6 +64,7 @@ import { AesGcmVirtualWalletKeyCipher } from '../infrastructure/security/virtual
 import type { BlockchainReader } from '../application/ports/blockchain-reader.js';
 import type { TronGateway } from '../application/ports/tron-gateway.js';
 import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
+import type { WithdrawalSigner } from '../application/ports/withdrawal-signer.js';
 import type { AppDependencies } from './app-dependencies.js';
 import { Pool } from 'pg';
 
@@ -70,6 +72,7 @@ type AppDependencyOverrides = {
   tronGateway?: TronGateway;
   blockchainReader?: BlockchainReader;
   externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient;
+  withdrawalSigner?: WithdrawalSigner;
 };
 
 const createPersistence = () => {
@@ -128,6 +131,22 @@ const resolveFoxyaInternalWithdrawalApiUrl = () => {
   }
 
   return env.foxyaInternalApiUrl.replace(/\/deposits\/?$/, '/withdrawals');
+};
+
+const createWithdrawalSigner = (tronGateway: TronGateway, overrides: AppDependencyOverrides) => {
+  if (overrides.withdrawalSigner) {
+    return overrides.withdrawalSigner;
+  }
+
+  if (env.withdrawSignerBackend === 'remote') {
+    if (!env.withdrawSignerApiUrl) {
+      throw new Error('WITHDRAW_SIGNER_API_URL is required when WITHDRAW_SIGNER_BACKEND=remote');
+    }
+
+    return new HttpWithdrawalSigner(env.withdrawSignerApiUrl, env.withdrawSignerApiKey);
+  }
+
+  return new HotWalletWithdrawalSigner(tronGateway);
 };
 
 const resolveFoxyaInternalWithdrawalApiKey = () => {
@@ -265,7 +284,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const walletService = new WalletService(ledger, eventPublisher);
   const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
   const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
-  const withdrawalSigner = new HotWalletWithdrawalSigner(tronGateway);
+  const withdrawalSigner = createWithdrawalSigner(tronGateway, overrides);
   const withdrawDispatchWorker = new WithdrawDispatchWorker(
     ledger,
     undefined,
@@ -408,6 +427,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     accountReconciliationService,
     withdrawPolicyService,
     withdrawGuardService,
+    withdrawalSigner,
     withdrawService,
     withdrawDispatchWorker,
     schedulerService,

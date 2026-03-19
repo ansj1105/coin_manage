@@ -204,8 +204,10 @@ export const buildSystemStatusResponse = (
       jwtConfigured: !PLACEHOLDER_SECRETS.has(env.jwtSecret),
       hotWalletPrivateKeyConfigured: !PLACEHOLDER_SECRETS.has(env.hotWalletPrivateKey),
       withdrawSignerMode: env.withdrawSignerMode,
+      withdrawSignerBackend: env.withdrawSignerBackend,
       withdrawRequestApiKeyConfigured: Boolean(env.withdrawRequestApiKey),
       withdrawAdminApiKeyConfigured: Boolean(env.withdrawAdminApiKey),
+      withdrawSignerApiKeyConfigured: Boolean(env.withdrawSignerApiKey),
       secretSources: {
         jwt: hasAsmSecretBinding('JWT_SECRET') ? 'asm' : 'env',
         hotWalletPrivateKey: hasAsmSecretBinding('HOT_WALLET_PRIVATE_KEY') ? 'asm' : 'env',
@@ -218,7 +220,8 @@ export const buildSystemStatusResponse = (
               ? 'env'
               : 'unconfigured',
         foxyaEncryptionKey: hasAsmSecretBinding('FOXYA_ENCRYPTION_KEY') ? 'asm' : 'env',
-        virtualWalletEncryptionKey: hasAsmSecretBinding('VIRTUAL_WALLET_ENCRYPTION_KEY') ? 'asm' : 'env'
+        virtualWalletEncryptionKey: hasAsmSecretBinding('VIRTUAL_WALLET_ENCRYPTION_KEY') ? 'asm' : 'env',
+        withdrawSignerApiKey: 'env'
       }
     },
     sandbox: {

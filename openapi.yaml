@@ -1525,6 +1525,38 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
+  /api/internal/signer/withdrawals/{withdrawalId}/broadcast:
+    post:
+      summary: Broadcast a withdrawal through the dedicated signer service
+      parameters:
+        - in: path
+          name: withdrawalId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+          description: Required when withdraw signer API key protection is enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawSignerBroadcastRequest'
+      responses:
+        '200':
+          description: Withdrawal broadcast accepted by signer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawSignerBroadcastResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
   /api/withdrawals/policies/addresses:
     get:
       summary: List withdrawal destination address policies
@@ -2928,6 +2960,35 @@ components:
         incidentRef:
           type: string
           maxLength: 128
+    WithdrawSignerBroadcastRequest:
+      type: object
+      required: [schemaVersion, toAddress, amountSun]
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.withdraw-signer.v1']
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        amountSun:
+          type: string
+          pattern: '^\d+$'
+    WithdrawSignerBroadcastResponse:
+      type: object
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.withdraw-signer.v1']
+        withdrawalId:
+          type: string
+        txHash:
+          type: string
+        signerBackend:
+          type: string
+          enum: [local, remote]
+        broadcastedAt:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       properties:
@@ -3100,9 +3161,14 @@ components:
             withdrawSignerMode:
               type: string
               enum: [hot, offline_stub, hybrid]
+            withdrawSignerBackend:
+              type: string
+              enum: [local, remote]
             withdrawRequestApiKeyConfigured:
               type: boolean
             withdrawAdminApiKeyConfigured:
+              type: boolean
+            withdrawSignerApiKeyConfigured:
               type: boolean
         sandbox:
           type: object

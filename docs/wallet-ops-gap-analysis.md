@@ -100,7 +100,7 @@
 
 - 고도화된 이상거래 탐지의 외부 신호 연동
 - 운영 대시보드의 집계/가시화
-- signer service/HSM/MPC 수준 분리
+- signer service의 HSM/MPC 단계 고도화
 
 평가
 
@@ -187,14 +187,15 @@
 #### 부족한 점
 
 - hot wallet 단일 운영 의존도가 높다.
-- cold wallet 서명 체계가 없다.
-- 승인과 실제 서명 분리가 충분하지 않다.
+- cold wallet 서명 체계는 아직 수동 submit 중심이다.
+- signer service는 분리됐지만 HSM/MPC와 키 격리는 아직 최종형이 아니다.
 
 #### 구현 방향
 
 - hot wallet 일상 출금 한도 제한
 - 고액 출금은 cold queue로 분리
 - 장기적으로 signer service 분리 또는 HSM/MPC 검토
+- remote signer API와 메인 앱 signer client 분리
 
 ### 5. 장애 대응/운영성
 

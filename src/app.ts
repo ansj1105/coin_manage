@@ -9,6 +9,7 @@ import { createOnchainRoutes } from './interfaces/http/routes/onchain-routes.js'
 import { createSchedulerRoutes } from './interfaces/http/routes/scheduler-routes.js';
 import { createSystemRoutes } from './interfaces/http/routes/system-routes.js';
 import { createInternalWithdrawRoutes } from './interfaces/http/routes/internal-withdraw-routes.js';
+import { createInternalSignerRoutes } from './interfaces/http/routes/internal-signer-routes.js';
 import { createWalletRoutes } from './interfaces/http/routes/wallet-routes.js';
 import { createWithdrawRoutes } from './interfaces/http/routes/withdraw-routes.js';
 import { createVirtualWalletRoutes } from './interfaces/http/routes/virtual-wallet-routes.js';
@@ -58,6 +59,13 @@ export const createApp = (deps: AppDependencies): express.Express => {
     '/api/internal/withdrawals',
     createInternalWithdrawRoutes(deps.withdrawService, {
       internalApiKey: env.foxyaInternalWithdrawalApiKey
+    })
+  );
+  app.use(
+    '/api/internal/signer',
+    createInternalSignerRoutes(deps.withdrawalSigner, {
+      internalApiKey: env.withdrawSignerApiKey,
+      signerBackend: env.withdrawSignerBackend
     })
   );
   app.use('/api/scheduler', createSchedulerRoutes(deps.schedulerService));

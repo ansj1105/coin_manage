@@ -32,6 +32,7 @@ import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatc
 import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
 import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
+import type { WithdrawalSigner } from '../application/ports/withdrawal-signer.js';
 
 export interface AppDependencies {
   ledger: LedgerRepository;
@@ -64,6 +65,7 @@ export interface AppDependencies {
   accountReconciliationService: AccountReconciliationService;
   withdrawPolicyService: WithdrawPolicyService;
   withdrawGuardService: WithdrawGuardService;
+  withdrawalSigner: WithdrawalSigner;
   withdrawService: WithdrawService;
   withdrawDispatchWorker: WithdrawDispatchWorker;
   schedulerService: SchedulerService;

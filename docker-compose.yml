@@ -28,6 +28,9 @@ x-app-environment: &app-environment
   HOT_WALLET_ADDRESS: ${HOT_WALLET_ADDRESS:-replace-with-hot-wallet-address}
   HOT_WALLET_PRIVATE_KEY: ${HOT_WALLET_PRIVATE_KEY:-replace-with-private-key}
   WITHDRAW_SIGNER_MODE: ${WITHDRAW_SIGNER_MODE:-hot}
+  WITHDRAW_SIGNER_BACKEND: ${WITHDRAW_SIGNER_BACKEND:-local}
+  WITHDRAW_SIGNER_API_URL: ${WITHDRAW_SIGNER_API_URL:-}
+  WITHDRAW_SIGNER_API_KEY: ${WITHDRAW_SIGNER_API_KEY:-}
   COLD_WITHDRAW_MIN_KORI: ${COLD_WITHDRAW_MIN_KORI:-100000}
   HOT_WALLET_PRIVATE_KEY_ASM_SECRET_ID: ${HOT_WALLET_PRIVATE_KEY_ASM_SECRET_ID:-}
   HOT_WALLET_PRIVATE_KEY_ASM_JSON_KEY: ${HOT_WALLET_PRIVATE_KEY_ASM_JSON_KEY:-}
@@ -244,6 +247,27 @@ services:
     networks:
       - default
       - shared-foxya
+    restart: unless-stopped
+
+  app-signer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-environment
+      HTTP_ENABLED: "true"
+      SINGLETON_WORKERS_ENABLED: "false"
+      WITHDRAW_QUEUE_WORKER_ENABLED: "false"
+      WITHDRAW_SIGNER_BACKEND: "local"
+    networks:
+      - default
     restart: unless-stopped
 
 volumes:
