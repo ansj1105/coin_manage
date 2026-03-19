@@ -111,6 +111,77 @@ describe('operations and control flows', () => {
     expect(approvals[1]?.reasonCode).toBe('manual_review_passed');
   });
 
+  it('marks first-time destinations as explicit low-risk review signals', async () => {
+    const request = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 25,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'risk-new-destination-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    expect(request.withdrawal.riskFlags).toContain('new_destination');
+    expect(request.withdrawal.riskLevel).toBe('low');
+    expect(request.withdrawal.requiredApprovals).toBe(1);
+  });
+
+  it('raises review severity for repeated failed destination retries', async () => {
+    const first = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 15,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'risk-failed-destination-1',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+    await deps.withdrawService.fail(first.withdrawal.withdrawalId, 'simulated on-chain failure');
+
+    const retried = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 15,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'risk-failed-destination-2',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    expect(retried.withdrawal.riskFlags).toContain('failed_destination_retry');
+    expect(retried.withdrawal.riskLevel).toBe('medium');
+    expect(retried.withdrawal.requiredApprovals).toBe(2);
+  });
+
+  it('raises review severity when the same user bursts multiple withdrawals within an hour', async () => {
+    const burstAddresses = [
+      'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      'TCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+      'TDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
+    ];
+
+    for (const [index, idempotencyKey] of ['risk-burst-1', 'risk-burst-2', 'risk-burst-3'].entries()) {
+      await deps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 10,
+        toAddress: burstAddresses[index]!,
+        idempotencyKey,
+        clientIp: '127.0.0.1',
+        deviceId: 'device-1'
+      });
+    }
+
+    const burst = await deps.withdrawService.request({
+      userId: 'user-1',
+      amountKori: 10,
+      toAddress: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB',
+      idempotencyKey: 'risk-burst-4',
+      clientIp: '127.0.0.1',
+      deviceId: 'device-1'
+    });
+
+    expect(burst.withdrawal.riskFlags).toContain('withdrawal_burst');
+    expect(burst.withdrawal.requiredApprovals).toBe(2);
+  });
+
   it('reflects completed withdrawals in ledger summary without counting them as active', async () => {
     const requested = await deps.withdrawService.request({
       userId: 'user-1',

@@ -51,7 +51,13 @@ export class WithdrawService {
       walletAddress: input.walletAddress,
       amount: parseKoriAmount(input.amountKori)
     });
-    const riskAssessment = this.assessRisk(input);
+    const riskAssessment = await this.assessRisk({
+      userId,
+      amountKori: input.amountKori,
+      toAddress: input.toAddress,
+      clientIp: input.clientIp,
+      deviceId: input.deviceId
+    });
     const result = await this.ledger.requestWithdrawal({
       userId,
       amount: parseKoriAmount(input.amountKori),
@@ -419,9 +425,19 @@ export class WithdrawService {
     }
   }
 
-  private assessRisk(input: { amountKori: number; clientIp?: string; deviceId?: string }) {
+  private async assessRisk(input: {
+    userId: string;
+    amountKori: number;
+    toAddress: string;
+    clientIp?: string;
+    deviceId?: string;
+  }) {
     const flags: string[] = [];
     let score = 0;
+    const now = Date.now();
+    const recentWithdrawals = await this.ledger.listWithdrawalsByUser(input.userId, 100);
+    const recentHourThreshold = new Date(now - 60 * 60 * 1000).toISOString();
+    const recentDayThreshold = new Date(now - 24 * 60 * 60 * 1000).toISOString();
 
     if (input.amountKori >= env.withdrawSingleLimitKori * 0.8) {
       flags.push('large_amount');
@@ -442,6 +458,34 @@ export class WithdrawService {
     if (!input.deviceId) {
       flags.push('missing_device');
       score += 20;
+    }
+
+    const priorDestinationWithdrawals = recentWithdrawals.filter((withdrawal) => withdrawal.toAddress === input.toAddress);
+    if (!priorDestinationWithdrawals.length) {
+      flags.push('new_destination');
+      score += 15;
+    }
+
+    const recentFailedDestinationCount = priorDestinationWithdrawals.filter(
+      (withdrawal) => withdrawal.status === 'FAILED' && withdrawal.createdAt >= recentDayThreshold
+    ).length;
+    if (recentFailedDestinationCount >= 1) {
+      flags.push('failed_destination_retry');
+      score += 40;
+    }
+
+    const recentFailedWithdrawalCount = recentWithdrawals.filter(
+      (withdrawal) => withdrawal.status === 'FAILED' && withdrawal.createdAt >= recentDayThreshold
+    ).length;
+    if (recentFailedWithdrawalCount >= 2) {
+      flags.push('repeated_recent_failures');
+      score += 25;
+    }
+
+    const rapidWithdrawalCount = recentWithdrawals.filter((withdrawal) => withdrawal.createdAt >= recentHourThreshold).length;
+    if (rapidWithdrawalCount >= 3) {
+      flags.push('withdrawal_burst');
+      score += 25;
     }
 
     const level = score >= 80 ? 'high' : score >= 40 ? 'medium' : 'low';
