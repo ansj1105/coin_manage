@@ -34,6 +34,7 @@ import { WithdrawPolicyService } from '../application/services/withdraw-policy-s
 import { WithdrawService } from '../application/services/withdraw-service.js';
 import { MockTronGateway } from '../infrastructure/blockchain/mock-tron-gateway.js';
 import { HotWalletWithdrawalSigner } from '../infrastructure/blockchain/hot-wallet-withdrawal-signer.js';
+import { HttpRemoteSigningTronGateway } from '../infrastructure/integration/http-remote-signing-tron-gateway.js';
 import { HttpWithdrawalSigner } from '../infrastructure/integration/http-withdrawal-signer.js';
 import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reader.js';
 import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-event-reader.js';
@@ -106,7 +107,15 @@ const createPersistence = () => {
 };
 
 const createTronGateway = () => {
-  return env.tronGatewayMode === 'trc20' ? new TronWebTrc20Gateway() : new MockTronGateway();
+  const baseGateway = env.tronGatewayMode === 'trc20' ? new TronWebTrc20Gateway() : new MockTronGateway();
+  if (env.withdrawSignerBackend !== 'remote') {
+    return baseGateway;
+  }
+  if (!env.withdrawSignerApiUrl) {
+    throw new Error('WITHDRAW_SIGNER_API_URL is required when WITHDRAW_SIGNER_BACKEND=remote');
+  }
+
+  return new HttpRemoteSigningTronGateway(env.withdrawSignerApiUrl, env.withdrawSignerApiKey, baseGateway);
 };
 
 const resolveFoxyaInternalWalletApiUrl = () => {
@@ -401,6 +410,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     depositMonitorRepository,
     alertMonitorStateRepository,
     eventPublisher,
+    tronGateway,
     alertService,
     withdrawJobQueue,
     activationGrantService,

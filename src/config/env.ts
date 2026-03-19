@@ -191,6 +191,7 @@ if (parsed.NODE_ENV === 'production') {
     throw new Error('JWT_SECRET is required in production');
   }
   if (
+    parsed.WITHDRAW_SIGNER_BACKEND !== 'remote' &&
     (!parsed.HOT_WALLET_PRIVATE_KEY || PLACEHOLDER_SECRETS.has(parsed.HOT_WALLET_PRIVATE_KEY)) &&
     !hasAsmBinding('HOT_WALLET_PRIVATE_KEY')
   ) {

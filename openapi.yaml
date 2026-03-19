@@ -1557,6 +1557,102 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
+  /api/internal/signer/tron/broadcast-transfer:
+    post:
+      summary: Broadcast a hot-wallet token transfer through the signer service
+      parameters:
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TronSignerBroadcastTransferRequest'
+      responses:
+        '200':
+          description: Token transfer broadcasted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TronSignerTxResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/internal/signer/tron/broadcast-native:
+    post:
+      summary: Broadcast a hot-wallet native TRX transfer through the signer service
+      parameters:
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TronSignerBroadcastNativeRequest'
+      responses:
+        '200':
+          description: Native transfer broadcasted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TronSignerTxResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/internal/signer/tron/delegate-resource:
+    post:
+      summary: Delegate hot-wallet resources through the signer service
+      parameters:
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TronSignerResourceRequest'
+      responses:
+        '200':
+          description: Resource delegation broadcasted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TronSignerTxResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/internal/signer/tron/undelegate-resource:
+    post:
+      summary: Undelegate hot-wallet resources through the signer service
+      parameters:
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TronSignerResourceRequest'
+      responses:
+        '200':
+          description: Resource undelegation broadcasted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TronSignerTxResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/withdrawals/policies/addresses:
     get:
       summary: List withdrawal destination address policies
@@ -2981,6 +3077,100 @@ components:
           enum: ['2026-03-19.withdraw-signer.v1']
         withdrawalId:
           type: string
+        txHash:
+          type: string
+        signerBackend:
+          type: string
+          enum: [local, remote]
+        broadcastedAt:
+          type: string
+          format: date-time
+    TronSignerBroadcastTransferRequest:
+      type: object
+      required: [schemaVersion, toAddress, amountSun]
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.tron-signer.v1']
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        amountSun:
+          type: string
+          pattern: '^\d+$'
+        network:
+          type: string
+          enum: [mainnet, testnet]
+          nullable: true
+        apiUrl:
+          type: string
+          format: uri
+          nullable: true
+        contractAddress:
+          type: string
+          nullable: true
+        fromAddress:
+          type: string
+          nullable: true
+    TronSignerBroadcastNativeRequest:
+      type: object
+      required: [schemaVersion, toAddress, amountSun]
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.tron-signer.v1']
+        toAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        amountSun:
+          type: string
+          pattern: '^\d+$'
+        network:
+          type: string
+          enum: [mainnet, testnet]
+          nullable: true
+        apiUrl:
+          type: string
+          format: uri
+          nullable: true
+        fromAddress:
+          type: string
+          nullable: true
+    TronSignerResourceRequest:
+      type: object
+      required: [schemaVersion, receiverAddress, amountSun, resource]
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.tron-signer.v1']
+        receiverAddress:
+          type: string
+          pattern: '^T[1-9A-HJ-NP-Za-km-z]{33}$'
+        amountSun:
+          type: string
+          pattern: '^\d+$'
+        resource:
+          type: string
+          enum: [BANDWIDTH, ENERGY]
+        network:
+          type: string
+          enum: [mainnet, testnet]
+          nullable: true
+        fromAddress:
+          type: string
+          nullable: true
+        lock:
+          type: boolean
+          nullable: true
+        lockPeriod:
+          type: integer
+          nullable: true
+    TronSignerTxResponse:
+      type: object
+      properties:
+        schemaVersion:
+          type: string
+          enum: ['2026-03-19.tron-signer.v1']
         txHash:
           type: string
         signerBackend:

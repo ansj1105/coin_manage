@@ -196,6 +196,7 @@
 - 고액 출금은 cold queue로 분리
 - 장기적으로 signer service 분리 또는 HSM/MPC 검토
 - remote signer API와 메인 앱 signer client 분리
+- hot-wallet native transfer, resource delegation도 같은 signer boundary로 통일
 
 ### 5. 장애 대응/운영성
 

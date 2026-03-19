@@ -32,6 +32,7 @@ import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatc
 import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
 import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
 import { WithdrawService } from '../application/services/withdraw-service.js';
+import type { TronGateway } from '../application/ports/tron-gateway.js';
 import type { WithdrawalSigner } from '../application/ports/withdrawal-signer.js';
 
 export interface AppDependencies {
@@ -50,6 +51,7 @@ export interface AppDependencies {
   externalAlertMonitorService: ExternalAlertMonitorService;
   externalAlertMonitorWorker: ExternalAlertMonitorWorker;
   systemMonitoringService: SystemMonitoringService;
+  tronGateway: TronGateway;
   onchainService: OnchainService;
   depositMonitorService: DepositMonitorService;
   depositMonitorWorker: DepositMonitorWorker;
