@@ -12,7 +12,7 @@ describe('outbox publisher worker', () => {
     const deps = createAppDependencies({
       tronGateway: new MockTronGateway()
     });
-    const publishSpy = vi.spyOn(deps.eventPublisher, 'publish');
+    const publishSpy = vi.spyOn(deps.eventPublisher, 'publishAsync');
 
     await deps.walletService.bindWalletAddress({
       userId: 'user-1',
@@ -36,7 +36,9 @@ describe('outbox publisher worker', () => {
     });
 
     expect(publishSpy).not.toHaveBeenCalledWith('deposit.state.changed', expect.anything());
-    expect(publishSpy).not.toHaveBeenCalledWith('withdrawal.state.changed', expect.anything());
+    expect(publishSpy).toHaveBeenCalledWith('withdrawal.state.changed', expect.objectContaining({
+      withdrawalId: request.withdrawal.withdrawalId
+    }));
 
     await deps.outboxPublisherWorker.runCycle();
 
@@ -64,11 +66,11 @@ describe('outbox publisher worker', () => {
 
     const publisher = new InMemoryEventPublisher();
     const publishSpy = vi
-      .spyOn(publisher, 'publish')
+      .spyOn(publisher, 'publishAsync')
       .mockImplementationOnce(() => {
         throw new Error('temporary publish failure');
       })
-      .mockImplementation(() => undefined);
+      .mockImplementation(async () => undefined);
 
     const worker = new OutboxPublisherWorker(ledger, publisher, {
       intervalMs: 1_000,
@@ -79,7 +81,7 @@ describe('outbox publisher worker', () => {
     });
 
     await worker.runCycle();
-    const pendingAfterFailure = await ledger.claimPendingOutboxEvents(10);
+    const pendingAfterFailure = await ledger.listOutboxEvents({ status: 'pending' });
     expect(pendingAfterFailure).toHaveLength(1);
 
     await ledger.rescheduleOutboxEvent(pendingAfterFailure[0]!.outboxEventId, '', new Date(0).toISOString());
@@ -105,7 +107,7 @@ describe('outbox publisher worker', () => {
     });
 
     const publisher = new InMemoryEventPublisher();
-    vi.spyOn(publisher, 'publish').mockImplementation(() => {
+    vi.spyOn(publisher, 'publishAsync').mockImplementation(async () => {
       throw new Error('permanent publish failure');
     });
 

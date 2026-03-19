@@ -30,6 +30,7 @@ import {
   networkFeeDailySnapshotsQuerySchema,
   networkFeeReceiptsQuerySchema,
   acknowledgeOutboxDeadLetterSchema,
+  eventConsumerStatusQuerySchema,
   outboxStatusQuerySchema,
   recoverOutboxProcessingSchema,
   replayOutboxSchema
@@ -579,6 +580,19 @@ export const createSystemRoutes = (
           incidentRef: parsed.data.incidentRef
         })
       );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/event-consumers', async (req, res, next) => {
+    try {
+      const parsed = eventConsumerStatusQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid event consumer query', parsed.error.flatten());
+      }
+
+      res.json(await operationsService.getEventConsumerStatus(parsed.data));
     } catch (error) {
       next(error);
     }

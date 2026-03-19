@@ -8,6 +8,9 @@ import type {
   AuditLog,
   Deposit,
   DepositApplyResult,
+  EventConsumerAttempt,
+  EventConsumerCheckpoint,
+  EventConsumerDeadLetter,
   LedgerSummary,
   LedgerTransaction,
   NetworkFeeDailySnapshot,
@@ -69,6 +72,9 @@ export class InMemoryLedger {
     }
   >();
   private readonly outboxEvents = new Map<string, OutboxEvent>();
+  private readonly eventConsumerAttempts = new Map<string, EventConsumerAttempt>();
+  private readonly eventConsumerDeadLetters = new Map<string, EventConsumerDeadLetter>();
+  private readonly eventConsumerCheckpoints = new Map<string, EventConsumerCheckpoint>();
 
   private lock: Promise<void> = Promise.resolve();
 
@@ -1159,6 +1165,117 @@ export class InMemoryLedger {
       }
 
       return candidates.length;
+    });
+  }
+
+  async appendEventConsumerAttempt(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    status: EventConsumerAttempt['status'];
+    attemptNumber: number;
+    aggregateId?: string;
+    errorMessage?: string;
+    durationMs: number;
+    nowIso?: string;
+  }): Promise<EventConsumerAttempt> {
+    return this.withLock(() => {
+      const attempt: EventConsumerAttempt = {
+        attemptId: randomUUID(),
+        eventKey: input.eventKey,
+        eventType: input.eventType,
+        consumerName: input.consumerName,
+        status: input.status,
+        attemptNumber: input.attemptNumber,
+        aggregateId: input.aggregateId,
+        errorMessage: input.errorMessage,
+        durationMs: input.durationMs,
+        createdAt: input.nowIso ?? new Date().toISOString()
+      };
+      this.eventConsumerAttempts.set(attempt.attemptId, attempt);
+      return { ...attempt };
+    });
+  }
+
+  async appendEventConsumerDeadLetter(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    aggregateId?: string;
+    payload: Record<string, unknown>;
+    errorMessage: string;
+    nowIso?: string;
+  }): Promise<EventConsumerDeadLetter> {
+    return this.withLock(() => {
+      const deadLetter: EventConsumerDeadLetter = {
+        deadLetterId: randomUUID(),
+        eventKey: input.eventKey,
+        eventType: input.eventType,
+        consumerName: input.consumerName,
+        aggregateId: input.aggregateId,
+        payload: { ...input.payload },
+        errorMessage: input.errorMessage,
+        failedAt: input.nowIso ?? new Date().toISOString()
+      };
+      this.eventConsumerDeadLetters.set(deadLetter.deadLetterId, deadLetter);
+      return { ...deadLetter, payload: { ...deadLetter.payload } };
+    });
+  }
+
+  async listEventConsumerAttempts(input: {
+    consumerName?: string;
+    eventType?: string;
+    status?: EventConsumerAttempt['status'];
+    limit?: number;
+  } = {}): Promise<EventConsumerAttempt[]> {
+    return Array.from(this.eventConsumerAttempts.values())
+      .filter((item) => (input.consumerName ? item.consumerName === input.consumerName : true))
+      .filter((item) => (input.eventType ? item.eventType === input.eventType : true))
+      .filter((item) => (input.status ? item.status === input.status : true))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, input.limit ?? 100)
+      .map((item) => ({ ...item }));
+  }
+
+  async listEventConsumerDeadLetters(input: {
+    consumerName?: string;
+    eventType?: string;
+    limit?: number;
+  } = {}): Promise<EventConsumerDeadLetter[]> {
+    return Array.from(this.eventConsumerDeadLetters.values())
+      .filter((item) => (input.consumerName ? item.consumerName === input.consumerName : true))
+      .filter((item) => (input.eventType ? item.eventType === input.eventType : true))
+      .sort((left, right) => right.failedAt.localeCompare(left.failedAt))
+      .slice(0, input.limit ?? 100)
+      .map((item) => ({ ...item, payload: { ...item.payload } }));
+  }
+
+  async hasSucceededEventConsumerCheckpoint(input: { consumerName: string; eventKey: string }): Promise<boolean> {
+    const checkpoint = this.eventConsumerCheckpoints.get(`${input.consumerName}:${input.eventKey}`);
+    return checkpoint?.lastStatus === 'succeeded';
+  }
+
+  async upsertEventConsumerCheckpoint(input: {
+    consumerName: string;
+    eventKey: string;
+    eventType: string;
+    aggregateId?: string;
+    lastStatus: EventConsumerCheckpoint['lastStatus'];
+    nowIso?: string;
+  }): Promise<void> {
+    await this.withLock(() => {
+      const key = `${input.consumerName}:${input.eventKey}`;
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      const existing = this.eventConsumerCheckpoints.get(key);
+      this.eventConsumerCheckpoints.set(key, {
+        consumerName: input.consumerName,
+        eventKey: input.eventKey,
+        eventType: input.eventType,
+        aggregateId: input.aggregateId,
+        lastStatus: input.lastStatus,
+        firstProcessedAt: existing?.firstProcessedAt ?? nowIso,
+        lastProcessedAt: nowIso
+      });
     });
   }
 

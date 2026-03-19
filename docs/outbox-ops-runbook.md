@@ -10,6 +10,7 @@
 - `POST /api/system/outbox/replay`
 - `POST /api/system/outbox/recover-processing`
 - `POST /api/system/outbox/dead-letter/ack`
+- `GET /api/system/event-consumers`
 - `GET /api/system/audit-logs`
 
 ## 상태 의미
@@ -95,15 +96,28 @@
 - stale recovery는 아직 publish 완료 기록이 없는 `processing`을 다시 `pending`으로 되돌리는 절차다.
 - subscriber 멱등성 보장이 없는 소비자는 중복 side effect 위험이 있다.
 
+### 4. Consumer triage
+
+`withdrawal.state.changed -> foxya_withdrawal_sync` 소비 상태는 아래 API로 확인한다.
+
+1. `GET /api/system/event-consumers?consumerName=foxya_withdrawal_sync&eventType=withdrawal.state.changed&limit=50`
+2. `attempts`에서 최근 실패/성공 시퀀스를 본다.
+3. `deadLetters`가 있으면 동일 `eventKey`, `aggregateId` 기준으로 outbox/audit를 같이 본다.
+
+해석 기준:
+- `attempts.status=failed`는 subscriber 내부 retry 중 실패 기록이다.
+- `deadLetters`는 subscriber max attempt 소진 후 중단된 이벤트다.
+- `event_consumer_checkpoints`에 성공 checkpoint가 있으면 outbox replay가 와도 동일 consumer는 중복 처리하지 않는다.
+
 ## 현재 한계
 
-- consumer observability는 아직 미완성이다. 현재는 publisher/outbox 상태 중심이다.
-- subscriber retry/DLQ는 별도 모델이 없다.
-- in-process subscriber의 중복 처리 보장은 downstream 구현에 의존한다.
+- consumer summary는 아직 최근 attempt/dead-letter 조회 중심이다.
+- subscriber는 여전히 in-process event bus 기반이라 cross-service broker observability는 아니다.
+- consumer DLQ ack/replay API는 아직 없고 outbox 운영 API와 audit를 같이 봐야 한다.
 
 ## 다음 고도화 권장
 
-- consumer attempt 추적 테이블
-- subscriber idempotency registry
+- consumer DLQ ack/replay API
+- cross-service broker consumer observability
 - DLQ category 별 alert routing
 - incidentRef 기반 운영 대시보드 연결

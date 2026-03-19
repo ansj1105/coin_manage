@@ -303,6 +303,40 @@ export interface OutboxEventsTable {
   incident_ref: string | null;
 }
 
+export interface EventConsumerAttemptsTable {
+  attempt_id: string;
+  event_key: string;
+  event_type: string;
+  consumer_name: string;
+  status: 'succeeded' | 'failed';
+  attempt_number: number;
+  aggregate_id: string | null;
+  error_message: string | null;
+  duration_ms: number;
+  created_at: string;
+}
+
+export interface EventConsumerDeadLettersTable {
+  dead_letter_id: string;
+  event_key: string;
+  event_type: string;
+  consumer_name: string;
+  aggregate_id: string | null;
+  payload: Record<string, unknown>;
+  error_message: string;
+  failed_at: string;
+}
+
+export interface EventConsumerCheckpointsTable {
+  consumer_name: string;
+  event_key: string;
+  event_type: string;
+  aggregate_id: string | null;
+  last_status: 'succeeded' | 'dead_lettered';
+  first_processed_at: string;
+  last_processed_at: string;
+}
+
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
@@ -327,4 +361,7 @@ export interface KorionDatabase {
   ledger_postings: LedgerPostingsTable;
   network_fee_receipts: NetworkFeeReceiptsTable;
   outbox_events: OutboxEventsTable;
+  event_consumer_attempts: EventConsumerAttemptsTable;
+  event_consumer_dead_letters: EventConsumerDeadLettersTable;
+  event_consumer_checkpoints: EventConsumerCheckpointsTable;
 }

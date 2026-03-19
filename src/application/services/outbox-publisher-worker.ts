@@ -67,7 +67,11 @@ export class OutboxPublisherWorker {
       const events = await this.ledger.claimPendingOutboxEvents(this.batchSize);
       for (const event of events) {
         try {
-          this.eventPublisher.publish(event.eventType, event.payload);
+          if (this.eventPublisher.publishAsync) {
+            await this.eventPublisher.publishAsync(event.eventType, event.payload);
+          } else {
+            this.eventPublisher.publish(event.eventType, event.payload);
+          }
           await this.ledger.markOutboxEventPublished(event.outboxEventId);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'outbox publish failed';

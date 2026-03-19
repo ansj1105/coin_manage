@@ -316,6 +316,55 @@ describe('operations and control flows', () => {
     });
   });
 
+  it('surfaces event consumer attempts and dead letters for ops observability', async () => {
+    await deps.ledger.appendEventConsumerAttempt({
+      eventKey: 'evt-1',
+      eventType: 'withdrawal.state.changed',
+      consumerName: 'foxya_withdrawal_sync',
+      status: 'failed',
+      attemptNumber: 1,
+      aggregateId: 'wd-1',
+      errorMessage: 'timeout',
+      durationMs: 120,
+      nowIso: '2026-03-19T11:00:00.000Z'
+    });
+    await deps.ledger.appendEventConsumerDeadLetter({
+      eventKey: 'evt-1',
+      eventType: 'withdrawal.state.changed',
+      consumerName: 'foxya_withdrawal_sync',
+      aggregateId: 'wd-1',
+      payload: {
+        withdrawalId: 'wd-1'
+      },
+      errorMessage: 'timeout',
+      nowIso: '2026-03-19T11:01:00.000Z'
+    });
+
+    const result = await deps.operationsService.getEventConsumerStatus({
+      consumerName: 'foxya_withdrawal_sync',
+      eventType: 'withdrawal.state.changed',
+      attemptStatus: 'failed',
+      limit: 20
+    });
+
+    expect(result.summary).toEqual({
+      attemptCount: 1,
+      failureCount: 1,
+      deadLetterCount: 1
+    });
+    expect(result.attempts[0]).toMatchObject({
+      consumerName: 'foxya_withdrawal_sync',
+      eventType: 'withdrawal.state.changed',
+      status: 'failed',
+      aggregateId: 'wd-1'
+    });
+    expect(result.deadLetters[0]).toMatchObject({
+      consumerName: 'foxya_withdrawal_sync',
+      eventType: 'withdrawal.state.changed',
+      aggregateId: 'wd-1'
+    });
+  });
+
   it('lists recent external sync failures for operator retry screens', async () => {
     await deps.ledger.appendAuditLog({
       entityType: 'withdrawal',

@@ -19,6 +19,7 @@ import { ResourceDelegationService } from '../application/services/resource-dele
 import { ResourceDelegationWorker } from '../application/services/resource-delegation-worker.js';
 import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
+import { EventConsumerRunner } from '../application/services/event-consumer-runner.js';
 import { OutboxPublisherWorker } from '../application/services/outbox-publisher-worker.js';
 import { OperationsService } from '../application/services/operations-service.js';
 import { SchedulerService } from '../application/services/scheduler-service.js';
@@ -147,6 +148,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     depositMonitorRepository,
     alertMonitorStateRepository
   } = createPersistence();
+  const eventConsumerRunner = new EventConsumerRunner(ledger);
   const tronGateway = overrides.tronGateway ?? createTronGateway();
   const blockchainReader = overrides.blockchainReader ?? new TronWalletReader();
   const alertNotifier = env.telegram ? new TelegramAlertNotifier(env.telegram.botToken, env.telegram.chatId) : undefined;
@@ -306,6 +308,30 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawPolicyService,
     foxyaWithdrawalSyncClient,
     withdrawalSigner
+  );
+  eventPublisher.subscribe('withdrawal.state.changed', (event) =>
+    eventConsumerRunner.run(
+      {
+        consumerName: 'foxya_withdrawal_sync',
+        eventType: event.type,
+        payload: event.payload as Record<string, unknown>,
+        aggregateId:
+          typeof (event.payload as { withdrawalId?: unknown }).withdrawalId === 'string'
+            ? (event.payload as { withdrawalId: string }).withdrawalId
+            : undefined,
+        maxAttempts: 3,
+        retryBaseDelayMs: 200,
+        retryMaxDelayMs: 1_000
+      },
+      async () => {
+        await withdrawService.consumeWithdrawalStateChanged(event.payload as any, false);
+      },
+      async () => {
+        if (typeof (event.payload as { withdrawalId?: unknown }).withdrawalId === 'string') {
+          await withdrawJobQueue.enqueueExternalSync((event.payload as { withdrawalId: string }).withdrawalId);
+        }
+      }
+    )
   );
   withdrawDispatchWorker.setWithdrawService(withdrawService);
   const accountReconciliationService = new AccountReconciliationService(ledger, depositMonitorService, withdrawService);

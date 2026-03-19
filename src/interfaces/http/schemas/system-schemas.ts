@@ -83,3 +83,10 @@ export const acknowledgeOutboxDeadLetterSchema = z
   .refine((input) => input.outboxEventIds || input.limit, {
     message: 'outboxEventIds or limit is required'
   });
+
+export const eventConsumerStatusQuerySchema = z.object({
+  consumerName: z.string().trim().min(1).max(64).optional(),
+  eventType: z.string().trim().min(1).max(128).optional(),
+  attemptStatus: z.enum(['succeeded', 'failed']).optional(),
+  limit: z.coerce.number().int().positive().max(200).optional()
+});

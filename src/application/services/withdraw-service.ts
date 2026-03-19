@@ -1,5 +1,5 @@
 import { formatKoriAmount, parseKoriAmount } from '../../domain/value-objects/money.js';
-import { buildWithdrawalStateChangedContract } from '../../contracts/ledger-contracts.js';
+import { buildWithdrawalStateChangedContract, type WithdrawalStateChangedContract } from '../../contracts/ledger-contracts.js';
 import type { WithdrawBridgeStateResponseContract } from '../../contracts/withdraw-bridge-contracts.js';
 import { env } from '../../config/env.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
@@ -377,11 +377,46 @@ export class WithdrawService {
       throw new Error('withdrawal not found');
     }
 
+    await this.syncExternalWithdrawalState(withdrawal, new Date().toISOString(), false);
+  }
+
+  async consumeWithdrawalStateChanged(contract: WithdrawalStateChangedContract, enqueueOnFailure: boolean) {
     if (!this.externalWithdrawalSyncClient) {
       return;
     }
 
-    await this.syncExternalWithdrawalState(withdrawal, new Date().toISOString(), false);
+    try {
+      await this.externalWithdrawalSyncClient.syncWithdrawalState(contract);
+      await this.recordExternalSyncAudit(contract.withdrawalId, 'withdraw.external_sync.succeeded', {
+        status: contract.status,
+        occurredAt: contract.occurredAt,
+        txHash: contract.txHash ?? ''
+      });
+    } catch (error) {
+      console.error('Failed to sync withdrawal state to foxya', {
+        withdrawalId: contract.withdrawalId,
+        status: contract.status,
+        error
+      });
+      const message = error instanceof Error ? error.message : 'unknown external sync failure';
+      await Promise.all([
+        this.recordExternalSyncAudit(contract.withdrawalId, 'withdraw.external_sync.failed', {
+          status: contract.status,
+          occurredAt: contract.occurredAt,
+          txHash: contract.txHash ?? '',
+          error: message.slice(0, 500)
+        }),
+        this.alertService.notifyWithdrawalExternalSyncFailed({
+          withdrawalId: contract.withdrawalId,
+          status: contract.status,
+          reason: message.slice(0, 500)
+        })
+      ]);
+      if (enqueueOnFailure) {
+        await this.enqueueExternalSyncRetry(contract.withdrawalId);
+      }
+      throw error;
+    }
   }
 
   private assessRisk(input: { amountKori: number; clientIp?: string; deviceId?: string }) {
@@ -426,14 +461,15 @@ export class WithdrawService {
     withdrawal: Parameters<typeof buildWithdrawalStateChangedContract>[0],
     occurredAt: string
   ) {
-    if (!this.externalWithdrawalSyncClient) {
+    const contract = buildWithdrawalStateChangedContract(withdrawal, occurredAt);
+    if (this.eventPublisher.publishAsync) {
+      await this.eventPublisher.publishAsync('withdrawal.state.changed', contract);
       return;
     }
 
-    try {
-      await this.syncExternalWithdrawalState(withdrawal, occurredAt, true);
-    } catch {
-      // Best-effort delivery only. Retry is queued inside syncExternalWithdrawalState.
+    this.eventPublisher.publish('withdrawal.state.changed', contract);
+    if (this.externalWithdrawalSyncClient) {
+      await this.consumeWithdrawalStateChanged(contract, true);
     }
   }
 
@@ -442,44 +478,8 @@ export class WithdrawService {
     occurredAt: string,
     enqueueOnFailure: boolean
   ) {
-    if (!this.externalWithdrawalSyncClient) {
-      return;
-    }
-
     const contract = buildWithdrawalStateChangedContract(withdrawal, occurredAt);
-
-    try {
-      await this.externalWithdrawalSyncClient.syncWithdrawalState(contract);
-      await this.recordExternalSyncAudit(withdrawal.withdrawalId, 'withdraw.external_sync.succeeded', {
-        status: withdrawal.status,
-        occurredAt,
-        txHash: withdrawal.txHash ?? ''
-      });
-    } catch (error) {
-      console.error('Failed to sync withdrawal state to foxya', {
-        withdrawalId: withdrawal.withdrawalId,
-        status: withdrawal.status,
-        error
-      });
-      const message = error instanceof Error ? error.message : 'unknown external sync failure';
-      await Promise.all([
-        this.recordExternalSyncAudit(withdrawal.withdrawalId, 'withdraw.external_sync.failed', {
-          status: withdrawal.status,
-          occurredAt,
-          txHash: withdrawal.txHash ?? '',
-          error: message.slice(0, 500)
-        }),
-        this.alertService.notifyWithdrawalExternalSyncFailed({
-          withdrawalId: withdrawal.withdrawalId,
-          status: withdrawal.status,
-          reason: message.slice(0, 500)
-        })
-      ]);
-      if (enqueueOnFailure) {
-        await this.enqueueExternalSyncRetry(withdrawal.withdrawalId);
-      }
-      throw error;
-    }
+    await this.consumeWithdrawalStateChanged(contract, enqueueOnFailure);
   }
 
   private async recordExternalSyncAudit(withdrawalId: string, action: string, metadata: Record<string, string>) {

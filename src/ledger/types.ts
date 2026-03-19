@@ -214,6 +214,40 @@ export interface OutboxEventSummary {
   oldestDeadLetteredAt?: string;
 }
 
+export interface EventConsumerAttempt {
+  attemptId: string;
+  eventKey: string;
+  eventType: string;
+  consumerName: string;
+  status: 'succeeded' | 'failed';
+  attemptNumber: number;
+  aggregateId?: string;
+  errorMessage?: string;
+  durationMs: number;
+  createdAt: string;
+}
+
+export interface EventConsumerDeadLetter {
+  deadLetterId: string;
+  eventKey: string;
+  eventType: string;
+  consumerName: string;
+  aggregateId?: string;
+  payload: Record<string, unknown>;
+  errorMessage: string;
+  failedAt: string;
+}
+
+export interface EventConsumerCheckpoint {
+  consumerName: string;
+  eventKey: string;
+  eventType: string;
+  aggregateId?: string;
+  lastStatus: 'succeeded' | 'dead_lettered';
+  firstProcessedAt: string;
+  lastProcessedAt: string;
+}
+
 export interface LedgerSummary {
   accountCount: number;
   availableBalance: bigint;

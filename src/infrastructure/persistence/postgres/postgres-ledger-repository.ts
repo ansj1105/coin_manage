@@ -9,6 +9,9 @@ import type {
   AuditLog,
   Deposit,
   DepositApplyResult,
+  EventConsumerAttempt,
+  EventConsumerCheckpoint,
+  EventConsumerDeadLetter,
   LedgerSummary,
   LedgerTransaction,
   OutboxEvent,
@@ -1768,6 +1771,142 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async appendEventConsumerAttempt(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    status: EventConsumerAttempt['status'];
+    attemptNumber: number;
+    aggregateId?: string;
+    errorMessage?: string;
+    durationMs: number;
+    nowIso?: string;
+  }): Promise<EventConsumerAttempt> {
+    const row = await this.db
+      .insertInto('event_consumer_attempts')
+      .values({
+        attempt_id: randomUUID(),
+        event_key: input.eventKey,
+        event_type: input.eventType,
+        consumer_name: input.consumerName,
+        status: input.status,
+        attempt_number: input.attemptNumber,
+        aggregate_id: input.aggregateId ?? null,
+        error_message: input.errorMessage ?? null,
+        duration_ms: input.durationMs,
+        created_at: input.nowIso ?? new Date().toISOString()
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapEventConsumerAttempt(row);
+  }
+
+  async appendEventConsumerDeadLetter(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    aggregateId?: string;
+    payload: Record<string, unknown>;
+    errorMessage: string;
+    nowIso?: string;
+  }): Promise<EventConsumerDeadLetter> {
+    const row = await this.db
+      .insertInto('event_consumer_dead_letters')
+      .values({
+        dead_letter_id: randomUUID(),
+        event_key: input.eventKey,
+        event_type: input.eventType,
+        consumer_name: input.consumerName,
+        aggregate_id: input.aggregateId ?? null,
+        payload: input.payload as never,
+        error_message: input.errorMessage,
+        failed_at: input.nowIso ?? new Date().toISOString()
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapEventConsumerDeadLetter(row);
+  }
+
+  async listEventConsumerAttempts(input: {
+    consumerName?: string;
+    eventType?: string;
+    status?: EventConsumerAttempt['status'];
+    limit?: number;
+  } = {}): Promise<EventConsumerAttempt[]> {
+    let query = this.db.selectFrom('event_consumer_attempts').selectAll();
+    if (input.consumerName) {
+      query = query.where('consumer_name', '=', input.consumerName);
+    }
+    if (input.eventType) {
+      query = query.where('event_type', '=', input.eventType);
+    }
+    if (input.status) {
+      query = query.where('status', '=', input.status);
+    }
+    const rows = await query.orderBy('created_at desc').limit(input.limit ?? 100).execute();
+    return rows.map((row) => this.mapEventConsumerAttempt(row));
+  }
+
+  async listEventConsumerDeadLetters(input: {
+    consumerName?: string;
+    eventType?: string;
+    limit?: number;
+  } = {}): Promise<EventConsumerDeadLetter[]> {
+    let query = this.db.selectFrom('event_consumer_dead_letters').selectAll();
+    if (input.consumerName) {
+      query = query.where('consumer_name', '=', input.consumerName);
+    }
+    if (input.eventType) {
+      query = query.where('event_type', '=', input.eventType);
+    }
+    const rows = await query.orderBy('failed_at desc').limit(input.limit ?? 100).execute();
+    return rows.map((row) => this.mapEventConsumerDeadLetter(row));
+  }
+
+  async hasSucceededEventConsumerCheckpoint(input: { consumerName: string; eventKey: string }): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('event_consumer_checkpoints')
+      .select('last_status')
+      .where('consumer_name', '=', input.consumerName)
+      .where('event_key', '=', input.eventKey)
+      .executeTakeFirst();
+
+    return row?.last_status === 'succeeded';
+  }
+
+  async upsertEventConsumerCheckpoint(input: {
+    consumerName: string;
+    eventKey: string;
+    eventType: string;
+    aggregateId?: string;
+    lastStatus: EventConsumerCheckpoint['lastStatus'];
+    nowIso?: string;
+  }): Promise<void> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    await this.db
+      .insertInto('event_consumer_checkpoints')
+      .values({
+        consumer_name: input.consumerName,
+        event_key: input.eventKey,
+        event_type: input.eventType,
+        aggregate_id: input.aggregateId ?? null,
+        last_status: input.lastStatus,
+        first_processed_at: nowIso,
+        last_processed_at: nowIso
+      })
+      .onConflict((oc) =>
+        oc.columns(['consumer_name', 'event_key']).doUpdateSet({
+          event_type: input.eventType,
+          aggregate_id: input.aggregateId ?? null,
+          last_status: input.lastStatus,
+          last_processed_at: nowIso
+        })
+      )
+      .execute();
+  }
+
   async recoverStaleProcessingOutboxEvents(timeoutSec: number, nowIso = new Date().toISOString()): Promise<number> {
     const threshold = new Date(Date.parse(nowIso) - timeoutSec * 1000).toISOString();
     return this.withTransaction(async (trx) => {
@@ -2296,6 +2435,34 @@ export class PostgresLedgerRepository implements LedgerRepository {
       lastAttemptAt: row.last_attempt_at ?? undefined,
       broadcastedAt: row.broadcasted_at ?? undefined,
       confirmedAt: row.confirmed_at ?? undefined
+    };
+  }
+
+  private mapEventConsumerAttempt(row: KorionDatabase['event_consumer_attempts']): EventConsumerAttempt {
+    return {
+      attemptId: row.attempt_id,
+      eventKey: row.event_key,
+      eventType: row.event_type,
+      consumerName: row.consumer_name,
+      status: row.status,
+      attemptNumber: row.attempt_number,
+      aggregateId: row.aggregate_id ?? undefined,
+      errorMessage: row.error_message ?? undefined,
+      durationMs: row.duration_ms,
+      createdAt: row.created_at
+    };
+  }
+
+  private mapEventConsumerDeadLetter(row: KorionDatabase['event_consumer_dead_letters']): EventConsumerDeadLetter {
+    return {
+      deadLetterId: row.dead_letter_id,
+      eventKey: row.event_key,
+      eventType: row.event_type,
+      consumerName: row.consumer_name,
+      aggregateId: row.aggregate_id ?? undefined,
+      payload: row.payload ?? {},
+      errorMessage: row.error_message,
+      failedAt: row.failed_at
     };
   }
 

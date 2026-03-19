@@ -164,6 +164,37 @@ export class OperationsService {
     return { acknowledgedCount };
   }
 
+  async getEventConsumerStatus(input: {
+    consumerName?: string;
+    eventType?: string;
+    attemptStatus?: 'succeeded' | 'failed';
+    limit?: number;
+  } = {}) {
+    const [attempts, deadLetters] = await Promise.all([
+      this.ledger.listEventConsumerAttempts({
+        consumerName: input.consumerName,
+        eventType: input.eventType,
+        status: input.attemptStatus,
+        limit: input.limit
+      }),
+      this.ledger.listEventConsumerDeadLetters({
+        consumerName: input.consumerName,
+        eventType: input.eventType,
+        limit: input.limit
+      })
+    ]);
+
+    return {
+      summary: {
+        attemptCount: attempts.length,
+        failureCount: attempts.filter((item) => item.status === 'failed').length,
+        deadLetterCount: deadLetters.length
+      },
+      attempts,
+      deadLetters
+    };
+  }
+
   async listWithdrawalExternalSyncFailures(limit = 50) {
     const [logs, failedJobs] = await Promise.all([
       this.ledger.listAuditLogs({

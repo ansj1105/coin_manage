@@ -87,6 +87,15 @@ const buildRouter = (operationsServiceOverrides: Record<string, unknown> = {}) =
       replayDeadLetterOutboxEvents: vi.fn().mockResolvedValue({ replayedCount: 1 }),
       recoverStaleOutboxProcessing: vi.fn().mockResolvedValue({ recoveredCount: 1, timeoutSec: 300 }),
       acknowledgeDeadLetterOutboxEvents: vi.fn().mockResolvedValue({ acknowledgedCount: 1 }),
+      getEventConsumerStatus: vi.fn().mockResolvedValue({
+        summary: {
+          attemptCount: 0,
+          failureCount: 0,
+          deadLetterCount: 0
+        },
+        attempts: [],
+        deadLetters: []
+      }),
       ...operationsServiceOverrides
     } as any,
     {
@@ -690,6 +699,82 @@ describe('system routes', () => {
           trxBalance: '50.000000'
         }
       ]
+    });
+  });
+
+  it('returns event consumer observability for ops tooling', async () => {
+    const getEventConsumerStatus = vi.fn().mockResolvedValue({
+      summary: {
+        attemptCount: 2,
+        failureCount: 1,
+        deadLetterCount: 1
+      },
+      attempts: [
+        {
+          attemptId: 'attempt-1',
+          eventKey: 'event-key-1',
+          eventType: 'withdrawal.state.changed',
+          consumerName: 'foxya_withdrawal_sync',
+          status: 'failed',
+          attemptNumber: 1,
+          aggregateId: 'wd-1',
+          errorMessage: 'timeout',
+          durationMs: 120,
+          createdAt: '2026-03-19T00:00:00.000Z'
+        }
+      ],
+      deadLetters: [
+        {
+          deadLetterId: 'dlq-1',
+          eventKey: 'event-key-1',
+          eventType: 'withdrawal.state.changed',
+          consumerName: 'foxya_withdrawal_sync',
+          aggregateId: 'wd-1',
+          payload: { withdrawalId: 'wd-1' },
+          errorMessage: 'timeout',
+          failedAt: '2026-03-19T00:00:01.000Z'
+        }
+      ]
+    });
+    const router = buildRouter({ getEventConsumerStatus });
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === '/event-consumers' && layer.route.methods?.get
+    );
+
+    const req = {
+      body: {},
+      query: {
+        consumerName: 'foxya_withdrawal_sync',
+        eventType: 'withdrawal.state.changed',
+        limit: '20'
+      },
+      params: {},
+      method: 'GET',
+      originalUrl: '/event-consumers',
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
+    } as any;
+    let jsonBody: unknown;
+    const res = {
+      status() {
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(getEventConsumerStatus).toHaveBeenCalledWith({
+      consumerName: 'foxya_withdrawal_sync',
+      eventType: 'withdrawal.state.changed',
+      limit: 20
+    });
+    expect(jsonBody).toMatchObject({
+      summary: {
+        deadLetterCount: 1
+      }
     });
   });
 

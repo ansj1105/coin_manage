@@ -489,6 +489,42 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/event-consumers:
+    get:
+      summary: Inspect event consumer attempts and dead letters
+      security:
+        - WithdrawAdminApiKey: []
+      parameters:
+        - in: query
+          name: consumerName
+          schema:
+            type: string
+        - in: query
+          name: eventType
+          schema:
+            type: string
+        - in: query
+          name: attemptStatus
+          schema:
+            type: string
+            enum: [succeeded, failed]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Event consumer observability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventConsumerStatusResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-jobs/external-sync/retry:
     post:
       summary: Requeue foxya withdrawal callback sync jobs for specific withdrawals
@@ -2730,6 +2766,75 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutboxEvent'
+    EventConsumerAttempt:
+      type: object
+      properties:
+        attemptId:
+          type: string
+        eventKey:
+          type: string
+        eventType:
+          type: string
+        consumerName:
+          type: string
+        status:
+          type: string
+          enum: [succeeded, failed]
+        attemptNumber:
+          type: integer
+        aggregateId:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    EventConsumerDeadLetter:
+      type: object
+      properties:
+        deadLetterId:
+          type: string
+        eventKey:
+          type: string
+        eventType:
+          type: string
+        consumerName:
+          type: string
+        aggregateId:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        errorMessage:
+          type: string
+        failedAt:
+          type: string
+          format: date-time
+    EventConsumerStatusResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            attemptCount:
+              type: integer
+            failureCount:
+              type: integer
+            deadLetterCount:
+              type: integer
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventConsumerAttempt'
+        deadLetters:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventConsumerDeadLetter'
     WalletMonitoringHistoryPoint:
       type: object
       properties:

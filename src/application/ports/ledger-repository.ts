@@ -4,6 +4,9 @@ import type {
   AuditLog,
   DepositApplyResult,
   Deposit,
+  EventConsumerAttempt,
+  EventConsumerCheckpoint,
+  EventConsumerDeadLetter,
   LedgerSummary,
   LedgerTransaction,
   NetworkFeeReceipt,
@@ -159,6 +162,46 @@ export interface LedgerRepository {
     incidentRef?: string;
     nowIso?: string;
   }): Promise<number>;
+  appendEventConsumerAttempt(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    status: EventConsumerAttempt['status'];
+    attemptNumber: number;
+    aggregateId?: string;
+    errorMessage?: string;
+    durationMs: number;
+    nowIso?: string;
+  }): Promise<EventConsumerAttempt>;
+  appendEventConsumerDeadLetter(input: {
+    eventKey: string;
+    eventType: string;
+    consumerName: string;
+    aggregateId?: string;
+    payload: Record<string, unknown>;
+    errorMessage: string;
+    nowIso?: string;
+  }): Promise<EventConsumerDeadLetter>;
+  listEventConsumerAttempts(input?: {
+    consumerName?: string;
+    eventType?: string;
+    status?: EventConsumerAttempt['status'];
+    limit?: number;
+  }): Promise<EventConsumerAttempt[]>;
+  listEventConsumerDeadLetters(input?: {
+    consumerName?: string;
+    eventType?: string;
+    limit?: number;
+  }): Promise<EventConsumerDeadLetter[]>;
+  hasSucceededEventConsumerCheckpoint(input: { consumerName: string; eventKey: string }): Promise<boolean>;
+  upsertEventConsumerCheckpoint(input: {
+    consumerName: string;
+    eventKey: string;
+    eventType: string;
+    aggregateId?: string;
+    lastStatus: EventConsumerCheckpoint['lastStatus'];
+    nowIso?: string;
+  }): Promise<void>;
   getLedgerSummary(): Promise<LedgerSummary>;
   rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
 }

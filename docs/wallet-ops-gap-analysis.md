@@ -74,13 +74,13 @@
 
 부족함
 
-- consumer observability
-- subscriber retry/DLQ policy
+- consumer observability의 cross-service 확장
+- consumer DLQ 운영 API
 
 평가
 
 - 진행률: 높음
-- 운영 완성도: 중상
+- 운영 완성도: 높음
 
 ### 보안/운영층
 
@@ -100,12 +100,12 @@
 
 - 고도화된 이상거래 탐지
 - 운영 대시보드의 집계/가시화
-- 장애 유형별 운영 런북
+- signer service/HSM/MPC 수준 분리
 
 평가
 
-- 진행률: 중간
-- 운영 완성도: 중간 이하
+- 진행률: 중상
+- 운영 완성도: 중상
 
 ## 현재 부족 영역 정리
 
@@ -165,6 +165,7 @@
 - confirm 시 실제 수수료와 자원 사용량을 저장
 - 일일 reconciliation snapshot 생성
 - publisher outbox, dead-letter, replay/recovery/ack
+- consumer attempts, dead letters, idempotency checkpoint
 
 ### 3. 출금 통제/리스크
 
@@ -207,6 +208,7 @@
 - status/overview API 확장
 - failed jobs, pending approvals, readiness, signer health 집계
 - outbox dead-letter 분류, incidentRef, 시계열 monitoring history API
+- consumer observability API
 
 ### 6. 감사/추적
 
