@@ -42,7 +42,10 @@ export const createApp = (deps: AppDependencies): express.Express => {
       deps.sweepBotService,
       deps.alertService,
       deps.externalAlertMonitorService,
-      deps.withdrawGuardService
+      deps.withdrawGuardService,
+      {
+        adminApiKey: env.withdrawAdminApiKey
+      }
     )
   );
   app.use('/api/onchain', createOnchainRoutes(deps.onchainService));

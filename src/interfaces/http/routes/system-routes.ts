@@ -28,6 +28,7 @@ import { DomainError } from '../../../domain/errors/domain-error.js';
 import { formatKoriAmount } from '../../../domain/value-objects/money.js';
 import { tronAddressPattern } from '../../../domain/value-objects/tron-address.js';
 import { hasAsmSecretBinding } from '../../../bootstrap/runtime-secrets.js';
+import { createRequireWithdrawApiKey } from '../middleware/withdraw-auth.js';
 
 const PLACEHOLDER_SECRETS = new Set([
   'replace-with-strong-secret',
@@ -199,10 +200,20 @@ export const createSystemRoutes = (
   sweepBotService: SweepBotService,
   alertService: AlertService,
   externalAlertMonitorService: ExternalAlertMonitorService,
-  withdrawGuardService: WithdrawGuardService
+  withdrawGuardService: WithdrawGuardService,
+  security: { adminApiKey?: string } = {
+    adminApiKey: env.withdrawAdminApiKey
+  }
 ): Router => {
   const router = Router();
   const getConfiguredWallets = () => getConfiguredSystemWallets();
+  const requireAdminApiKey = createRequireWithdrawApiKey(
+    security.adminApiKey,
+    'WITHDRAW_ADMIN_UNAUTHORIZED',
+    'withdraw admin api key is required'
+  );
+
+  router.use(requireAdminApiKey);
 
   router.get('/status', async (_req, res, next) => {
     try {

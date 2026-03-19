@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createRequireWithdrawApiKey } from '../src/interfaces/http/middleware/withdraw-auth.js';
 import { errorHandler } from '../src/interfaces/http/middleware/error-handler.js';
 import { createSystemRoutes } from '../src/interfaces/http/routes/system-routes.js';
 
@@ -54,7 +55,10 @@ const buildRouter = (operationsServiceOverrides: Record<string, unknown> = {}) =
     } as any,
     {
       getHotWalletReadiness: vi.fn().mockResolvedValue(null)
-    } as any
+    } as any,
+    {
+      adminApiKey: 'admin-secret'
+    }
   ) as any;
 
 const invokeRetryRoute = async (body: unknown) => {
@@ -73,7 +77,7 @@ const invokeRetryRoute = async (body: unknown) => {
     params: {},
     method: 'POST',
     originalUrl: '/withdraw-jobs/external-sync/retry',
-    header: () => undefined
+    header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
   } as any;
 
   let statusCode = 200;
@@ -113,6 +117,28 @@ const invokeRetryRoute = async (body: unknown) => {
 };
 
 describe('system routes', () => {
+  it('blocks system ops without admin api key', () => {
+    const middleware = createRequireWithdrawApiKey(
+      'admin-secret',
+      'WITHDRAW_ADMIN_UNAUTHORIZED',
+      'withdraw admin api key is required'
+    );
+    const next = vi.fn();
+
+    middleware(
+      {
+        header: () => undefined
+      } as any,
+      {} as any,
+      next
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({
+      code: 'WITHDRAW_ADMIN_UNAUTHORIZED'
+    });
+  });
+
   it('lists external sync failures for ops tooling', async () => {
     const listWithdrawalExternalSyncFailures = vi.fn().mockResolvedValue({
       items: [
@@ -140,7 +166,7 @@ describe('system routes', () => {
       params: {},
       method: 'GET',
       originalUrl: '/withdraw-jobs/external-sync/failures',
-      header: () => undefined
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
     } as any;
     let jsonBody: unknown;
     const res = {
@@ -204,7 +230,7 @@ describe('system routes', () => {
       params: {},
       method: 'POST',
       originalUrl: '/withdraw-jobs/external-sync/retry',
-      header: () => undefined
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
     } as any;
     let jsonBody: unknown;
     const res = {
@@ -253,7 +279,7 @@ describe('system routes', () => {
       params: {},
       method: 'GET',
       originalUrl: '/withdraw-policies/addresses',
-      header: () => undefined
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
     } as any;
     let jsonBody: unknown;
     const res = {
@@ -312,7 +338,16 @@ describe('system routes', () => {
       params: {},
       method: 'POST',
       originalUrl: '/withdraw-risk-events',
-      header: (name: string) => (name === 'x-admin-id' ? 'ops-admin' : undefined)
+      header: (name: string) => {
+        const normalized = name.toLowerCase();
+        if (normalized === 'x-admin-id') {
+          return 'ops-admin';
+        }
+        if (normalized === 'x-admin-api-key') {
+          return 'admin-secret';
+        }
+        return undefined;
+      }
     } as any;
     let statusCode = 200;
     let jsonBody: unknown;

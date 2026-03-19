@@ -14,6 +14,8 @@ paths:
   /api/system/status:
     get:
       summary: Get runtime status and stored monitoring summary
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: System status response
@@ -21,9 +23,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemStatusResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/monitoring/run:
     post:
       summary: Run one monitoring collection cycle now
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Monitoring cycle result
@@ -36,9 +42,13 @@ paths:
                     $ref: '#/components/schemas/CollectorRun'
                   status:
                     $ref: '#/components/schemas/SystemStatusResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/deposit-monitor:
     get:
       summary: Get foxya-linked automatic deposit monitor status
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Deposit monitor status
@@ -46,9 +56,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DepositMonitorStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/deposit-monitor/run:
     post:
       summary: Run one automatic deposit monitor cycle now
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Deposit monitor cycle result
@@ -68,9 +82,13 @@ paths:
                             type: string
                   status:
                     $ref: '#/components/schemas/DepositMonitorStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweep-bot:
     get:
       summary: Get automatic sweep bot status
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Sweep bot status
@@ -78,9 +96,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SweepBotStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweep-bot/run:
     post:
       summary: Run one automatic sweep bot cycle now
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Sweep bot cycle result
@@ -100,9 +122,13 @@ paths:
                             type: string
                   status:
                     $ref: '#/components/schemas/SweepBotStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/alerts/telegram/test:
     post:
       summary: Send a test Telegram alert
+      security:
+        - WithdrawAdminApiKey: []
       requestBody:
         required: false
         content:
@@ -126,9 +152,13 @@ paths:
                     type: boolean
                   telegramEnabled:
                     type: boolean
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/external-alert-monitor:
     get:
       summary: Get external alert monitor status
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: External alert monitor status
@@ -136,9 +166,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalAlertMonitorStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/external-alert-monitor/run:
     post:
       summary: Run external alert monitor once
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: External alert monitor cycle result
@@ -167,10 +201,14 @@ paths:
                             type: string
                   status:
                     $ref: '#/components/schemas/ExternalAlertMonitorStatus'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/runtime-profile:
     post:
       summary: Switch active contract profile for sandbox runtime
       description: Available only when runtime profile switching is enabled by environment configuration.
+      security:
+        - WithdrawAdminApiKey: []
       requestBody:
         required: true
         content:
@@ -188,9 +226,13 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/audit-logs:
     get:
       summary: List persisted audit logs
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: query
           name: entityType
@@ -221,9 +263,13 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AuditLog'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-jobs/external-sync/retry:
     post:
       summary: Requeue foxya withdrawal callback sync jobs for specific withdrawals
+      security:
+        - WithdrawAdminApiKey: []
       requestBody:
         required: true
         content:
@@ -257,9 +303,13 @@ paths:
                         items:
                           type: string
                           format: uuid
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-jobs/external-sync/failures:
     get:
       summary: List recent foxya withdrawal callback sync failures for retry tooling
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: query
           name: limit
@@ -306,9 +356,13 @@ paths:
                     type: integer
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-policies/addresses:
     get:
       summary: List withdrawal destination address policies for ops tooling
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: query
           name: address
@@ -343,8 +397,12 @@ paths:
                       $ref: '#/components/schemas/WithdrawAddressPolicy'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
     post:
       summary: Create or update a withdrawal destination address policy from ops tooling
+      security:
+        - WithdrawAdminApiKey: []
       requestBody:
         required: true
         content:
@@ -363,9 +421,13 @@ paths:
                     $ref: '#/components/schemas/WithdrawAddressPolicy'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-policies/addresses/{address}/{policyType}:
     delete:
       summary: Delete a withdrawal destination address policy from ops tooling
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: path
           name: address
@@ -391,9 +453,13 @@ paths:
                     type: boolean
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/withdraw-risk-events:
     get:
       summary: List recorded withdrawal risk events for operator review
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: query
           name: limit
@@ -416,8 +482,12 @@ paths:
                       $ref: '#/components/schemas/WithdrawRiskEvent'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
     post:
       summary: Record a withdrawal risk event and optionally materialize a blacklist policy
+      security:
+        - WithdrawAdminApiKey: []
       requestBody:
         required: true
         content:
@@ -436,9 +506,13 @@ paths:
                     $ref: '#/components/schemas/WithdrawRiskEvent'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/reconciliation:
     get:
       summary: Get internal ledger versus on-chain reconciliation summary
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Reconciliation summary
@@ -446,9 +520,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReconciliationReport'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweeps:
     get:
       summary: List planned and executed sweep records
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: query
           name: limit
@@ -468,9 +546,13 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SweepRecord'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweeps/plan:
     post:
       summary: Plan sweep records from latest monitoring snapshots
+      security:
+        - WithdrawAdminApiKey: []
       responses:
         '200':
           description: Sweep planning result
@@ -485,9 +567,13 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/SweepRecord'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweeps/{sweepId}/broadcast:
     post:
       summary: Mark a sweep as broadcasted with manual tx hash
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: path
           name: sweepId
@@ -510,9 +596,13 @@ paths:
                 properties:
                   sweep:
                     $ref: '#/components/schemas/SweepRecord'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/sweeps/{sweepId}/confirm:
     post:
       summary: Mark a sweep as confirmed
+      security:
+        - WithdrawAdminApiKey: []
       parameters:
         - in: path
           name: sweepId
@@ -535,6 +625,8 @@ paths:
                 properties:
                   sweep:
                     $ref: '#/components/schemas/SweepRecord'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/onchain/networks/{network}/wallets/{address}/balance:
     get:
       summary: Lookup on-chain TRX and KORI balance for any address on mainnet or testnet
@@ -1142,6 +1234,11 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+  securitySchemes:
+    WithdrawAdminApiKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Api-Key
   schemas:
     DepositScanRequest:
       type: object
