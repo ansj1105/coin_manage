@@ -23,6 +23,7 @@ import { DepositService } from '../application/services/deposit-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
 import { SchedulerService } from '../application/services/scheduler-service.js';
 import { OperationsService } from '../application/services/operations-service.js';
+import { OfflinePayService } from '../application/services/offline-pay-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
 import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
@@ -72,4 +73,5 @@ export interface AppDependencies {
   withdrawDispatchWorker: WithdrawDispatchWorker;
   schedulerService: SchedulerService;
   operationsService: OperationsService;
+  offlinePayService: OfflinePayService;
 }

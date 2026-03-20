@@ -5,6 +5,7 @@ import { AccountReconciliationService } from '../application/services/account-re
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
+import { OfflinePayService } from '../application/services/offline-pay-service.js';
 import { env } from '../config/env.js';
 import { getConfiguredSystemWallets } from '../config/system-wallets.js';
 import { parseKoriAmount } from '../domain/value-objects/money.js';
@@ -316,6 +317,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
+  const offlinePayService = new OfflinePayService(ledger);
   const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
   const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
   const withdrawalSigner = createWithdrawalSigner(tronGateway, overrides);
@@ -466,6 +468,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawService,
     withdrawDispatchWorker,
     schedulerService,
-    operationsService
+    operationsService,
+    offlinePayService
   };
 };
