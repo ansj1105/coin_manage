@@ -1,4 +1,6 @@
+import type { Pool } from 'pg';
 import { env } from '../../config/env.js';
+import { createPostgresPool } from '../../infrastructure/persistence/postgres/postgres-pool.js';
 import { getConfiguredSystemWallets } from '../../config/system-wallets.js';
 import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../domain/value-objects/money.js';
 import type { NetworkFeeReceipt } from '../../domain/ledger/types.js';
@@ -44,13 +46,17 @@ const formatTrxSunAmount = (value: bigint) => {
 };
 
 export class OperationsService {
+  private readonly runtimeDbPool: Pool | undefined;
+
   constructor(
     private readonly ledger: LedgerRepository,
     private readonly systemMonitoringService: SystemMonitoringService,
     private readonly withdrawJobQueue: WithdrawJobQueue,
     private readonly withdrawPolicyService?: WithdrawPolicyService,
     private readonly withdrawGuardService?: WithdrawGuardService
-  ) {}
+  ) {
+    this.runtimeDbPool = env.ledgerProvider === 'postgres' ? createPostgresPool() : undefined;
+  }
 
   async listAuditLogs(input?: {
     entityType?: 'withdrawal' | 'sweep' | 'system';
@@ -192,6 +198,108 @@ export class OperationsService {
       },
       attempts,
       deadLetters
+    };
+  }
+
+  async getDatabaseBackupStatus() {
+    if (!this.runtimeDbPool) {
+      return {
+        systemId: env.ledgerIdentity.systemId,
+        databaseName: env.db.name,
+        currentNode: {
+          transactionReadOnly: false,
+          walLevel: 'unknown',
+          archiveMode: 'unknown',
+          archiveCommandConfigured: false,
+          archiveTimeoutSec: null,
+          synchronousStandbyNames: '',
+          attachedReplicaCount: 0,
+          healthySyncReplicaCount: 0
+        },
+        replicas: [],
+        notes: ['postgres ledger provider is not enabled in this runtime']
+      };
+    }
+
+    const primaryStatusResult = await this.runtimeDbPool.query<{
+      database_name: string;
+      transaction_read_only: boolean;
+      wal_level: string;
+      archive_mode: string;
+      archive_command: string;
+      archive_timeout: string;
+      synchronous_standby_names: string;
+      attached_replica_count: string;
+      healthy_sync_replica_count: string;
+    }>(`
+      SELECT
+        current_database() AS database_name,
+        (current_setting('transaction_read_only') = 'on') AS transaction_read_only,
+        COALESCE(current_setting('wal_level', true), 'unknown') AS wal_level,
+        COALESCE(current_setting('archive_mode', true), 'unknown') AS archive_mode,
+        COALESCE(current_setting('archive_command', true), '') AS archive_command,
+        COALESCE(current_setting('archive_timeout', true), '') AS archive_timeout,
+        COALESCE(current_setting('synchronous_standby_names', true), '') AS synchronous_standby_names,
+        COALESCE((SELECT COUNT(*)::text FROM pg_stat_replication WHERE state = 'streaming'), '0') AS attached_replica_count,
+        COALESCE((SELECT COUNT(*)::text FROM pg_stat_replication WHERE state = 'streaming' AND sync_state IN ('sync', 'quorum')), '0') AS healthy_sync_replica_count
+    `);
+    const replicaResult = await this.runtimeDbPool.query<{
+      application_name: string | null;
+      client_address: string | null;
+      state: string | null;
+      sync_state: string | null;
+      replay_lag_bytes: string | null;
+    }>(`
+      SELECT
+        application_name,
+        client_addr::text AS client_address,
+        state,
+        sync_state,
+        COALESCE(pg_wal_lsn_diff(sent_lsn, replay_lsn)::text, '0') AS replay_lag_bytes
+      FROM pg_stat_replication
+      ORDER BY application_name ASC
+    `);
+
+    const primary = primaryStatusResult.rows[0];
+    const archiveTimeoutRaw = primary?.archive_timeout?.trim() ?? '';
+    const archiveTimeoutSec = archiveTimeoutRaw.endsWith('s')
+      ? Number.parseInt(archiveTimeoutRaw.replace(/s$/, ''), 10)
+      : Number.isFinite(Number(archiveTimeoutRaw))
+        ? Number.parseInt(archiveTimeoutRaw, 10)
+        : null;
+
+    const notes: string[] = [];
+    if (primary.transaction_read_only) {
+      notes.push('current node is read-only; confirm db-proxy is not routing writes to a standby');
+    }
+    if ((primary.synchronous_standby_names ?? '').trim().length === 0) {
+      notes.push('synchronous standby is not configured on the current node');
+    }
+    if ((primary.archive_mode ?? '').toLowerCase() === 'off') {
+      notes.push('archive_mode is off on the current node; WAL archive may be managed on a standby node');
+    }
+
+    return {
+      systemId: env.ledgerIdentity.systemId,
+      databaseName: primary.database_name,
+      currentNode: {
+        transactionReadOnly: primary.transaction_read_only,
+        walLevel: primary.wal_level,
+        archiveMode: primary.archive_mode,
+        archiveCommandConfigured: Boolean(primary.archive_command && primary.archive_command !== '(disabled)'),
+        archiveTimeoutSec: Number.isFinite(archiveTimeoutSec) ? archiveTimeoutSec : null,
+        synchronousStandbyNames: primary.synchronous_standby_names,
+        attachedReplicaCount: Number(primary.attached_replica_count ?? '0'),
+        healthySyncReplicaCount: Number(primary.healthy_sync_replica_count ?? '0')
+      },
+      replicas: replicaResult.rows.map((row) => ({
+        applicationName: row.application_name ?? '',
+        clientAddress: row.client_address ?? null,
+        state: row.state ?? 'unknown',
+        syncState: row.sync_state ?? 'unknown',
+        replayLagBytes: row.replay_lag_bytes ?? '0'
+      })),
+      notes
     };
   }
 

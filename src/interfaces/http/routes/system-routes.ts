@@ -328,6 +328,14 @@ export const createSystemRoutes = (
     }
   });
 
+  router.get('/db-backup/status', async (_req, res, next) => {
+    try {
+      res.json(await operationsService.getDatabaseBackupStatus());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get('/deposit-monitor', async (_req, res, next) => {
     try {
       res.json(await depositMonitorService.getStatus());

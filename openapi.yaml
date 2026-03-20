@@ -412,6 +412,20 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/db-backup/status:
+    get:
+      summary: Get database replication and backup posture for the current node
+      security:
+        - WithdrawAdminApiKey: []
+      responses:
+        '200':
+          description: Database backup status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DbBackupStatusResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/outbox/replay:
     post:
       summary: Replay dead-lettered outbox events
@@ -2894,6 +2908,71 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutboxEvent'
+    DbBackupReplicaStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        applicationName:
+          type: string
+        clientAddress:
+          type: string
+          nullable: true
+        state:
+          type: string
+        syncState:
+          type: string
+        replayLagBytes:
+          type: string
+      required: [applicationName, clientAddress, state, syncState, replayLagBytes]
+    DbBackupNodeStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        transactionReadOnly:
+          type: boolean
+        walLevel:
+          type: string
+        archiveMode:
+          type: string
+        archiveCommandConfigured:
+          type: boolean
+        archiveTimeoutSec:
+          type: integer
+          nullable: true
+        synchronousStandbyNames:
+          type: string
+        attachedReplicaCount:
+          type: integer
+        healthySyncReplicaCount:
+          type: integer
+      required:
+        - transactionReadOnly
+        - walLevel
+        - archiveMode
+        - archiveCommandConfigured
+        - archiveTimeoutSec
+        - synchronousStandbyNames
+        - attachedReplicaCount
+        - healthySyncReplicaCount
+    DbBackupStatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        systemId:
+          type: string
+        databaseName:
+          type: string
+        currentNode:
+          $ref: '#/components/schemas/DbBackupNodeStatus'
+        replicas:
+          type: array
+          items:
+            $ref: '#/components/schemas/DbBackupReplicaStatus'
+        notes:
+          type: array
+          items:
+            type: string
+      required: [systemId, databaseName, currentNode, replicas, notes]
     EventConsumerAttempt:
       type: object
       properties:
