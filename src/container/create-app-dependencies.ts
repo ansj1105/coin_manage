@@ -6,6 +6,7 @@ import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
 import { OfflinePayService } from '../application/services/offline-pay-service.js';
+import { OfflinePaySettlementConsumerService } from '../application/services/offline-pay-settlement-consumer-service.js';
 import { env } from '../config/env.js';
 import { getConfiguredSystemWallets } from '../config/system-wallets.js';
 import { parseKoriAmount } from '../domain/value-objects/money.js';
@@ -359,6 +360,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWithdrawalSyncClient,
     withdrawalSigner
   );
+  const offlinePaySettlementConsumerService = new OfflinePaySettlementConsumerService(ledger, withdrawService);
   eventPublisher.subscribe('withdrawal.state.changed', (event) =>
     eventConsumerRunner.run(
       {
@@ -380,6 +382,25 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
         if (typeof (event.payload as { withdrawalId?: unknown }).withdrawalId === 'string') {
           await withdrawJobQueue.enqueueExternalSync((event.payload as { withdrawalId: string }).withdrawalId);
         }
+      }
+    )
+  );
+  eventPublisher.subscribe('offline_pay.settlement.finalized', (event) =>
+    eventConsumerRunner.run(
+      {
+        consumerName: 'offline_pay_settlement_execution',
+        eventType: event.type,
+        payload: event.payload as Record<string, unknown>,
+        aggregateId:
+          typeof (event.payload as { settlementId?: unknown }).settlementId === 'string'
+            ? (event.payload as { settlementId: string }).settlementId
+            : undefined,
+        maxAttempts: 3,
+        retryBaseDelayMs: 200,
+        retryMaxDelayMs: 1_000
+      },
+      async () => {
+        await offlinePaySettlementConsumerService.handle(event.payload as any);
       }
     )
   );
