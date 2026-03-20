@@ -67,6 +67,8 @@ export class OfflinePayService {
     nonce: string;
     signature: string;
   }) {
+    // This step finalizes an internal-ledger transfer request only.
+    // Real chain execution must later enter the existing online withdraw flow.
     const computedFingerprint = computeOfflinePayProofFingerprint({
       settlementId: input.settlementId,
       batchId: input.batchId,
