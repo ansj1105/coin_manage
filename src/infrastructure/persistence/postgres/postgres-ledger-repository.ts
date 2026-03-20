@@ -1027,6 +1027,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     batchId: string;
     collateralId: string;
     proofId: string;
+    proofFingerprint: string;
     userId: string;
     deviceId: string;
     assetCode: string;
@@ -1111,6 +1112,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           batchId: input.batchId,
           collateralId: input.collateralId,
           proofId: input.proofId,
+          proofFingerprint: input.proofFingerprint,
           userId: input.userId,
           deviceId: input.deviceId,
           assetCode: input.assetCode,

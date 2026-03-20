@@ -87,5 +87,12 @@ describe('offline pay service', () => {
       message: 'settlement finalized'
     });
     expect(ledger.finalizeOfflinePaySettlement).toHaveBeenCalledOnce();
+    expect(ledger.finalizeOfflinePaySettlement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementId: 'settlement-1',
+        proofId: 'proof-1',
+        proofFingerprint
+      })
+    );
   });
 });

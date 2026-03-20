@@ -220,6 +220,7 @@ export interface LedgerRepository {
     batchId: string;
     collateralId: string;
     proofId: string;
+    proofFingerprint: string;
     userId: string;
     deviceId: string;
     assetCode: string;
