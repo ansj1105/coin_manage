@@ -1,5 +1,7 @@
 import { formatKoriAmount, parseKoriAmount } from '../../domain/value-objects/money.js';
+import { DomainError } from '../../core/domain-error.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
+import { computeOfflinePayProofFingerprint } from './offline-pay-proof-fingerprint.js';
 
 export class OfflinePayService {
   constructor(private readonly ledger: LedgerRepository) {}
@@ -58,7 +60,33 @@ export class OfflinePayService {
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    proofFingerprint: string;
+    newStateHash: string;
+    previousHash: string;
+    monotonicCounter: number;
+    nonce: string;
+    signature: string;
   }) {
+    const computedFingerprint = computeOfflinePayProofFingerprint({
+      settlementId: input.settlementId,
+      batchId: input.batchId,
+      collateralId: input.collateralId,
+      proofId: input.proofId,
+      deviceId: input.deviceId,
+      newStateHash: input.newStateHash,
+      previousHash: input.previousHash,
+      monotonicCounter: input.monotonicCounter,
+      nonce: input.nonce,
+      signature: input.signature
+    });
+    if (computedFingerprint !== input.proofFingerprint) {
+      throw new DomainError(
+        409,
+        'OFFLINE_PAY_PROOF_FINGERPRINT_MISMATCH',
+        'offline pay proof fingerprint mismatch'
+      );
+    }
+
     const amount = parseKoriAmount(Number(input.amount));
     const result = await this.ledger.finalizeOfflinePaySettlement({
       ...input,
@@ -82,7 +110,11 @@ export class OfflinePayService {
           amount: formatKoriAmount(amount),
           settlementStatus: input.settlementStatus,
           releaseAction: input.releaseAction,
-          conflictDetected: String(input.conflictDetected)
+          conflictDetected: String(input.conflictDetected),
+          proofFingerprint: input.proofFingerprint,
+          newStateHash: input.newStateHash,
+          previousHash: input.previousHash,
+          monotonicCounter: String(input.monotonicCounter)
         }
       });
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { errorHandler } from '../src/interfaces/http/middleware/error-handler.js';
 import { createInternalOfflinePayRoutes } from '../src/interfaces/http/routes/internal-offline-pay-routes.js';
+import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
 
 const invokeRoute = async (
   input: {
@@ -178,7 +179,24 @@ describe('internal offline-pay routes', () => {
           amount: '150.000000',
           settlementStatus: 'SETTLED',
           releaseAction: 'RELEASE',
-          conflictDetected: false
+          conflictDetected: false,
+          proofFingerprint: computeOfflinePayProofFingerprint({
+            settlementId: 'settlement-1',
+            batchId: 'batch-1',
+            collateralId: 'collateral-1',
+            proofId: 'proof-1',
+            deviceId: 'device-1',
+            newStateHash: 'hash-1',
+            previousHash: 'prev-1',
+            monotonicCounter: 1,
+            nonce: 'nonce-1',
+            signature: 'signature-1'
+          }),
+          newStateHash: 'hash-1',
+          previousHash: 'prev-1',
+          monotonicCounter: 1,
+          nonce: 'nonce-1',
+          signature: 'signature-1'
         }
       },
       { finalizeSettlement }
@@ -196,7 +214,24 @@ describe('internal offline-pay routes', () => {
       amount: '150.000000',
       settlementStatus: 'SETTLED',
       releaseAction: 'RELEASE',
-      conflictDetected: false
+      conflictDetected: false,
+      proofFingerprint: computeOfflinePayProofFingerprint({
+        settlementId: 'settlement-1',
+        batchId: 'batch-1',
+        collateralId: 'collateral-1',
+        proofId: 'proof-1',
+        deviceId: 'device-1',
+        newStateHash: 'hash-1',
+        previousHash: 'prev-1',
+        monotonicCounter: 1,
+        nonce: 'nonce-1',
+        signature: 'signature-1'
+      }),
+      newStateHash: 'hash-1',
+      previousHash: 'prev-1',
+      monotonicCounter: 1,
+      nonce: 'nonce-1',
+      signature: 'signature-1'
     });
     expect(response.jsonBody).toEqual({
       status: 'OK',

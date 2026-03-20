@@ -30,7 +30,13 @@ export const offlinePayFinalizeSettlementRequestSchema = z
     amount: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
     settlementStatus: z.string().min(1).max(32),
     releaseAction: z.enum(['RELEASE', 'ADJUST']),
-    conflictDetected: z.boolean()
+    conflictDetected: z.boolean(),
+    proofFingerprint: z.string().length(64),
+    newStateHash: z.string().min(1).max(256),
+    previousHash: z.string().min(1).max(256),
+    monotonicCounter: z.number().int().positive(),
+    nonce: z.string().min(1).max(256),
+    signature: z.string().min(1).max(4096)
   })
   .strict();
 
