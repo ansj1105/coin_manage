@@ -14,6 +14,8 @@ import type {
   EventConsumerDeadLetter,
   LedgerSummary,
   LedgerTransaction,
+  OfflinePayLockResult,
+  OfflinePaySettlementFinalizeResult,
   OutboxEvent,
   NetworkFeeReceipt,
   SweepRecord,
@@ -567,6 +569,88 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async lockOfflinePayCollateral(input: {
+    userId: string;
+    amount: bigint;
+    deviceId: string;
+    assetCode: string;
+    referenceId: string;
+    policyVersion: number;
+    nowIso?: string;
+  }): Promise<OfflinePayLockResult> {
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      await this.lockKey(trx, `offline-pay-lock:${input.referenceId}`);
+
+      const existing = await trx
+        .selectFrom('ledger_journals')
+        .select(['reference_id'])
+        .where('reference_type', '=', 'offline_pay_lock')
+        .where('reference_id', '=', input.referenceId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          lockId: input.referenceId,
+          status: 'LOCKED',
+          duplicated: true
+        };
+      }
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      const account = await this.getAccountForUpdate(trx, input.userId);
+      const projected = await this.getProjectedUserBalances(trx, input.userId);
+      const availableBalance = projected.hasPostings ? projected.balance : parseStoredKoriAmount(account.balance);
+      if (availableBalance < input.amount) {
+        throw new DomainError(400, 'INSUFFICIENT_BALANCE', 'insufficient balance for offline pay collateral');
+      }
+
+      const amountValue = formatKoriAmount(input.amount);
+      await this.appendJournal(trx, {
+        journalType: 'offline_pay_locked',
+        referenceType: 'offline_pay_lock',
+        referenceId: input.referenceId,
+        description: `offline pay collateral lock ${input.userId} ${input.deviceId}`.trim(),
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${input.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'offline_pay.collateral.locked',
+        aggregateType: 'offline_pay_lock',
+        aggregateId: input.referenceId,
+        payload: {
+          userId: input.userId,
+          deviceId: input.deviceId,
+          assetCode: input.assetCode,
+          amount: amountValue,
+          policyVersion: input.policyVersion,
+          occurredAt: nowIso
+        },
+        occurredAt: nowIso
+      });
+
+      return {
+        lockId: input.referenceId,
+        status: 'LOCKED',
+        duplicated: false
+      };
+    });
+  }
+
   async confirmWithdrawalExternalAuth(
     withdrawalId: string,
     input: { provider: string; requestId: string },
@@ -935,6 +1019,116 @@ export class PostgresLedgerRepository implements LedgerRepository {
         occurredAt: nowIso
       });
       return hydrated;
+    });
+  }
+
+  async finalizeOfflinePaySettlement(input: {
+    settlementId: string;
+    batchId: string;
+    collateralId: string;
+    proofId: string;
+    userId: string;
+    deviceId: string;
+    assetCode: string;
+    amount: bigint;
+    settlementStatus: string;
+    releaseAction: 'RELEASE' | 'ADJUST';
+    conflictDetected: boolean;
+    nowIso?: string;
+  }): Promise<OfflinePaySettlementFinalizeResult> {
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      await this.lockKey(trx, `offline-pay-settlement:${input.settlementId}`);
+
+      const existing = await trx
+        .selectFrom('ledger_journals')
+        .select(['reference_id'])
+        .where('reference_type', '=', 'offline_pay_settlement')
+        .where('reference_id', '=', input.settlementId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          settlementId: input.settlementId,
+          status: 'FINALIZED',
+          releaseAction: input.releaseAction,
+          duplicated: true
+        };
+      }
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.lockUsers(trx, [input.userId]);
+      const pendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
+      if (pendingBalance < input.amount) {
+        throw new DomainError(409, 'INSUFFICIENT_OFFLINE_PAY_PENDING', 'offline pay pending balance underflow');
+      }
+
+      const amountValue = formatKoriAmount(input.amount);
+      await this.appendJournal(trx, {
+        journalType: input.releaseAction === 'RELEASE' ? 'offline_pay_settled' : 'offline_pay_released',
+        referenceType: 'offline_pay_settlement',
+        referenceId: input.settlementId,
+        description: `${input.releaseAction} ${input.settlementStatus}`.trim(),
+        nowIso,
+        postings:
+          input.releaseAction === 'RELEASE'
+            ? [
+                {
+                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+                  accountType: 'liability',
+                  entrySide: 'debit',
+                  amount: amountValue
+                },
+                {
+                  ledgerAccountCode: 'system:asset:offline_pay_clearing',
+                  accountType: 'asset',
+                  entrySide: 'credit',
+                  amount: amountValue
+                }
+              ]
+            : [
+                {
+                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+                  accountType: 'liability',
+                  entrySide: 'debit',
+                  amount: amountValue
+                },
+                {
+                  ledgerAccountCode: `user:${input.userId}:available`,
+                  accountType: 'liability',
+                  entrySide: 'credit',
+                  amount: amountValue
+                }
+              ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'offline_pay.settlement.finalized',
+        aggregateType: 'offline_pay_settlement',
+        aggregateId: input.settlementId,
+        payload: {
+          settlementId: input.settlementId,
+          batchId: input.batchId,
+          collateralId: input.collateralId,
+          proofId: input.proofId,
+          userId: input.userId,
+          deviceId: input.deviceId,
+          assetCode: input.assetCode,
+          amount: amountValue,
+          settlementStatus: input.settlementStatus,
+          releaseAction: input.releaseAction,
+          conflictDetected: input.conflictDetected,
+          occurredAt: nowIso
+        },
+        occurredAt: nowIso
+      });
+
+      return {
+        settlementId: input.settlementId,
+        status: 'FINALIZED',
+        releaseAction: input.releaseAction,
+        duplicated: false
+      };
     });
   }
 
@@ -2154,6 +2348,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
   ): Promise<{ balance: bigint; lockedBalance: bigint; updatedAt?: string; hasPostings: boolean }> {
     const availableCode = `user:${userId}:available`;
     const pendingCode = `user:${userId}:withdraw_pending`;
+    const offlinePayPendingCode = `user:${userId}:offline_pay_pending`;
     const row = await db
       .selectFrom('ledger_postings')
       .select((eb) => [
@@ -2172,13 +2367,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
             case
               when ledger_account_code = ${pendingCode} and entry_side = 'credit' then amount
               when ledger_account_code = ${pendingCode} and entry_side = 'debit' then -amount
+              when ledger_account_code = ${offlinePayPendingCode} and entry_side = 'credit' then amount
+              when ledger_account_code = ${offlinePayPendingCode} and entry_side = 'debit' then -amount
               else 0
             end
           )::text, '0')
         `.as('locked_balance'),
         sql<string | null>`max(created_at)::text`.as('updated_at')
       ])
-      .where('ledger_account_code', 'in', [availableCode, pendingCode])
+      .where('ledger_account_code', 'in', [availableCode, pendingCode, offlinePayPendingCode])
       .executeTakeFirstOrThrow();
 
     return {
@@ -2210,6 +2407,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
             case
               when ledger_account_code like 'user:%:withdraw_pending' and entry_side = 'credit' then amount
               when ledger_account_code like 'user:%:withdraw_pending' and entry_side = 'debit' then -amount
+              when ledger_account_code like 'user:%:offline_pay_pending' and entry_side = 'credit' then amount
+              when ledger_account_code like 'user:%:offline_pay_pending' and entry_side = 'debit' then -amount
               else 0
             end
           )::text, '0')
@@ -2222,6 +2421,26 @@ export class PostgresLedgerRepository implements LedgerRepository {
       lockedBalance: parseStoredKoriAmount(row.locked_balance),
       hasPostings: Number(row.posting_count) > 0
     };
+  }
+
+  private async getProjectedLedgerAccountBalance(db: DbExecutor, ledgerAccountCode: string): Promise<bigint> {
+    const row = await db
+      .selectFrom('ledger_postings')
+      .select(
+        sql<string>`
+          coalesce(sum(
+            case
+              when ledger_account_code = ${ledgerAccountCode} and entry_side = 'credit' then amount
+              when ledger_account_code = ${ledgerAccountCode} and entry_side = 'debit' then -amount
+              else 0
+            end
+          )::text, '0')
+        `.as('balance')
+      )
+      .where('ledger_account_code', '=', ledgerAccountCode)
+      .executeTakeFirstOrThrow();
+
+    return parseStoredKoriAmount(row.balance);
   }
 
   private async syncUserAccountProjection(db: DbExecutor, userIds: string[], nowIso: string): Promise<void> {

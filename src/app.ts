@@ -11,6 +11,7 @@ import { createSystemRoutes } from './interfaces/http/routes/system-routes.js';
 import { createInternalWithdrawRoutes } from './interfaces/http/routes/internal-withdraw-routes.js';
 import { createInternalSignerRoutes } from './interfaces/http/routes/internal-signer-routes.js';
 import { createInternalTronSignerRoutes } from './interfaces/http/routes/internal-tron-signer-routes.js';
+import { createInternalOfflinePayRoutes } from './interfaces/http/routes/internal-offline-pay-routes.js';
 import { createWalletRoutes } from './interfaces/http/routes/wallet-routes.js';
 import { createWithdrawRoutes } from './interfaces/http/routes/withdraw-routes.js';
 import { createVirtualWalletRoutes } from './interfaces/http/routes/virtual-wallet-routes.js';
@@ -74,6 +75,12 @@ export const createApp = (deps: AppDependencies): express.Express => {
     createInternalTronSignerRoutes(deps.tronGateway, {
       internalApiKey: env.withdrawSignerApiKey,
       signerBackend: env.withdrawSignerBackend
+    })
+  );
+  app.use(
+    '/api/internal/offline-pay',
+    createInternalOfflinePayRoutes(deps.offlinePayService, {
+      internalApiKey: env.offlinePayInternalApiKey
     })
   );
   app.use('/api/scheduler', createSchedulerRoutes(deps.schedulerService));

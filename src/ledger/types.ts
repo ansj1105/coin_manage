@@ -272,3 +272,16 @@ export interface WithdrawalRequestResult {
   withdrawal: Withdrawal;
   duplicated: boolean;
 }
+
+export interface OfflinePayLockResult {
+  lockId: string;
+  status: 'LOCKED';
+  duplicated: boolean;
+}
+
+export interface OfflinePaySettlementFinalizeResult {
+  settlementId: string;
+  status: 'FINALIZED';
+  releaseAction: 'RELEASE' | 'ADJUST';
+  duplicated: boolean;
+}

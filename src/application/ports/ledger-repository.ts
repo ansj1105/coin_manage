@@ -11,6 +11,8 @@ import type {
   LedgerTransaction,
   NetworkFeeReceipt,
   NetworkFeeDailySnapshot,
+  OfflinePayLockResult,
+  OfflinePaySettlementFinalizeResult,
   OutboxEvent,
   OutboxEventSummary,
   SweepRecord,
@@ -204,4 +206,27 @@ export interface LedgerRepository {
   }): Promise<void>;
   getLedgerSummary(): Promise<LedgerSummary>;
   rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
+  lockOfflinePayCollateral(input: {
+    userId: string;
+    amount: bigint;
+    deviceId: string;
+    assetCode: string;
+    referenceId: string;
+    policyVersion: number;
+    nowIso?: string;
+  }): Promise<OfflinePayLockResult>;
+  finalizeOfflinePaySettlement(input: {
+    settlementId: string;
+    batchId: string;
+    collateralId: string;
+    proofId: string;
+    userId: string;
+    deviceId: string;
+    assetCode: string;
+    amount: bigint;
+    settlementStatus: string;
+    releaseAction: 'RELEASE' | 'ADJUST';
+    conflictDetected: boolean;
+    nowIso?: string;
+  }): Promise<OfflinePaySettlementFinalizeResult>;
 }
