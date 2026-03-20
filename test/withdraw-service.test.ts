@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createAppDependencies } from '../src/container/create-app-dependencies.js';
+import { setRuntimeContractProfile } from '../src/config/runtime-settings.js';
 import { isValidTronAddress } from '../src/domain/value-objects/tron-address.js';
 import { MockTronGateway } from '../src/infrastructure/blockchain/mock-tron-gateway.js';
+import { InMemoryFoxyaUserFlagRepository } from '../src/infrastructure/integration/foxya-user-flag-repository.js';
 import { InMemoryWithdrawJobQueue } from '../src/infrastructure/queue/in-memory-withdraw-job-queue.js';
 
 const VALID_TRON_ADDRESS = 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -11,6 +13,7 @@ describe('withdraw flow (service-level)', () => {
   let deps: ReturnType<typeof createAppDependencies>;
 
   beforeEach(async () => {
+    setRuntimeContractProfile('runtime');
     deps = createAppDependencies({
       tronGateway: new MockTronGateway()
     });
@@ -87,10 +90,10 @@ describe('withdraw flow (service-level)', () => {
   });
 
   it('keeps completed withdrawals in daily limit accounting', async () => {
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       const request = await deps.withdrawService.request({
         userId: 'user-1',
-        amountKori: 5000,
+        amountKori: 2000,
         toAddress: VALID_TRON_ADDRESS,
         idempotencyKey: `wd-daily-completed-${i}`,
         clientIp: '127.0.0.1',
@@ -223,6 +226,40 @@ describe('withdraw flow (service-level)', () => {
       })
     ).rejects.toMatchObject({
       code: 'WITHDRAW_DESTINATION_BLOCKED'
+    });
+  });
+
+  it('blocks test users from requesting withdrawal on mainnet profile', async () => {
+    const foxyaUserFlagRepository = new InMemoryFoxyaUserFlagRepository();
+    foxyaUserFlagRepository.setTestUser('user-1', true);
+    setRuntimeContractProfile('mainnet');
+
+    const guardedDeps = createAppDependencies({
+      tronGateway: new MockTronGateway(),
+      foxyaUserFlagRepository
+    });
+
+    await guardedDeps.walletService.bindWalletAddress({
+      userId: 'user-1',
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    });
+    await guardedDeps.depositService.processDeposit({
+      userId: 'user-1',
+      txHash: `test-user-deposit-${Date.now()}`,
+      toAddress: TRACKED_DEPOSIT_ADDRESS,
+      amountKori: 1000,
+      blockNumber: 1
+    });
+
+    await expect(
+      guardedDeps.withdrawService.request({
+        userId: 'user-1',
+        amountKori: 10,
+        toAddress: VALID_TRON_ADDRESS,
+        idempotencyKey: 'wd-test-user-mainnet-1'
+      })
+    ).rejects.toMatchObject({
+      code: 'TEST_USER_MAINNET_WITHDRAW_FORBIDDEN'
     });
   });
 

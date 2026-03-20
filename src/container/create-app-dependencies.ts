@@ -29,6 +29,7 @@ import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
 import { VirtualWalletService } from '../application/services/virtual-wallet-service.js';
 import { VirtualWalletLifecyclePolicyService } from '../application/services/virtual-wallet-lifecycle-policy-service.js';
 import { WalletService } from '../application/services/wallet-service.js';
+import { WithdrawNetworkPolicyService } from '../application/services/withdraw-network-policy-service.js';
 import { WithdrawGuardService } from '../application/services/withdraw-guard-service.js';
 import { WithdrawDispatchWorker } from '../application/services/withdraw-dispatch-worker.js';
 import { WithdrawPolicyService } from '../application/services/withdraw-policy-service.js';
@@ -45,6 +46,7 @@ import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-
 import { FoxyaInternalWithdrawalClient } from '../infrastructure/integration/foxya-internal-withdrawal-client.js';
 import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
 import { PostgresFoxyaAlertSourceRepository } from '../infrastructure/integration/foxya-alert-source-repository.js';
+import { InMemoryFoxyaUserFlagRepository, PostgresFoxyaUserFlagRepository } from '../infrastructure/integration/foxya-user-flag-repository.js';
 import { PostgresFoxyaWalletRepository } from '../infrastructure/integration/foxya-wallet-repository.js';
 import { TelegramAlertNotifier } from '../infrastructure/notifications/telegram-alert-notifier.js';
 import { InMemoryAlertMonitorStateRepository } from '../infrastructure/persistence/in-memory-alert-monitor-state-repository.js';
@@ -64,6 +66,7 @@ import { createPostgresDb, createPostgresPool } from '../infrastructure/persiste
 import { BullmqWithdrawJobQueue } from '../infrastructure/queue/bullmq-withdraw-job-queue.js';
 import { AesGcmVirtualWalletKeyCipher } from '../infrastructure/security/virtual-wallet-key-cipher.js';
 import type { BlockchainReader } from '../application/ports/blockchain-reader.js';
+import type { FoxyaUserFlagRepository } from '../application/ports/foxya-user-flag-repository.js';
 import type { TronGateway } from '../application/ports/tron-gateway.js';
 import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.js';
 import type { WithdrawalSigner } from '../application/ports/withdrawal-signer.js';
@@ -75,6 +78,7 @@ type AppDependencyOverrides = {
   blockchainReader?: BlockchainReader;
   externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient;
   withdrawalSigner?: WithdrawalSigner;
+  foxyaUserFlagRepository?: FoxyaUserFlagRepository;
 };
 
 const createPersistence = () => {
@@ -242,6 +246,20 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
           })
         )
       : undefined;
+  const foxyaUserFlagRepository: FoxyaUserFlagRepository =
+    overrides.foxyaUserFlagRepository ??
+    (env.foxyaDb?.host && env.foxyaDb.name && env.foxyaDb.user
+      ? new PostgresFoxyaUserFlagRepository(
+          new Pool({
+            host: env.foxyaDb.host,
+            port: env.foxyaDb.port,
+            database: env.foxyaDb.name,
+            user: env.foxyaDb.user,
+            password: env.foxyaDb.password,
+            max: 5
+          })
+        )
+      : new InMemoryFoxyaUserFlagRepository());
   const virtualWalletLifecyclePolicy = new VirtualWalletLifecyclePolicyService(virtualWalletRepository);
   const activationGrantService = new ActivationGrantService(
     virtualWalletRepository,
@@ -295,6 +313,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const offlinePayService = new OfflinePayService(ledger);
   const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
   const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
+  const withdrawNetworkPolicyService = new WithdrawNetworkPolicyService(foxyaUserFlagRepository);
   const withdrawalSigner = createWithdrawalSigner(tronGateway, overrides);
   const withdrawDispatchWorker = new WithdrawDispatchWorker(
     ledger,
@@ -335,6 +354,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawJobQueue,
     virtualWalletLifecyclePolicy,
     withdrawGuardService,
+    withdrawNetworkPolicyService,
     withdrawPolicyService,
     foxyaWithdrawalSyncClient,
     withdrawalSigner

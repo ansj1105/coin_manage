@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createAppDependencies } from '../src/container/create-app-dependencies.js';
+import { setRuntimeContractProfile } from '../src/config/runtime-settings.js';
 import { MockTronGateway } from '../src/infrastructure/blockchain/mock-tron-gateway.js';
+import { InMemoryFoxyaUserFlagRepository } from '../src/infrastructure/integration/foxya-user-flag-repository.js';
 import { InMemoryWithdrawJobQueue } from '../src/infrastructure/queue/in-memory-withdraw-job-queue.js';
 
 const VALID_TRON_ADDRESS = 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -22,6 +24,7 @@ describe('withdraw dispatch worker', () => {
   let deps: ReturnType<typeof createAppDependencies>;
 
   beforeEach(async () => {
+    setRuntimeContractProfile('runtime');
     process.env.WITHDRAW_SIGNER_MODE = 'hot';
     process.env.COLD_WITHDRAW_MIN_KORI = '100000';
     deps = createAppDependencies({
@@ -173,6 +176,55 @@ describe('withdraw dispatch worker', () => {
     );
 
     const stored = await offlineDeps.withdrawService.get(request.withdrawal.withdrawalId);
+    expect(stored?.status).toBe('ADMIN_APPROVED');
+    expect(stored?.txHash).toBeUndefined();
+  });
+
+  it('blocks dispatch for test users when runtime profile is mainnet', async () => {
+    const foxyaUserFlagRepository = new InMemoryFoxyaUserFlagRepository();
+    foxyaUserFlagRepository.setTestUser('user-1', true);
+    setRuntimeContractProfile('mainnet');
+
+    const guardedDeps = createAppDependencies({
+      tronGateway: new MockTronGateway(),
+      foxyaUserFlagRepository
+    });
+
+    await guardedDeps.walletService.bindWalletAddress({
+      userId: 'user-1',
+      walletAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    });
+    await guardedDeps.depositService.processDeposit({
+      userId: 'user-1',
+      txHash: `guarded-mainnet-${Date.now()}`,
+      toAddress: TRACKED_DEPOSIT_ADDRESS,
+      amountKori: 60000,
+      blockNumber: 1
+    });
+
+    const request = await guardedDeps.ledger.requestWithdrawal({
+      userId: 'user-1',
+      amount: 150_000_000n,
+      toAddress: VALID_TRON_ADDRESS,
+      idempotencyKey: 'dispatch-worker-test-user-mainnet-1'
+    });
+
+    await guardedDeps.ledger.confirmWithdrawalExternalAuth(request.withdrawal.withdrawalId, {
+      provider: 'coin_cloud_system',
+      requestId: 'dispatch-worker-auth-test-mainnet-1'
+    });
+    await guardedDeps.ledger.approveWithdrawal(request.withdrawal.withdrawalId, {
+      adminId: 'admin-1',
+      actorType: 'admin',
+      note: 'manual approval'
+    });
+    await (guardedDeps.withdrawJobQueue as InMemoryWithdrawJobQueue).enqueueDispatch(request.withdrawal.withdrawalId);
+
+    await expect((guardedDeps.withdrawJobQueue as InMemoryWithdrawJobQueue).drain()).rejects.toMatchObject({
+      code: 'TEST_USER_MAINNET_WITHDRAW_FORBIDDEN'
+    });
+
+    const stored = await guardedDeps.withdrawService.get(request.withdrawal.withdrawalId);
     expect(stored?.status).toBe('ADMIN_APPROVED');
     expect(stored?.txHash).toBeUndefined();
   });

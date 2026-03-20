@@ -12,6 +12,7 @@ import { AlertService } from './alert-service.js';
 import type { VirtualWalletLifecyclePolicyService } from './virtual-wallet-lifecycle-policy-service.js';
 import { WithdrawGuardService } from './withdraw-guard-service.js';
 import type { WithdrawPolicyService } from './withdraw-policy-service.js';
+import type { WithdrawNetworkPolicyService } from './withdraw-network-policy-service.js';
 import { mapWithdrawalToSyncStatus } from '../../domain/ledger/withdraw-sync-status.js';
 import { DomainError } from '../../domain/errors/domain-error.js';
 
@@ -24,6 +25,7 @@ export class WithdrawService {
     private readonly withdrawJobQueue: WithdrawJobQueue,
     private readonly virtualWalletLifecyclePolicy?: VirtualWalletLifecyclePolicyService,
     private readonly withdrawGuardService = new WithdrawGuardService(tronGateway),
+    private readonly withdrawNetworkPolicyService?: WithdrawNetworkPolicyService,
     private readonly withdrawPolicyService?: WithdrawPolicyService,
     private readonly externalWithdrawalSyncClient?: ExternalWithdrawalSyncClient,
     private readonly withdrawalSigner?: WithdrawalSigner
@@ -46,6 +48,7 @@ export class WithdrawService {
       userId,
       walletAddress: input.walletAddress
     });
+    await this.withdrawNetworkPolicyService?.assertUserWithdrawalNetworkAllowed(userId);
     await this.withdrawGuardService.assertRequestAllowed({
       toAddress: input.toAddress,
       walletAddress: input.walletAddress,
@@ -138,6 +141,11 @@ export class WithdrawService {
     } = {}
   ) {
     const reasonCode = input.reasonCode ?? 'manual_review_passed';
+    const current = await this.ledger.getWithdrawal(withdrawalId);
+    if (!current) {
+      throw new DomainError(404, 'WITHDRAW_NOT_FOUND', 'withdrawal not found');
+    }
+    await this.withdrawNetworkPolicyService?.assertUserWithdrawalNetworkAllowed(current.userId);
     const result = await this.ledger.approveWithdrawal(withdrawalId, {
       adminId: input.adminId ?? 'admin-unknown',
       actorType: input.actorType ?? 'admin',
@@ -175,6 +183,7 @@ export class WithdrawService {
     if (!current) {
       return undefined;
     }
+    await this.withdrawNetworkPolicyService?.assertUserWithdrawalNetworkAllowed(current.userId);
 
     await this.withdrawGuardService.assertBroadcastAllowed({
       toAddress: current.toAddress,
