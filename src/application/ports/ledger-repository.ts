@@ -12,6 +12,7 @@ import type {
   NetworkFeeReceipt,
   NetworkFeeDailySnapshot,
   OfflinePayLockResult,
+  OfflinePayReleaseResult,
   OfflinePaySettlementFinalizeResult,
   OutboxEvent,
   OutboxEventSummary,
@@ -215,6 +216,15 @@ export interface LedgerRepository {
     policyVersion: number;
     nowIso?: string;
   }): Promise<OfflinePayLockResult>;
+  releaseOfflinePayCollateral(input: {
+    userId: string;
+    amount: bigint;
+    deviceId: string;
+    collateralId: string;
+    assetCode: string;
+    referenceId: string;
+    nowIso?: string;
+  }): Promise<OfflinePayReleaseResult>;
   finalizeOfflinePaySettlement(input: {
     settlementId: string;
     batchId: string;

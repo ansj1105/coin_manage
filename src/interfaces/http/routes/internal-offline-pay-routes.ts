@@ -6,7 +6,9 @@ import {
   internalAckResponseSchema,
   offlinePayFinalizeSettlementRequestSchema,
   offlinePayLockRequestSchema,
-  offlinePayLockResponseSchema
+  offlinePayLockResponseSchema,
+  offlinePayReleaseRequestSchema,
+  offlinePayReleaseResponseSchema
 } from '../../../contracts/offline-pay-contracts.js';
 import { OfflinePayService } from '../../../application/services/offline-pay-service.js';
 
@@ -31,6 +33,19 @@ export const createInternalOfflinePayRoutes = (
       }
       const result = await offlinePayService.lockCollateral(parsed.data);
       res.status(200).json(offlinePayLockResponseSchema.parse(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/collateral/release', async (req, res, next) => {
+    try {
+      const parsed = offlinePayReleaseRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      const result = await offlinePayService.releaseCollateral(parsed.data);
+      res.status(200).json(offlinePayReleaseResponseSchema.parse(result));
     } catch (error) {
       next(error);
     }

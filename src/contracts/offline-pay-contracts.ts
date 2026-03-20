@@ -18,6 +18,24 @@ export const offlinePayLockResponseSchema = z
   })
   .strict();
 
+export const offlinePayReleaseRequestSchema = z
+  .object({
+    userId: z.string().min(1).max(64),
+    deviceId: z.string().min(1).max(128),
+    collateralId: z.string().min(1).max(128),
+    assetCode: z.string().min(1).max(32),
+    amount: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
+    referenceId: z.string().min(1).max(128)
+  })
+  .strict();
+
+export const offlinePayReleaseResponseSchema = z
+  .object({
+    releaseId: z.string().min(1).max(128),
+    status: z.literal('RELEASED')
+  })
+  .strict();
+
 export const offlinePayFinalizeSettlementRequestSchema = z
   .object({
     settlementId: z.string().min(1).max(128),
@@ -49,5 +67,7 @@ export const internalAckResponseSchema = z
 
 export type OfflinePayLockRequest = z.infer<typeof offlinePayLockRequestSchema>;
 export type OfflinePayLockResponse = z.infer<typeof offlinePayLockResponseSchema>;
+export type OfflinePayReleaseRequest = z.infer<typeof offlinePayReleaseRequestSchema>;
+export type OfflinePayReleaseResponse = z.infer<typeof offlinePayReleaseResponseSchema>;
 export type OfflinePayFinalizeSettlementRequest = z.infer<typeof offlinePayFinalizeSettlementRequestSchema>;
 export type InternalAckResponse = z.infer<typeof internalAckResponseSchema>;

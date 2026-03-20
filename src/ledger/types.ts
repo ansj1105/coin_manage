@@ -279,6 +279,12 @@ export interface OfflinePayLockResult {
   duplicated: boolean;
 }
 
+export interface OfflinePayReleaseResult {
+  releaseId: string;
+  status: 'RELEASED';
+  duplicated: boolean;
+}
+
 export interface OfflinePaySettlementFinalizeResult {
   settlementId: string;
   status: 'FINALIZED';

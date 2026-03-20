@@ -48,6 +48,48 @@ export class OfflinePayService {
     };
   }
 
+  async releaseCollateral(input: {
+    userId: string;
+    deviceId: string;
+    collateralId: string;
+    assetCode: string;
+    amount: string;
+    referenceId: string;
+  }) {
+    const amount = parseKoriAmount(Number(input.amount));
+    const result = await this.ledger.releaseOfflinePayCollateral({
+      userId: input.userId,
+      deviceId: input.deviceId,
+      collateralId: input.collateralId,
+      assetCode: input.assetCode,
+      amount,
+      referenceId: input.referenceId
+    });
+
+    if (!result.duplicated) {
+      await this.ledger.appendAuditLog({
+        entityType: 'system',
+        entityId: result.releaseId,
+        action: 'offline_pay.collateral.released',
+        actorType: 'system',
+        actorId: 'offline_pay',
+        metadata: {
+          userId: input.userId,
+          deviceId: input.deviceId,
+          collateralId: input.collateralId,
+          assetCode: input.assetCode,
+          amount: formatKoriAmount(amount),
+          referenceId: input.referenceId
+        }
+      });
+    }
+
+    return {
+      releaseId: result.releaseId,
+      status: result.status
+    };
+  }
+
   async finalizeSettlement(input: {
     settlementId: string;
     batchId: string;

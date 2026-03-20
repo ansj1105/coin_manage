@@ -651,6 +651,87 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async releaseOfflinePayCollateral(input: {
+    userId: string;
+    amount: bigint;
+    deviceId: string;
+    collateralId: string;
+    assetCode: string;
+    referenceId: string;
+    nowIso?: string;
+  }): Promise<import('../../../ledger/types.js').OfflinePayReleaseResult> {
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      await this.lockKey(trx, `offline-pay-release:${input.referenceId}`);
+
+      const existing = await trx
+        .selectFrom('ledger_journals')
+        .select(['reference_id'])
+        .where('reference_type', '=', 'offline_pay_release')
+        .where('reference_id', '=', input.referenceId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          releaseId: input.referenceId,
+          status: 'RELEASED',
+          duplicated: true
+        };
+      }
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.lockUsers(trx, [input.userId]);
+      const pendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
+      if (pendingBalance < input.amount) {
+        throw new DomainError(409, 'INSUFFICIENT_OFFLINE_PAY_PENDING', 'offline pay pending balance underflow');
+      }
+
+      const amountValue = formatKoriAmount(input.amount);
+      await this.appendJournal(trx, {
+        journalType: 'offline_pay_released',
+        referenceType: 'offline_pay_release',
+        referenceId: input.referenceId,
+        description: `offline pay collateral release ${input.collateralId}`.trim(),
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+            accountType: 'liability',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'offline_pay.collateral.released',
+        aggregateType: 'offline_pay_release',
+        aggregateId: input.referenceId,
+        payload: {
+          userId: input.userId,
+          deviceId: input.deviceId,
+          collateralId: input.collateralId,
+          assetCode: input.assetCode,
+          amount: amountValue,
+          occurredAt: nowIso
+        },
+        occurredAt: nowIso
+      });
+
+      return {
+        releaseId: input.referenceId,
+        status: 'RELEASED',
+        duplicated: false
+      };
+    });
+  }
+
   async confirmWithdrawalExternalAuth(
     withdrawalId: string,
     input: { provider: string; requestId: string },

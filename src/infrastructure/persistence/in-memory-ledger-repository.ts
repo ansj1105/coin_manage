@@ -10,6 +10,10 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
     throw new Error('offline pay lock is not implemented for in-memory ledger');
   }
 
+  async releaseOfflinePayCollateral(): Promise<import('../../ledger/types.js').OfflinePayReleaseResult> {
+    throw new Error('offline pay release is not implemented for in-memory ledger');
+  }
+
   async finalizeOfflinePaySettlement(): Promise<import('../../ledger/types.js').OfflinePaySettlementFinalizeResult> {
     throw new Error('offline pay finalize is not implemented for in-memory ledger');
   }

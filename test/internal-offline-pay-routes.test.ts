@@ -12,6 +12,7 @@ const invokeRoute = async (
   },
   offlinePayService: {
     lockCollateral?: ReturnType<typeof vi.fn>;
+    releaseCollateral?: ReturnType<typeof vi.fn>;
     finalizeSettlement?: ReturnType<typeof vi.fn>;
   }
 ) => {
@@ -236,6 +237,46 @@ describe('internal offline-pay routes', () => {
     expect(response.jsonBody).toEqual({
       status: 'OK',
       message: 'settlement finalized'
+    });
+  });
+
+  it('releases collateral through the injected service and returns release metadata', async () => {
+    const releaseCollateral = vi.fn().mockResolvedValue({
+      releaseId: 'release:collateral-1',
+      status: 'RELEASED'
+    });
+
+    const response = await invokeRoute(
+      {
+        method: 'post',
+        path: '/collateral/release',
+        headers: {
+          'x-internal-api-key': 'internal-secret'
+        },
+        body: {
+          userId: '77',
+          deviceId: 'device-1',
+          collateralId: 'collateral-1',
+          assetCode: 'KORI',
+          amount: '150.000000',
+          referenceId: 'release:collateral-1'
+        }
+      },
+      { releaseCollateral }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(releaseCollateral).toHaveBeenCalledWith({
+      userId: '77',
+      deviceId: 'device-1',
+      collateralId: 'collateral-1',
+      assetCode: 'KORI',
+      amount: '150.000000',
+      referenceId: 'release:collateral-1'
+    });
+    expect(response.jsonBody).toEqual({
+      releaseId: 'release:collateral-1',
+      status: 'RELEASED'
     });
   });
 

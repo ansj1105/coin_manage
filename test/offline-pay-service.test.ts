@@ -3,6 +3,41 @@ import { OfflinePayService } from '../src/application/services/offline-pay-servi
 import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
 
 describe('offline pay service', () => {
+  it('releases collateral through ledger and returns release metadata', async () => {
+    const ledger = {
+      releaseOfflinePayCollateral: vi.fn().mockResolvedValue({
+        releaseId: 'release:collateral-1',
+        status: 'RELEASED',
+        duplicated: false
+      }),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const service = new OfflinePayService(ledger as any);
+
+    const result = await service.releaseCollateral({
+      userId: '77',
+      deviceId: 'device-1',
+      collateralId: 'collateral-1',
+      assetCode: 'KORI',
+      amount: '150.000000',
+      referenceId: 'release:collateral-1'
+    });
+
+    expect(result).toEqual({
+      releaseId: 'release:collateral-1',
+      status: 'RELEASED'
+    });
+    expect(ledger.releaseOfflinePayCollateral).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: '77',
+        deviceId: 'device-1',
+        collateralId: 'collateral-1',
+        assetCode: 'KORI',
+        referenceId: 'release:collateral-1'
+      })
+    );
+  });
+
   it('rejects settlement finalization when proof fingerprint mismatches', async () => {
     const ledger = {
       finalizeOfflinePaySettlement: vi.fn(),
