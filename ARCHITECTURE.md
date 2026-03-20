@@ -53,4 +53,6 @@ foxya app/web -> coin_manage app-api
 - 운영 foxya API 기본 경로는 `https://api.korion.io.kr`
 - foxya DB proxy 기본 경로는 `172.31.36.110:15432`
 - Postgres schema는 Flyway로 관리
+- `coin_manage` Postgres는 출금 lifecycle의 canonical write model이므로 운영 목표를 `primary + standby + backup`으로 둔다
+- `redis`는 queue/lock/transient delivery 용도이며 canonical withdrawal-state store가 아니다
 - 앱 조립은 [`create-app-dependencies.ts`](/Users/anseojeong/work/coin_manage/src/container/create-app-dependencies.ts) 에서 수행

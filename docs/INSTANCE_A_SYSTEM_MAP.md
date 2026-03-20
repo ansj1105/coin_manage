@@ -10,6 +10,7 @@
 - Flyway
 - DB 클러스터링
 - `coin_manage(korion-service)` 기반 신규 출금 서비스
+- `offline_pay` 기반 오프라인 담보 결제/정산 서비스
 
 ## 2. 구성 요약
 
@@ -20,6 +21,7 @@
 - 레거시 코인 워커 및 입금 스캐너: `coin_publish`
 - DB 마이그레이션: `coin_system_flyway`
 - 신규 출금/원장/워커: `coin_manage`
+- 오프라인 담보 결제/정산: `offline_pay`
 - 관리자 백엔드 API: `coin_csms`
 - 데이터 계층: `PostgreSQL primary/standby + db-proxy`
 
@@ -63,6 +65,18 @@
                                  | postgres         |             | db-proxy entry   |
                                  | redis            |             +------------------+
                                  +------------------+
+                                           |
+                                           v
+                                 +------------------+
+                                 | offline_pay      |
+                                 | new instance TBD |
+                                 +------------------+
+                                 | app-api          |
+                                 | app-worker       |
+                                 | app-ops planned  |
+                                 | postgres         |
+                                 | redis            |
+                                 +------------------+
 ```
 
 ### 2.1.2 요청 흐름 구조
@@ -83,6 +97,10 @@ flowchart LR
     D -. sync replication .-> S[(DB standby)]
     K --> KDB[(korion postgres)]
     K --> R[(redis)]
+    O[offline_pay] -->|collateral lock / settlement finalize| K
+    O -->|history bridge| F
+    O --> OPG[(offline_pay postgres)]
+    O --> OR[(offline_pay redis)]
 ```
 
 ## 3. 저장소별 역할
@@ -196,6 +214,28 @@ flowchart LR
 - `/api/v2/admin/*`는 `csms-api`로 라우팅
 - 관리자 로그인/대시보드 요청은 이 백엔드가 받음
 
+### 3.7 `offline_pay`
+
+구현 위치
+
+- `/Users/an/work/offline_pay`
+- 운영 서버: 신규 인스턴스 추가 구현 중, 실제 IP/도메인은 미확정
+
+역할
+
+- 오프라인 담보 결제 PoC 백엔드
+- collateral 생성/만료/정산 배치
+- proof/chain/conflict 정본 관리
+- Redis Streams 기반 settlement worker
+- `coin_manage` 원장 finalize, `foxya/fox_coin` 거래내역 브리지 호출
+
+현재 기준
+
+- Java 17 + Spring Boot + PostgreSQL + Flyway + Redis Streams 구성
+- 현재 compose 기준 역할은 `app-api`, `app-worker`, `postgres`, `redis`
+- 배포 문서 기준 목표 구조는 `별도 EC2 + dedicated postgres + dedicated redis`
+- `coin_manage`, `foxya` DB를 공유하지 않고 내부 API contract로만 연결
+
 ## 4. 서버 배치
 
 ### 4.1 메인 서버
@@ -258,7 +298,53 @@ flowchart LR
 - host nginx는 `80 -> 127.0.0.1:3000` reverse proxy
 - `443` 리슨은 현재 서버 자체에서는 확인되지 않음
 
-## 4.3 서버 역할 비교
+### 4.3 standby 서버
+
+서버
+
+- `52.204.57.80`
+- private IP: `172.31.31.109`
+
+주요 역할
+
+- foxya 계열 PostgreSQL standby
+- sync replication 대상
+- standby bind `15432`
+- 확장 시 `coin_manage` ledger DB standby/backup 역할 후보
+
+현재 확인 기준
+
+- 현재 문서상 확인된 실서비스 역할은 foxya DB standby
+- `coin_manage` 전용 standby 용도는 목표 구조이며 실제 배치 전환은 별도 작업이 필요
+
+### 4.4 offline_pay 신규 인스턴스
+
+서버
+
+- 신규 추가 구현 중
+- public/private IP, 도메인, ALB 구성은 미확정
+
+주요 역할
+
+- `offline_pay`
+- `app-api`
+- `app-worker`
+- `app-ops` planned
+- dedicated `postgres`
+- dedicated `redis`
+
+예상 포트/런타임 기준
+
+- `3100`: app api default
+- `5434`: 로컬 개발 postgres bind
+- `6382`: 로컬 개발 redis bind
+
+현재 확인 기준
+
+- repo 문서 기준 운영 권장안은 `coin_manage`, `foxya`와 분리된 별도 EC2
+- PoC 단계에서는 임시 동거가 가능하지만 DB/Redis/network/env는 반드시 분리
+
+### 4.5 서버 역할 비교
 
 ```text
 +----------------------+---------------------------------------------+
@@ -272,9 +358,20 @@ flowchart LR
 | 54.83.183.123        | ops worker, redis, 별도 postgres            |
 +----------------------+---------------------------------------------+
 | Standby Server       | PostgreSQL standby, sync replication         |
-| 52.204.57.80         | foxya-postgres-standby, standby bind 15432  |
+| 52.204.57.80         | foxya-postgres-standby, 향후 korion standby |
+|                      | / backup 역할 후보                           |
++----------------------+---------------------------------------------+
+| Offline Pay Server   | offline_pay api/worker/ops 예정,            |
+| 신규 인스턴스 TBD    | dedicated postgres, dedicated redis         |
 +----------------------+---------------------------------------------+
 ```
+
+운영 판단
+
+- `coin_manage`의 별도 postgres는 출금 lifecycle 정본을 가지므로 단일 호스트 로컬 DB로 오래 두면 안 된다
+- `Standby Server`는 foxya 계열 standby뿐 아니라 `coin_manage` ledger DB의 standby/backup 역할까지 같이 검토해야 한다
+- `offline_pay`는 `coin_manage`와 분리된 별도 인스턴스 + 전용 Postgres/Redis로 추가하는 방향이 맞다
+- 목적은 active-active가 아니라 `primary/standby + backup + promote runbook`이다
 
 ## 5. DB 클러스터 구조
 
@@ -326,6 +423,60 @@ flowchart LR
 - 운영 문서의 포트/role 표기는 실제 리슨 상태와 주기적으로 대조해야 함
 - 2026-03-17 확인 기준으로 메인 서버는 postgres primary, korion 서버는 host nginx 80 포트만 직접 리슨 중
 
+### 5.4 coin_manage ledger DB 목표 구조
+
+현재 판단
+
+- `coin_manage` postgres는 신규 출금 서비스, 내부 원장, worker 상태의 canonical write model이다
+- 따라서 `Korion Server`의 로컬 postgres를 단독 운영하면 신규 출금 체계 전체가 단일 장애점이 된다
+- `redis`는 queue/lock 용도일 뿐 정본 저장소 대체가 아니다
+
+권장 목표
+
+```text
+coin_manage app-api / app-ops / app-withdraw-worker
+                    |
+                    v
+          [ coin_manage postgres primary ]
+                    |
+              sync or near-sync repl
+                    v
+          [ coin_manage postgres standby ]
+                    |
+                    +-- basebackup / WAL archive / snapshot
+```
+
+운영 원칙
+
+- primary: `Korion Server`
+- standby: `Standby Server`
+- 앱은 write DB endpoint를 하나만 바라보게 유지
+- standby는 평소 read-only replica로 두고 장애 시에만 promote
+- backup은 standby와 별개로 보관 주기와 복구 지점 목표를 정의
+
+즉 `standby 1대`만으로는 충분하지 않고, `복제본 + 복구용 백업`을 같이 가져가야 한다
+
+### 5.5 offline_pay 데이터 계층 원칙
+
+현재 판단
+
+- `offline_pay`는 proof/chain/conflict의 정본을 가진 별도 서비스다
+- 따라서 `coin_manage` 또는 foxya DB에 테이블을 섞어 넣는 방식은 피해야 한다
+- worker/event 처리를 위해 Redis를 쓰지만 정산 정본은 PostgreSQL이 가져야 한다
+
+운영 원칙
+
+- dedicated postgres
+- dedicated redis
+- 내부 API contract 기반 연동
+- shared DB 금지
+
+구현 단계 메모
+
+- 현재 repo compose는 `app-api + app-worker + postgres + redis`
+- 운영 목표 문서에는 `app-ops` singleton 역할이 추가로 잡혀 있다
+- 실제 인스턴스 배치 시 PoC compose와 운영 토폴로지 차이를 문서에 계속 반영해야 한다
+
 ## 6. 요청 흐름
 
 ### 6.1 출금
@@ -354,6 +505,16 @@ flowchart LR
 2. 관리자 API는 `/api/v2/admin/*`
 3. host nginx가 이를 `csms-api:8081`로 프록시
 
+### 6.4 오프라인 담보 결제/정산
+
+흐름 요약
+
+1. `offline_pay`가 기기 등록, collateral 생성, settlement batch 처리를 담당
+2. collateral 생성 시 `offline_pay -> coin_manage` 내부 API로 자산 잠금 요청
+3. settlement finalize 시 `offline_pay -> coin_manage` 내부 API로 canonical ledger finalize 요청
+4. settlement history 노출은 `offline_pay -> foxya/fox_coin` 내부 API로 기록
+5. proof/chain/conflict 정본은 `offline_pay` Postgres에 남기고 타 서비스 DB에 직접 쓰지 않음
+
 ## 7. 빠지기 쉬운 구성
 
 현재 사용자가 적어준 목록에서 실제 운영상 빠지면 안 되는 축은 아래 두 개다.
@@ -364,6 +525,9 @@ flowchart LR
 - `coin_csms`
 	- 관리자 인증/대시보드/관리자 API 백엔드
 	- 관리자 웹만 있고 API가 없으면 실제 운영 흐름이 닫히지 않음
+- `offline_pay`
+	- 오프라인 담보 결제/정산 신규 축
+	- 별도 인스턴스와 전용 데이터 저장소가 전제인 서비스
 
 ## 8. 현재 기준으로 보완이 필요한 부분
 
@@ -371,6 +535,8 @@ flowchart LR
 - `foxya_coin_service`에는 `user_wallets.private_key` 저장 경로가 남아 있어 private key 정책 정리가 필요
 - `coin_manage`는 출금 실행 주체지만 hot wallet key를 env direct 모드로 읽는 구조가 남아 있음
 - DB 클러스터는 운영 중 전환 이력이 있어 primary/standby 현재 기준 문서를 더 자주 갱신해야 함
+- `offline_pay`는 인스턴스 추가 구현 중이므로 실제 서버 IP/도메인/ALB/ops 배치 확정 후 문서를 다시 고정해야 함
+- `offline_pay -> coin_manage`, `offline_pay -> foxya` 내부 API 계약은 구현과 함께 경로/인증키/재시도 정책까지 운영 문서에 합쳐야 함
 
 ## 9. 작성 요약
 
@@ -382,6 +548,7 @@ flowchart LR
 - 마이그레이션: `coin_system_flyway`
 - 관리자 API: `coin_csms`
 - 신규 출금/원장: `coin_manage`
+- 오프라인 담보 결제/정산: `offline_pay`
 - DB 이중화: `primary/standby + db-proxy`
 
-이 문서를 기준으로 보면, 사용자가 적은 5개 축만으로는 현재 운영 출금 구조와 관리자 구조를 완전히 설명하기 어렵고, `coin_manage`와 `coin_csms`를 포함해야 실제 운영 구조가 닫힌다.
+이제는 `offline_pay` 신규 인스턴스까지 포함해서 봐야 전체 구조가 맞다. 다만 `offline_pay`는 아직 구현/배치 진행 중이라, 현재 운영 중인 축과 동일 레벨의 확정 정보로 쓰기보다 `추가 중인 별도 서비스 축`으로 관리하는 것이 정확하다.

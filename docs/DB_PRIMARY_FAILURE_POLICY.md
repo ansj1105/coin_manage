@@ -78,6 +78,15 @@
 - 운영자가 전환할 때는 `.env`의 `DB_PRIMARY_HOST`, `DB_STANDBY_HOST`, `DB_ADMIN_HOST`만 바꿈
 - 앱 `DB_HOST`는 계속 `db-proxy`
 
+### 3.4 standby와 backup은 같은 것이 아니다
+
+원칙
+
+1. standby는 HA/failover용이다
+2. backup은 사용자 실수, 잘못된 배치, 데이터 오염, 장시간 장애 복구용이다
+3. 운영 기준은 `primary + standby + backup` 3축을 같이 설계한다
+4. `coin_manage`처럼 출금 원장 정본을 가진 DB는 replica만 두고 backup을 생략하면 안 된다
+
 ## 4. 장애 대응 정책
 
 ### 4.1 1차 대응
@@ -246,8 +255,26 @@ write_probe=ok
 2. `db-proxy` write path에서 standby 자동 fallback 금지
 3. 장애 시 운영자가 수정할 `.env` 기준값 표준화
 4. 장애 직후 확인용 명령어 Runbook 고정
+5. `coin_manage` 전용 postgres에도 primary/standby 구조 적용
+6. standby와 별도로 base backup / WAL archive / snapshot 정책 확정
 
-## 10. 작성 요약
+## 10. coin_manage 적용 메모
+
+적용 이유
+
+- `coin_manage`는 출금 lifecycle state의 canonical write model이다
+- `app-api`, `app-withdraw-worker`, `app-ops`가 모두 같은 postgres 정본에 의존한다
+- 이 DB가 단독 장애로 내려가면 신규 출금 승인/dispatch/reconcile이 모두 멈춘다
+
+권장 구조
+
+1. primary는 `Korion Server`에 둔다
+2. standby는 `Standby Server`에 둔다
+3. 앱은 직접 두 노드를 보지 않고 고정 DB endpoint 또는 proxy만 본다
+4. standby는 승격 전까지 read-only로 유지한다
+5. backup은 standby와 별도로 보관한다
+
+## 11. 작성 요약
 
 정책의 핵심은 단순하다.
 
@@ -256,3 +283,4 @@ write_probe=ok
 3. 필요하면 standby를 승격한 뒤에만 새 primary로 사용한다
 4. `db-proxy`는 read-only standby로 자동 하강해 앱 write 트래픽을 받지 않게 설계한다
 5. 서비스 정상 판정은 health가 아니라 "실제 write 성공"으로 한다
+6. standby는 HA용이고 backup은 복구용이므로 둘 다 필요하다
