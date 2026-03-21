@@ -902,6 +902,112 @@ describe('system routes', () => {
     });
   });
 
+  it('returns offline pay operation overview for ops widgets', async () => {
+    const getOfflinePayOperationOverview = vi.fn().mockResolvedValue({
+      summary: {
+        completedCount: 3,
+        pendingCount: 2,
+        failedCount: 1,
+        settlementCount: 2,
+        collateralTopupCount: 1,
+        collateralReleaseCount: 1
+      },
+      items: []
+    });
+    const router = buildRouter({ getOfflinePayOperationOverview });
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === '/offline-pay/operations/overview' && layer.route.methods?.get
+    );
+
+    const req = {
+      body: {},
+      query: { limit: '20', assetCode: 'KORI' },
+      params: {},
+      method: 'GET',
+      originalUrl: '/offline-pay/operations/overview',
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
+    } as any;
+    let jsonBody: unknown;
+    const res = {
+      status() {
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(getOfflinePayOperationOverview).toHaveBeenCalledWith({ limit: 20, assetCode: 'KORI' });
+    expect(jsonBody).toMatchObject({
+      summary: {
+        completedCount: 3,
+        pendingCount: 2,
+        failedCount: 1
+      }
+    });
+  });
+
+  it('lists offline pay operations for ops tooling', async () => {
+    const listOfflinePayOperations = vi.fn().mockResolvedValue([
+      {
+        id: 'evt-1',
+        operationType: 'COLLATERAL_TOPUP',
+        status: 'pending',
+        assetCode: 'KORI',
+        amount: '100.000000',
+        userId: '77',
+        deviceId: 'device-1',
+        referenceId: 'ref-1',
+        source: 'outbox',
+        createdAt: '2026-03-21T00:00:00.000Z',
+        lastError: null
+      }
+    ]);
+    const router = buildRouter({ listOfflinePayOperations });
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === '/offline-pay/operations' && layer.route.methods?.get
+    );
+
+    const req = {
+      body: {},
+      query: { limit: '10', operationType: 'COLLATERAL_TOPUP', status: 'pending', assetCode: 'KORI' },
+      params: {},
+      method: 'GET',
+      originalUrl: '/offline-pay/operations',
+      header: (name: string) => (name.toLowerCase() === 'x-admin-api-key' ? 'admin-secret' : undefined)
+    } as any;
+    let jsonBody: unknown;
+    const res = {
+      status() {
+        return this;
+      },
+      json(payload: unknown) {
+        jsonBody = payload;
+        return this;
+      }
+    } as any;
+
+    await Promise.resolve(routeLayer.route.stack[0].handle(req, res, () => undefined));
+
+    expect(listOfflinePayOperations).toHaveBeenCalledWith({
+      limit: 10,
+      operationType: 'COLLATERAL_TOPUP',
+      status: 'pending',
+      assetCode: 'KORI'
+    });
+    expect(jsonBody).toEqual({
+      items: [
+        expect.objectContaining({
+          operationType: 'COLLATERAL_TOPUP',
+          status: 'pending'
+        })
+      ]
+    });
+  });
+
   it('returns withdrawal overview counts for dashboard widgets', async () => {
     const getWithdrawalOverview = vi.fn().mockResolvedValue({
       pendingApprovalCount: 2,

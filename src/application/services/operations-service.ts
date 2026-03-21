@@ -37,6 +37,35 @@ type WithdrawalRiskEvent = {
   blacklistPolicyType: WithdrawAddressPolicyType | null;
 };
 
+type OfflinePayOperationType = 'SETTLEMENT' | 'COLLATERAL_TOPUP' | 'COLLATERAL_RELEASE';
+type OfflinePayOperationStatus = 'completed' | 'pending' | 'failed';
+
+type OfflinePayOperationItem = {
+  id: string;
+  operationType: OfflinePayOperationType;
+  status: OfflinePayOperationStatus;
+  assetCode: string;
+  amount: string;
+  userId: string;
+  deviceId: string;
+  referenceId: string;
+  source: 'audit' | 'outbox';
+  createdAt: string;
+  lastError: string | null;
+};
+
+type OfflinePayOperationOverview = {
+  summary: {
+    completedCount: number;
+    pendingCount: number;
+    failedCount: number;
+    settlementCount: number;
+    collateralTopupCount: number;
+    collateralReleaseCount: number;
+  };
+  items: OfflinePayOperationItem[];
+};
+
 const formatTrxSunAmount = (value: bigint) => {
   const negative = value < 0n;
   const absolute = negative ? value * -1n : value;
@@ -633,6 +662,126 @@ export class OperationsService {
         totalGapFeeSun: totalGapFeeSun.toString(),
         totalGapFeeAmount: formatTrxSunAmount(totalGapFeeSun)
       }
+    };
+  }
+
+  async listOfflinePayOperations(input: {
+    limit?: number;
+    operationType?: OfflinePayOperationType;
+    status?: OfflinePayOperationStatus;
+    assetCode?: string;
+  } = {}): Promise<OfflinePayOperationItem[]> {
+    const limit = input.limit ?? 50;
+    const [logs, outbox] = await Promise.all([
+      this.ledger.listAuditLogs({
+        entityType: 'system',
+        limit: Math.max(limit * 6, 120)
+      }),
+      this.ledger.listOutboxEvents({ limit: Math.max(limit * 6, 120) })
+    ]);
+
+    const mapAuditAction = (action: string): OfflinePayOperationType | null => {
+      switch (action) {
+        case 'offline_pay.collateral.locked':
+          return 'COLLATERAL_TOPUP';
+        case 'offline_pay.collateral.released':
+          return 'COLLATERAL_RELEASE';
+        case 'offline_pay.settlement.finalized':
+          return 'SETTLEMENT';
+        default:
+          return null;
+      }
+    };
+
+    const mapOutboxEventType = (eventType: string): OfflinePayOperationType | null => {
+      switch (eventType) {
+        case 'offline_pay.collateral.locked':
+          return 'COLLATERAL_TOPUP';
+        case 'offline_pay.collateral.released':
+          return 'COLLATERAL_RELEASE';
+        case 'offline_pay.settlement.finalized':
+          return 'SETTLEMENT';
+        default:
+          return null;
+      }
+    };
+
+    const auditItems: OfflinePayOperationItem[] = logs
+      .map((log) => {
+        const operationType = mapAuditAction(log.action);
+        if (!operationType) {
+          return null;
+        }
+        return {
+          id: `${log.action}:${log.entityId}:${log.createdAt}`,
+          operationType,
+          status: 'completed' as const,
+          assetCode: log.metadata.assetCode ?? '',
+          amount: log.metadata.amount ?? '',
+          userId: log.metadata.userId ?? '',
+          deviceId: log.metadata.deviceId ?? '',
+          referenceId: log.metadata.referenceId ?? log.entityId,
+          source: 'audit' as const,
+          createdAt: log.createdAt,
+          lastError: null
+        };
+      })
+      .filter((item): item is OfflinePayOperationItem => Boolean(item));
+
+    const outboxItems: OfflinePayOperationItem[] = outbox
+      .map((event) => {
+        const operationType = mapOutboxEventType(event.eventType);
+        if (!operationType) {
+          return null;
+        }
+        if (event.status === 'published') {
+          return null;
+        }
+        const status: OfflinePayOperationStatus = event.status === 'dead_lettered' ? 'failed' : 'pending';
+        const payload = event.payload ?? {};
+        return {
+          id: event.outboxEventId,
+          operationType,
+          status,
+          assetCode: typeof payload.assetCode === 'string' ? payload.assetCode : '',
+          amount: typeof payload.amount === 'string' ? payload.amount : '',
+          userId: typeof payload.userId === 'string' ? payload.userId : '',
+          deviceId: typeof payload.deviceId === 'string' ? payload.deviceId : '',
+          referenceId: event.aggregateId,
+          source: 'outbox' as const,
+          createdAt: event.createdAt,
+          lastError: event.lastError ?? null
+        };
+      })
+      .filter((item): item is OfflinePayOperationItem => Boolean(item));
+
+    return [...outboxItems, ...auditItems]
+      .filter((item) => !input.operationType || item.operationType === input.operationType)
+      .filter((item) => !input.status || item.status === input.status)
+      .filter((item) => !input.assetCode || item.assetCode.toUpperCase() === input.assetCode.toUpperCase())
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit);
+  }
+
+  async getOfflinePayOperationOverview(input: {
+    limit?: number;
+    assetCode?: string;
+  } = {}): Promise<OfflinePayOperationOverview> {
+    const items = await this.listOfflinePayOperations({
+      limit: input.limit ?? 100,
+      assetCode: input.assetCode
+    });
+
+    return {
+      summary: {
+        completedCount: items.filter((item) => item.status === 'completed').length,
+        pendingCount: items.filter((item) => item.status === 'pending').length,
+        failedCount: items.filter((item) => item.status === 'failed').length,
+        settlementCount: items.filter((item) => item.operationType === 'SETTLEMENT').length,
+        collateralTopupCount: items.filter((item) => item.operationType === 'COLLATERAL_TOPUP').length,
+        collateralReleaseCount: items.filter((item) => item.operationType === 'COLLATERAL_RELEASE').length
+      },
+      items
     };
   }
 

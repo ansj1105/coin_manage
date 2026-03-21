@@ -788,6 +788,35 @@ export const createSystemRoutes = (
     }
   });
 
+  router.get('/offline-pay/operations', async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const operationType = typeof req.query.operationType === 'string' ? req.query.operationType : undefined;
+      const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+      const assetCode = typeof req.query.assetCode === 'string' ? req.query.assetCode : undefined;
+      res.json({
+        items: await operationsService.listOfflinePayOperations({
+          limit,
+          operationType: operationType as any,
+          status: status as any,
+          assetCode
+        })
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/offline-pay/operations/overview', async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const assetCode = typeof req.query.assetCode === 'string' ? req.query.assetCode : undefined;
+      res.json(await operationsService.getOfflinePayOperationOverview({ limit, assetCode }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/sweeps/plan', async (_req, res, next) => {
     try {
       const result = await operationsService.planSweeps();
