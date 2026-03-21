@@ -706,54 +706,47 @@ export class OperationsService {
       }
     };
 
-    const auditItems: OfflinePayOperationItem[] = logs
-      .map((log) => {
-        const operationType = mapAuditAction(log.action);
-        if (!operationType) {
-          return null;
-        }
-        return {
-          id: `${log.action}:${log.entityId}:${log.createdAt}`,
-          operationType,
-          status: 'completed' as const,
-          assetCode: log.metadata.assetCode ?? '',
-          amount: log.metadata.amount ?? '',
-          userId: log.metadata.userId ?? '',
-          deviceId: log.metadata.deviceId ?? '',
-          referenceId: log.metadata.referenceId ?? log.entityId,
-          source: 'audit' as const,
-          createdAt: log.createdAt,
-          lastError: null
-        };
-      })
-      .filter((item): item is OfflinePayOperationItem => Boolean(item));
+    const auditItems: OfflinePayOperationItem[] = logs.flatMap((log) => {
+      const operationType = mapAuditAction(log.action);
+      if (!operationType) {
+        return [];
+      }
+      return [{
+        id: `${log.action}:${log.entityId}:${log.createdAt}`,
+        operationType,
+        status: 'completed' as const,
+        assetCode: log.metadata.assetCode ?? '',
+        amount: log.metadata.amount ?? '',
+        userId: log.metadata.userId ?? '',
+        deviceId: log.metadata.deviceId ?? '',
+        referenceId: log.metadata.referenceId ?? log.entityId,
+        source: 'audit' as const,
+        createdAt: log.createdAt,
+        lastError: null
+      }];
+    });
 
-    const outboxItems: OfflinePayOperationItem[] = outbox
-      .map((event) => {
-        const operationType = mapOutboxEventType(event.eventType);
-        if (!operationType) {
-          return null;
-        }
-        if (event.status === 'published') {
-          return null;
-        }
-        const status: OfflinePayOperationStatus = event.status === 'dead_lettered' ? 'failed' : 'pending';
-        const payload = event.payload ?? {};
-        return {
-          id: event.outboxEventId,
-          operationType,
-          status,
-          assetCode: typeof payload.assetCode === 'string' ? payload.assetCode : '',
-          amount: typeof payload.amount === 'string' ? payload.amount : '',
-          userId: typeof payload.userId === 'string' ? payload.userId : '',
-          deviceId: typeof payload.deviceId === 'string' ? payload.deviceId : '',
-          referenceId: event.aggregateId,
-          source: 'outbox' as const,
-          createdAt: event.createdAt,
-          lastError: event.lastError ?? null
-        };
-      })
-      .filter((item): item is OfflinePayOperationItem => Boolean(item));
+    const outboxItems: OfflinePayOperationItem[] = outbox.flatMap((event) => {
+      const operationType = mapOutboxEventType(event.eventType);
+      if (!operationType || event.status === 'published') {
+        return [];
+      }
+      const status: OfflinePayOperationStatus = event.status === 'dead_lettered' ? 'failed' : 'pending';
+      const payload = event.payload ?? {};
+      return [{
+        id: event.outboxEventId,
+        operationType,
+        status,
+        assetCode: typeof payload.assetCode === 'string' ? payload.assetCode : '',
+        amount: typeof payload.amount === 'string' ? payload.amount : '',
+        userId: typeof payload.userId === 'string' ? payload.userId : '',
+        deviceId: typeof payload.deviceId === 'string' ? payload.deviceId : '',
+        referenceId: event.aggregateId,
+        source: 'outbox' as const,
+        createdAt: event.createdAt,
+        lastError: event.lastError ?? null
+      }];
+    });
 
     return [...outboxItems, ...auditItems]
       .filter((item) => !input.operationType || item.operationType === input.operationType)
