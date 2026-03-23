@@ -1,7 +1,9 @@
 import { DomainError } from '../../core/domain-error.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
+import type { AlertService } from './alert-service.js';
 import type { WithdrawService } from './withdraw-service.js';
 import { computeOfflinePayProofFingerprint } from './offline-pay-proof-fingerprint.js';
+import { SimpleCircuitBreaker } from './simple-circuit-breaker.js';
 
 export interface OfflinePaySettlementFinalizedEvent {
   settlementId: string;
@@ -29,10 +31,16 @@ export interface OfflinePaySettlementFinalizedEvent {
 }
 
 export class OfflinePaySettlementConsumerService {
+  private readonly withdrawalCircuit: SimpleCircuitBreaker;
+
   constructor(
     private readonly ledger: Pick<LedgerRepository, 'appendAuditLog'>,
-    private readonly withdrawService?: Pick<WithdrawService, 'request' | 'confirmExternalAuth' | 'approve'>
-  ) {}
+    private readonly withdrawService?: Pick<WithdrawService, 'request' | 'confirmExternalAuth' | 'approve'>,
+    private readonly alertService?: Pick<AlertService, 'notifyOfflinePayCircuitOpened' | 'notifyOfflinePayExecutionFailure'>,
+    withdrawalCircuit?: SimpleCircuitBreaker
+  ) {
+    this.withdrawalCircuit = withdrawalCircuit ?? new SimpleCircuitBreaker('offline_pay_withdrawal_execution');
+  }
 
   async handle(input: OfflinePaySettlementFinalizedEvent) {
     const computedFingerprint = computeOfflinePayProofFingerprint({
@@ -77,36 +85,61 @@ export class OfflinePaySettlementConsumerService {
       return { status: 'INTERNAL_ONLY' as const, mode: 'withdraw_service_unavailable' as const };
     }
 
-    const amountKori = Number(input.amount);
-    const request = await this.withdrawService.request({
-      userId: input.userId,
-      amountKori,
-      toAddress: input.toAddress,
-      idempotencyKey: `offline-pay:${input.settlementId}`,
-      clientIp: input.clientIp,
-      deviceId: input.deviceId
-    });
-    await this.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
-      provider: 'offline_pay',
-      requestId: input.proofFingerprint,
-      actorId: 'offline_pay_consumer'
-    });
-    await this.withdrawService.approve(request.withdrawal.withdrawalId, {
-      adminId: 'offline_pay_consumer',
-      actorType: 'system',
-      reasonCode: 'ops_override',
-      note: `offline pay settlement ${input.settlementId}`
-    });
+    this.withdrawalCircuit.assertCallable();
 
-    await this.appendAudit(input, 'offline_pay.execution.withdraw_requested', {
-      withdrawalId: request.withdrawal.withdrawalId,
-      toAddress: input.toAddress
-    });
+    try {
+      const amountKori = Number(input.amount);
+      const request = await this.withdrawService.request({
+        userId: input.userId,
+        amountKori,
+        toAddress: input.toAddress,
+        idempotencyKey: `offline-pay:${input.settlementId}`,
+        clientIp: input.clientIp,
+        deviceId: input.deviceId
+      });
+      await this.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
+        provider: 'offline_pay',
+        requestId: input.proofFingerprint,
+        actorId: 'offline_pay_consumer'
+      });
+      await this.withdrawService.approve(request.withdrawal.withdrawalId, {
+        adminId: 'offline_pay_consumer',
+        actorType: 'system',
+        reasonCode: 'ops_override',
+        note: `offline pay settlement ${input.settlementId}`
+      });
 
-    return {
-      status: 'WITHDRAW_REQUESTED' as const,
-      withdrawalId: request.withdrawal.withdrawalId
-    };
+      this.withdrawalCircuit.onSuccess();
+      await this.appendAudit(input, 'offline_pay.execution.withdraw_requested', {
+        withdrawalId: request.withdrawal.withdrawalId,
+        toAddress: input.toAddress
+      });
+
+      return {
+        status: 'WITHDRAW_REQUESTED' as const,
+        withdrawalId: request.withdrawal.withdrawalId
+      };
+    } catch (error) {
+      this.withdrawalCircuit.onFailure();
+      const message = error instanceof Error ? error.message : 'offline pay execution failed';
+      await this.appendAudit(input, 'offline_pay.execution.failed', {
+        reason: message
+      });
+      await this.alertService?.notifyOfflinePayExecutionFailure({
+        settlementId: input.settlementId,
+        proofId: input.proofId,
+        message
+      });
+      if (this.withdrawalCircuit.state === 'OPEN') {
+        await this.alertService?.notifyOfflinePayCircuitOpened({
+          circuitName: 'offline_pay_withdrawal_execution',
+          settlementId: input.settlementId,
+          failureCount: this.withdrawalCircuit.failureCount,
+          message
+        });
+      }
+      throw error;
+    }
   }
 
   private async appendAudit(

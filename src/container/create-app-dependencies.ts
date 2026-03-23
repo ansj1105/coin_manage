@@ -7,6 +7,7 @@ import { SystemMonitoringService } from '../application/services/system-monitori
 import { OnchainService } from '../application/services/onchain-service.js';
 import { OfflinePayService } from '../application/services/offline-pay-service.js';
 import { OfflinePaySettlementConsumerService } from '../application/services/offline-pay-settlement-consumer-service.js';
+import { SimpleCircuitBreaker } from '../application/services/simple-circuit-breaker.js';
 import { env } from '../config/env.js';
 import { getConfiguredSystemWallets } from '../config/system-wallets.js';
 import { parseKoriAmount } from '../domain/value-objects/money.js';
@@ -360,7 +361,12 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWithdrawalSyncClient,
     withdrawalSigner
   );
-  const offlinePaySettlementConsumerService = new OfflinePaySettlementConsumerService(ledger, withdrawService);
+  const offlinePaySettlementConsumerService = new OfflinePaySettlementConsumerService(
+    ledger,
+    withdrawService,
+    alertService,
+    new SimpleCircuitBreaker('offline_pay_withdrawal_execution')
+  );
   eventPublisher.subscribe('withdrawal.state.changed', (event) =>
     eventConsumerRunner.run(
       {

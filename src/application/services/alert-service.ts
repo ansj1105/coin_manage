@@ -345,6 +345,39 @@ export class AlertService {
     });
   }
 
+  async notifyOfflinePayCircuitOpened(input: {
+    circuitName: string;
+    settlementId: string;
+    failureCount: number;
+    message: string;
+  }) {
+    await this.send({
+      title: `[KORION] Offline Pay Circuit Open - ${input.circuitName}`,
+      body: [
+        `settlementId=${input.settlementId}`,
+        `failureCount=${input.failureCount}`,
+        `message=${input.message}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-circuit-open:${input.circuitName}:${input.settlementId}:${input.message}`
+    });
+  }
+
+  async notifyOfflinePayExecutionFailure(input: {
+    settlementId: string;
+    proofId: string;
+    message: string;
+  }) {
+    await this.send({
+      title: '[KORION] Offline Pay Execution Failed',
+      body: [
+        `settlementId=${input.settlementId}`,
+        `proofId=${input.proofId}`,
+        `message=${input.message}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-execution-failed:${input.settlementId}:${input.proofId}:${input.message}`
+    });
+  }
+
   private async send(input: { title: string; body: string; dedupeKey?: string; cooldownSec?: number }) {
     if (!this.notifier) {
       return;

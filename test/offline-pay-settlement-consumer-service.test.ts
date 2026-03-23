@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { OfflinePaySettlementConsumerService } from '../src/application/services/offline-pay-settlement-consumer-service.js';
 import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
+import { SimpleCircuitBreaker } from '../src/application/services/simple-circuit-breaker.js';
 
 const baseEvent = () => {
   const event = {
@@ -101,5 +102,36 @@ describe('offline pay settlement consumer service', () => {
       reasonCode: 'ops_override',
       note: 'offline pay settlement settlement-1'
     });
+  });
+
+  it('opens circuit and alerts when withdraw execution keeps failing', async () => {
+    const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
+    const alertService = {
+      notifyOfflinePayExecutionFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined)
+    };
+    const withdrawService = {
+      request: vi.fn().mockRejectedValue(new Error('withdraw request failed')),
+      confirmExternalAuth: vi.fn(),
+      approve: vi.fn()
+    };
+    const circuit = new SimpleCircuitBreaker('offline_pay_withdrawal_execution', 1, 60_000);
+    const service = new OfflinePaySettlementConsumerService(
+      ledger as any,
+      withdrawService as any,
+      alertService as any,
+      circuit
+    );
+
+    await expect(
+      service.handle({
+        ...baseEvent(),
+        toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+      })
+    ).rejects.toThrow('withdraw request failed');
+
+    expect(alertService.notifyOfflinePayExecutionFailure).toHaveBeenCalledOnce();
+    expect(alertService.notifyOfflinePayCircuitOpened).toHaveBeenCalledOnce();
+    expect(circuit.state).toBe('OPEN');
   });
 });
