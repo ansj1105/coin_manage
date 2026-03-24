@@ -122,6 +122,66 @@ export class AlertService {
     });
   }
 
+  async notifyOfflinePaySettlementConsumerFailure(input: {
+    settlementId: string;
+    batchId: string;
+    stage: string;
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Offline Pay Settlement Consumer Failure',
+      body: [
+        `settlementId=${input.settlementId}`,
+        `batchId=${input.batchId}`,
+        `stage=${input.stage}`,
+        `reason=${input.reason}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-settlement-consumer-failure:${input.settlementId}:${input.stage}:${input.reason}`
+    });
+  }
+
+  async notifyOfflinePaySettlementCircuitOpened(input: {
+    consecutiveFailures: number;
+    cooldownRemainingMs: number;
+    reason: string;
+  }) {
+    await this.send({
+      title: '[KORION] Offline Pay Settlement Circuit Open',
+      body: [
+        `consecutiveFailures=${input.consecutiveFailures}`,
+        `cooldownRemainingMs=${input.cooldownRemainingMs}`,
+        `reason=${input.reason}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-settlement-circuit-open:${input.reason}`
+    });
+  }
+
+  async notifyOfflinePaySettlementCircuitRecovered(input: { consecutiveFailures: number }) {
+    await this.send({
+      title: '[KORION] Offline Pay Settlement Circuit Recovered',
+      body: [`consecutiveFailures=${input.consecutiveFailures}`].join('\n'),
+      dedupeKey: 'offline-pay-settlement-circuit-recovered'
+    });
+  }
+
+  async notifyOfflinePaySettlementDeadLetter(input: {
+    settlementId: string;
+    batchId: string;
+    circuitOpen: boolean;
+    consecutiveFailures: number;
+  }) {
+    await this.send({
+      title: '[KORION] Offline Pay Settlement Dead Letter',
+      body: [
+        `settlementId=${input.settlementId}`,
+        `batchId=${input.batchId}`,
+        `circuitOpen=${input.circuitOpen}`,
+        `consecutiveFailures=${input.consecutiveFailures}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-settlement-dead-letter:${input.settlementId}`
+    });
+  }
+
   async notifyWithdrawalResourceLow(input: {
     withdrawalId: string;
     hotWalletAddress: string;

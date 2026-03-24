@@ -22,4 +22,23 @@ describe('AlertService', () => {
       })
     );
   });
+
+  it('formats offline pay settlement circuit alerts for Telegram', async () => {
+    const notifier = {
+      sendMessage: vi.fn(async () => undefined)
+    };
+    const service = new AlertService(notifier);
+
+    await service.notifyOfflinePaySettlementCircuitOpened({
+      consecutiveFailures: 3,
+      cooldownRemainingMs: 300000,
+      reason: 'temporary downstream failure'
+    });
+
+    expect(notifier.sendMessage).toHaveBeenCalledWith({
+      title: '[KORION] Offline Pay Settlement Circuit Open',
+      body: 'consecutiveFailures=3\ncooldownRemainingMs=300000\nreason=temporary downstream failure',
+      dedupeKey: 'offline-pay-settlement-circuit-open:temporary downstream failure'
+    });
+  });
 });
