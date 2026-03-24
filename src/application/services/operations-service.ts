@@ -6,6 +6,12 @@ import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../
 import type { NetworkFeeReceipt } from '../../domain/ledger/types.js';
 import type { WithdrawJobQueue } from '../ports/withdraw-job-queue.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
+import {
+  isOfflinePayOutboxEvent,
+  resolveOfflineFailureClass,
+  resolveOfflineSagaStatus,
+  resolveOfflineWorkflowStage
+} from './offline-workflow-state.js';
 import { SystemMonitoringService } from './system-monitoring-service.js';
 import type { WithdrawPolicyService } from './withdraw-policy-service.js';
 import type { WithdrawAddressPolicyType } from '../../domain/withdraw-policy/types.js';
@@ -44,6 +50,9 @@ type OfflinePayOperationItem = {
   id: string;
   operationType: OfflinePayOperationType;
   status: OfflinePayOperationStatus;
+  workflowStage: string;
+  sagaStatus: string;
+  failureClass: string | null;
   assetCode: string;
   amount: string;
   userId: string;
@@ -103,6 +112,12 @@ export class OperationsService {
     const [summary, events] = await Promise.all([this.ledger.getOutboxEventSummary(), this.ledger.listOutboxEvents({ limit })]);
 
     return {
+      workflow: {
+        ledgerLockedCount: events.filter((event) => resolveOfflineWorkflowStage(event) === 'LEDGER_LOCKED').length,
+        collateralReleasedCount: events.filter((event) => resolveOfflineWorkflowStage(event) === 'COLLATERAL_RELEASED').length,
+        ledgerSyncedCount: events.filter((event) => resolveOfflineWorkflowStage(event) === 'LEDGER_SYNCED').length,
+        deadLetteredCount: events.filter((event) => resolveOfflineWorkflowStage(event) === 'DEAD_LETTERED').length
+      },
       summary: {
         ...summary,
         oldestPendingCreatedAt: summary.oldestPendingCreatedAt ?? null,
@@ -125,7 +140,15 @@ export class OperationsService {
         deadLetterNote: event.deadLetterNote ?? null,
         deadLetterCategory: event.deadLetterCategory ?? null,
         incidentRef: event.incidentRef ?? null,
-        lastError: event.lastError ?? null
+        lastError: event.lastError ?? null,
+        workflowStage: resolveOfflineWorkflowStage(event),
+        sagaStatus: isOfflinePayOutboxEvent(event.eventType) ? resolveOfflineSagaStatus(event) : null,
+        failureClass: isOfflinePayOutboxEvent(event.eventType)
+          ? resolveOfflineFailureClass({
+              deadLetterCategory: event.deadLetterCategory,
+              lastError: event.lastError ?? null
+            })
+          : null
       }))
     };
   }
@@ -715,6 +738,13 @@ export class OperationsService {
         id: `${log.action}:${log.entityId}:${log.createdAt}`,
         operationType,
         status: 'completed' as const,
+        workflowStage: operationType === 'SETTLEMENT'
+          ? 'LEDGER_SYNCED'
+          : log.action === 'offline_pay.collateral.released'
+            ? 'COLLATERAL_RELEASED'
+            : 'LEDGER_LOCKED',
+        sagaStatus: 'COMPLETED',
+        failureClass: null,
         assetCode: log.metadata.assetCode ?? '',
         amount: log.metadata.amount ?? '',
         userId: log.metadata.userId ?? '',
@@ -737,6 +767,12 @@ export class OperationsService {
         id: event.outboxEventId,
         operationType,
         status,
+        workflowStage: resolveOfflineWorkflowStage(event) ?? 'SERVER_ACCEPTED',
+        sagaStatus: resolveOfflineSagaStatus(event),
+        failureClass: resolveOfflineFailureClass({
+          deadLetterCategory: event.deadLetterCategory,
+          lastError: event.lastError ?? null
+        }),
         assetCode: typeof payload.assetCode === 'string' ? payload.assetCode : '',
         amount: typeof payload.amount === 'string' ? payload.amount : '',
         userId: typeof payload.userId === 'string' ? payload.userId : '',
