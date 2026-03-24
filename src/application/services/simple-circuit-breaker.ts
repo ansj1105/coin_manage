@@ -27,15 +27,19 @@ export class SimpleCircuitBreaker {
   }
 
   onSuccess() {
+    const recovered = this.openedAtMs !== null || this.failures > 0;
     this.failures = 0;
     this.openedAtMs = null;
+    return recovered;
   }
 
   onFailure() {
+    const wasOpen = this.openedAtMs !== null;
     this.failures += 1;
     if (this.failures >= this.threshold) {
       this.openedAtMs = Date.now();
     }
+    return !wasOpen && this.state === 'OPEN';
   }
 
   get failureCount() {

@@ -108,7 +108,8 @@ describe('offline pay settlement consumer service', () => {
     const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
     const alertService = {
       notifyOfflinePayExecutionFailure: vi.fn().mockResolvedValue(undefined),
-      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined)
+      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePayCircuitRecovered: vi.fn().mockResolvedValue(undefined)
     };
     const withdrawService = {
       request: vi.fn().mockRejectedValue(new Error('withdraw request failed')),
@@ -133,5 +134,45 @@ describe('offline pay settlement consumer service', () => {
     expect(alertService.notifyOfflinePayExecutionFailure).toHaveBeenCalledOnce();
     expect(alertService.notifyOfflinePayCircuitOpened).toHaveBeenCalledOnce();
     expect(circuit.state).toBe('OPEN');
+  });
+
+  it('records blocked execution when circuit is already open', async () => {
+    const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
+    const alertService = {
+      notifyOfflinePayExecutionFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePayCircuitRecovered: vi.fn().mockResolvedValue(undefined)
+    };
+    const withdrawService = {
+      request: vi.fn(),
+      confirmExternalAuth: vi.fn(),
+      approve: vi.fn()
+    };
+    const circuit = {
+      assertCallable: vi.fn(() => {
+        throw new Error('offline_pay_withdrawal_execution circuit is open');
+      })
+    };
+    const service = new OfflinePaySettlementConsumerService(
+      ledger as any,
+      withdrawService as any,
+      alertService as any,
+      circuit as any
+    );
+
+    await expect(
+      service.handle({
+        ...baseEvent(),
+        toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+      })
+    ).rejects.toThrow('offline_pay_withdrawal_execution circuit is open');
+
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'offline_pay.execution.blocked'
+      })
+    );
+    expect(alertService.notifyOfflinePayExecutionFailure).toHaveBeenCalledOnce();
+    expect(withdrawService.request).not.toHaveBeenCalled();
   });
 });

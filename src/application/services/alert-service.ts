@@ -362,6 +362,21 @@ export class AlertService {
     });
   }
 
+  async notifyOfflinePayCircuitRecovered(input: {
+    circuitName: string;
+    settlementId: string;
+    message: string;
+  }) {
+    await this.send({
+      title: `[KORION] Offline Pay Circuit Recovered - ${input.circuitName}`,
+      body: [
+        `settlementId=${input.settlementId}`,
+        `message=${input.message}`
+      ].join('\n'),
+      dedupeKey: `offline-pay-circuit-recovered:${input.circuitName}:${input.settlementId}`
+    });
+  }
+
   async notifyOfflinePayExecutionFailure(input: {
     settlementId: string;
     proofId: string;
