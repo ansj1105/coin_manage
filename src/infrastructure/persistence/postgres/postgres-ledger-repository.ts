@@ -1215,6 +1215,112 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async compensateOfflinePaySettlement(input: {
+    settlementId: string;
+    batchId: string;
+    collateralId: string;
+    proofId: string;
+    proofFingerprint: string;
+    userId: string;
+    deviceId: string;
+    assetCode: string;
+    amount: bigint;
+    releaseAction: 'RELEASE' | 'ADJUST';
+    compensationReason: string;
+    nowIso?: string;
+  }): Promise<OfflinePaySettlementFinalizeResult> {
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      await this.lockKey(trx, `offline-pay-settlement:${input.settlementId}:compensation`);
+
+      const existing = await trx
+        .selectFrom('ledger_journals')
+        .select(['reference_id'])
+        .where('reference_type', '=', 'offline_pay_settlement_compensation')
+        .where('reference_id', '=', input.settlementId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          settlementId: input.settlementId,
+          status: 'FINALIZED',
+          releaseAction: input.releaseAction,
+          duplicated: true
+        };
+      }
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.lockUsers(trx, [input.userId]);
+
+      const amountValue = formatKoriAmount(input.amount);
+      await this.appendJournal(trx, {
+        journalType: input.releaseAction === 'RELEASE' ? 'offline_pay_settlement_compensated' : 'offline_pay_adjustment_compensated',
+        referenceType: 'offline_pay_settlement_compensation',
+        referenceId: input.settlementId,
+        description: `COMPENSATE ${input.compensationReason}`.trim(),
+        nowIso,
+        postings:
+          input.releaseAction === 'RELEASE'
+            ? [
+                {
+                  ledgerAccountCode: 'system:asset:offline_pay_clearing',
+                  accountType: 'asset',
+                  entrySide: 'debit',
+                  amount: amountValue
+                },
+                {
+                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+                  accountType: 'liability',
+                  entrySide: 'credit',
+                  amount: amountValue
+                }
+              ]
+            : [
+                {
+                  ledgerAccountCode: `user:${input.userId}:available`,
+                  accountType: 'liability',
+                  entrySide: 'debit',
+                  amount: amountValue
+                },
+                {
+                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+                  accountType: 'liability',
+                  entrySide: 'credit',
+                  amount: amountValue
+                }
+              ]
+      });
+
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      await this.enqueueOutboxEvent(trx, {
+        eventType: 'offline_pay.settlement.compensated',
+        aggregateType: 'offline_pay_settlement',
+        aggregateId: input.settlementId,
+        payload: {
+          settlementId: input.settlementId,
+          batchId: input.batchId,
+          collateralId: input.collateralId,
+          proofId: input.proofId,
+          proofFingerprint: input.proofFingerprint,
+          userId: input.userId,
+          deviceId: input.deviceId,
+          assetCode: input.assetCode,
+          amount: amountValue,
+          releaseAction: input.releaseAction,
+          compensationReason: input.compensationReason,
+          occurredAt: nowIso
+        },
+        occurredAt: nowIso
+      });
+
+      return {
+        settlementId: input.settlementId,
+        status: 'FINALIZED',
+        releaseAction: input.releaseAction,
+        duplicated: false
+      };
+    });
+  }
+
   async getWithdrawal(withdrawalId: string): Promise<Withdrawal | undefined> {
     const row = await this.db
       .selectFrom('withdrawals')

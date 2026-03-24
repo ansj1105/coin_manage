@@ -6,6 +6,7 @@ import { MonitoringWorker } from '../application/services/monitoring-worker.js';
 import { SystemMonitoringService } from '../application/services/system-monitoring-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
 import { OfflinePayService } from '../application/services/offline-pay-service.js';
+import { OfflinePaySettlementCircuitBreaker } from '../application/services/offline-pay-settlement-circuit-breaker.js';
 import { OfflinePaySettlementConsumerService } from '../application/services/offline-pay-settlement-consumer-service.js';
 import { SimpleCircuitBreaker } from '../application/services/simple-circuit-breaker.js';
 import { env } from '../config/env.js';
@@ -361,11 +362,12 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWithdrawalSyncClient,
     withdrawalSigner
   );
+  const offlinePaySettlementCircuitBreaker = new OfflinePaySettlementCircuitBreaker();
   const offlinePaySettlementConsumerService = new OfflinePaySettlementConsumerService(
     ledger,
     withdrawService,
     alertService,
-    new SimpleCircuitBreaker('offline_pay_withdrawal_execution')
+    offlinePaySettlementCircuitBreaker
   );
   eventPublisher.subscribe('withdrawal.state.changed', (event) =>
     eventConsumerRunner.run(
@@ -407,6 +409,16 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       },
       async () => {
         await offlinePaySettlementConsumerService.handle(event.payload as any);
+      },
+      async () => {
+        const state = offlinePaySettlementConsumerService.getCircuitState();
+        const payload = event.payload as { settlementId?: unknown; batchId?: unknown };
+        await alertService.notifyOfflinePaySettlementDeadLetter({
+          settlementId: typeof payload.settlementId === 'string' ? payload.settlementId : 'unknown',
+          batchId: typeof payload.batchId === 'string' ? payload.batchId : 'unknown',
+          circuitOpen: state.open,
+          consecutiveFailures: state.consecutiveFailures
+        });
       }
     )
   );

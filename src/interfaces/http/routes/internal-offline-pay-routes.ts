@@ -4,6 +4,7 @@ import { DomainError } from '../../../domain/errors/domain-error.js';
 import { createRequireWithdrawApiKey } from '../middleware/withdraw-auth.js';
 import {
   internalAckResponseSchema,
+  offlinePayCompensateSettlementRequestSchema,
   offlinePayFinalizeSettlementRequestSchema,
   offlinePayLockRequestSchema,
   offlinePayLockResponseSchema,
@@ -61,6 +62,19 @@ export const createInternalOfflinePayRoutes = (
         throw new DomainError(400, 'INVALID_REQUEST', 'settlementStatus must be SETTLED or CONFLICT');
       }
       const result = await offlinePayService.finalizeSettlement(parsed.data);
+      res.status(200).json(internalAckResponseSchema.parse(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/settlements/compensate', async (req, res, next) => {
+    try {
+      const parsed = offlinePayCompensateSettlementRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      const result = await offlinePayService.compensateSettlement(parsed.data);
       res.status(200).json(internalAckResponseSchema.parse(result));
     } catch (error) {
       next(error);

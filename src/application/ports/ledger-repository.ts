@@ -240,4 +240,18 @@ export interface LedgerRepository {
     conflictDetected: boolean;
     nowIso?: string;
   }): Promise<OfflinePaySettlementFinalizeResult>;
+  compensateOfflinePaySettlement(input: {
+    settlementId: string;
+    batchId: string;
+    collateralId: string;
+    proofId: string;
+    proofFingerprint: string;
+    userId: string;
+    deviceId: string;
+    assetCode: string;
+    amount: bigint;
+    releaseAction: 'RELEASE' | 'ADJUST';
+    compensationReason: string;
+    nowIso?: string;
+  }): Promise<OfflinePaySettlementFinalizeResult>;
 }

@@ -1,9 +1,9 @@
 import { DomainError } from '../../core/domain-error.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
-import type { AlertService } from './alert-service.js';
+import { AlertService } from './alert-service.js';
+import { OfflinePaySettlementCircuitBreaker } from './offline-pay-settlement-circuit-breaker.js';
 import type { WithdrawService } from './withdraw-service.js';
 import { computeOfflinePayProofFingerprint } from './offline-pay-proof-fingerprint.js';
-import { SimpleCircuitBreaker } from './simple-circuit-breaker.js';
 
 export interface OfflinePaySettlementFinalizedEvent {
   settlementId: string;
@@ -31,21 +31,23 @@ export interface OfflinePaySettlementFinalizedEvent {
 }
 
 export class OfflinePaySettlementConsumerService {
-  private readonly withdrawalCircuit: SimpleCircuitBreaker;
-
   constructor(
     private readonly ledger: Pick<LedgerRepository, 'appendAuditLog'>,
     private readonly withdrawService?: Pick<WithdrawService, 'request' | 'confirmExternalAuth' | 'approve'>,
-    private readonly alertService?: Pick<
-      AlertService,
-      'notifyOfflinePayCircuitOpened' | 'notifyOfflinePayCircuitRecovered' | 'notifyOfflinePayExecutionFailure'
-    >,
-    withdrawalCircuit?: SimpleCircuitBreaker
-  ) {
-    this.withdrawalCircuit = withdrawalCircuit ?? new SimpleCircuitBreaker('offline_pay_withdrawal_execution');
-  }
+    private readonly alertService?: AlertService,
+    private readonly circuitBreaker = new OfflinePaySettlementCircuitBreaker()
+  ) {}
 
   async handle(input: OfflinePaySettlementFinalizedEvent) {
+    if (!this.circuitBreaker.canExecute()) {
+      throw new DomainError(
+        503,
+        'OFFLINE_PAY_CONSUMER_CIRCUIT_OPEN',
+        'offline pay settlement consumer circuit is open',
+        this.circuitBreaker.snapshot()
+      );
+    }
+
     const computedFingerprint = computeOfflinePayProofFingerprint({
       settlementId: input.settlementId,
       batchId: input.batchId,
@@ -88,20 +90,7 @@ export class OfflinePaySettlementConsumerService {
       return { status: 'INTERNAL_ONLY' as const, mode: 'withdraw_service_unavailable' as const };
     }
 
-    try {
-      this.withdrawalCircuit.assertCallable();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'offline pay execution circuit is open';
-      await this.appendAudit(input, 'offline_pay.execution.blocked', {
-        reason: message
-      });
-      await this.alertService?.notifyOfflinePayExecutionFailure({
-        settlementId: input.settlementId,
-        proofId: input.proofId,
-        message
-      });
-      throw error;
-    }
+    let stage = 'withdraw.request';
 
     try {
       const amountKori = Number(input.amount);
@@ -113,11 +102,13 @@ export class OfflinePaySettlementConsumerService {
         clientIp: input.clientIp,
         deviceId: input.deviceId
       });
+      stage = 'withdraw.confirm_external_auth';
       await this.withdrawService.confirmExternalAuth(request.withdrawal.withdrawalId, {
         provider: 'offline_pay',
         requestId: input.proofFingerprint,
         actorId: 'offline_pay_consumer'
       });
+      stage = 'withdraw.approve';
       await this.withdrawService.approve(request.withdrawal.withdrawalId, {
         adminId: 'offline_pay_consumer',
         actorType: 'system',
@@ -125,40 +116,36 @@ export class OfflinePaySettlementConsumerService {
         note: `offline pay settlement ${input.settlementId}`
       });
 
-      const recovered = this.withdrawalCircuit.onSuccess();
+      const previousState = this.circuitBreaker.snapshot();
+      const recovered = this.circuitBreaker.recordSuccess();
+      if (recovered) {
+        await this.alertService?.notifyOfflinePaySettlementCircuitRecovered({
+          consecutiveFailures: previousState.consecutiveFailures
+        });
+      }
       await this.appendAudit(input, 'offline_pay.execution.withdraw_requested', {
         withdrawalId: request.withdrawal.withdrawalId,
         toAddress: input.toAddress
       });
-      if (recovered) {
-        await this.alertService?.notifyOfflinePayCircuitRecovered({
-          circuitName: 'offline_pay_withdrawal_execution',
-          settlementId: input.settlementId,
-          message: 'withdraw execution resumed'
-        });
-      }
 
       return {
         status: 'WITHDRAW_REQUESTED' as const,
         withdrawalId: request.withdrawal.withdrawalId
       };
     } catch (error) {
-      const opened = this.withdrawalCircuit.onFailure();
-      const message = error instanceof Error ? error.message : 'offline pay execution failed';
-      await this.appendAudit(input, 'offline_pay.execution.failed', {
-        reason: message
-      });
-      await this.alertService?.notifyOfflinePayExecutionFailure({
+      const failureMessage = error instanceof Error ? error.message : 'unknown offline pay settlement failure';
+      const failureState = this.circuitBreaker.recordFailure();
+      await this.alertService?.notifyOfflinePaySettlementConsumerFailure({
         settlementId: input.settlementId,
-        proofId: input.proofId,
-        message
+        batchId: input.batchId,
+        stage,
+        reason: failureMessage
       });
-      if (opened || this.withdrawalCircuit.state === 'OPEN') {
-        await this.alertService?.notifyOfflinePayCircuitOpened({
-          circuitName: 'offline_pay_withdrawal_execution',
-          settlementId: input.settlementId,
-          failureCount: this.withdrawalCircuit.failureCount,
-          message
+      if (failureState.opened) {
+        await this.alertService?.notifyOfflinePaySettlementCircuitOpened({
+          consecutiveFailures: failureState.state.consecutiveFailures,
+          cooldownRemainingMs: failureState.state.cooldownRemainingMs,
+          reason: failureMessage
         });
       }
       throw error;
@@ -187,5 +174,9 @@ export class OfflinePaySettlementConsumerService {
         ...extra
       }
     });
+  }
+
+  getCircuitState() {
+    return this.circuitBreaker.snapshot();
   }
 }

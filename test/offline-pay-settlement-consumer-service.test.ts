@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { OfflinePaySettlementConsumerService } from '../src/application/services/offline-pay-settlement-consumer-service.js';
+import { OfflinePaySettlementCircuitBreaker } from '../src/application/services/offline-pay-settlement-circuit-breaker.js';
 import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
-import { SimpleCircuitBreaker } from '../src/application/services/simple-circuit-breaker.js';
 
 const baseEvent = () => {
   const event = {
@@ -60,6 +60,101 @@ describe('offline pay settlement consumer service', () => {
     );
   });
 
+  it('opens the circuit after repeated downstream failures and short-circuits subsequent attempts', async () => {
+    const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
+    const alertService = {
+      notifyOfflinePaySettlementConsumerFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitRecovered: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementDeadLetter: vi.fn().mockResolvedValue(undefined)
+    };
+    const withdrawService = {
+      request: vi.fn().mockRejectedValue(new Error('temporary downstream failure')),
+      confirmExternalAuth: vi.fn(),
+      approve: vi.fn()
+    };
+    const circuitBreaker = new OfflinePaySettlementCircuitBreaker({
+      failureThreshold: 2,
+      openCooldownMs: 60_000
+    });
+    const service = new OfflinePaySettlementConsumerService(
+      ledger as any,
+      withdrawService as any,
+      alertService as any,
+      circuitBreaker
+    );
+
+    await expect(service.handle({ ...baseEvent(), toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' })).rejects.toThrow(
+      'temporary downstream failure'
+    );
+    await expect(service.handle({ ...baseEvent(), toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' })).rejects.toThrow(
+      'temporary downstream failure'
+    );
+    await expect(service.handle({ ...baseEvent(), toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' })).rejects.toMatchObject({
+      code: 'OFFLINE_PAY_CONSUMER_CIRCUIT_OPEN'
+    });
+
+    expect(withdrawService.request).toHaveBeenCalledTimes(2);
+    expect(alertService.notifyOfflinePaySettlementConsumerFailure).toHaveBeenCalledTimes(2);
+    expect(alertService.notifyOfflinePaySettlementCircuitOpened).toHaveBeenCalledTimes(1);
+    expect(alertService.notifyOfflinePaySettlementDeadLetter).not.toHaveBeenCalled();
+  });
+
+  it('emits a recovery alert after the circuit cools down and the chain succeeds again', async () => {
+    const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
+    const alertService = {
+      notifyOfflinePaySettlementConsumerFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitRecovered: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementDeadLetter: vi.fn().mockResolvedValue(undefined)
+    };
+    const withdrawService = {
+      request: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('temporary downstream failure'))
+        .mockResolvedValueOnce({
+          withdrawal: {
+            withdrawalId: 'withdraw-1'
+          }
+        }),
+      confirmExternalAuth: vi.fn().mockResolvedValue(undefined),
+      approve: vi.fn().mockResolvedValue(undefined)
+    };
+    const circuitBreaker = new OfflinePaySettlementCircuitBreaker({
+      failureThreshold: 1,
+      openCooldownMs: 1_000
+    });
+    const service = new OfflinePaySettlementConsumerService(
+      ledger as any,
+      withdrawService as any,
+      alertService as any,
+      circuitBreaker
+    );
+    const now = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, 'now');
+    try {
+      nowSpy.mockReturnValue(now);
+
+      await expect(service.handle({ ...baseEvent(), toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' })).rejects.toThrow(
+        'temporary downstream failure'
+      );
+
+      nowSpy.mockReturnValue(now + 2_000);
+      const result = await service.handle({ ...baseEvent(), toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
+
+      expect(result).toEqual({
+        status: 'WITHDRAW_REQUESTED',
+        withdrawalId: 'withdraw-1'
+      });
+      expect(alertService.notifyOfflinePaySettlementCircuitOpened).toHaveBeenCalledTimes(1);
+      expect(alertService.notifyOfflinePaySettlementCircuitRecovered).toHaveBeenCalledWith({
+        consecutiveFailures: 1
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('routes to existing withdraw entry when target address is present', async () => {
     const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
     const withdrawService = {
@@ -107,16 +202,20 @@ describe('offline pay settlement consumer service', () => {
   it('opens circuit and alerts when withdraw execution keeps failing', async () => {
     const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
     const alertService = {
-      notifyOfflinePayExecutionFailure: vi.fn().mockResolvedValue(undefined),
-      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined),
-      notifyOfflinePayCircuitRecovered: vi.fn().mockResolvedValue(undefined)
+      notifyOfflinePaySettlementConsumerFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitRecovered: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementDeadLetter: vi.fn().mockResolvedValue(undefined)
     };
     const withdrawService = {
       request: vi.fn().mockRejectedValue(new Error('withdraw request failed')),
       confirmExternalAuth: vi.fn(),
       approve: vi.fn()
     };
-    const circuit = new SimpleCircuitBreaker('offline_pay_withdrawal_execution', 1, 60_000);
+    const circuit = new OfflinePaySettlementCircuitBreaker({
+      failureThreshold: 1,
+      openCooldownMs: 60_000
+    });
     const service = new OfflinePaySettlementConsumerService(
       ledger as any,
       withdrawService as any,
@@ -131,17 +230,18 @@ describe('offline pay settlement consumer service', () => {
       })
     ).rejects.toThrow('withdraw request failed');
 
-    expect(alertService.notifyOfflinePayExecutionFailure).toHaveBeenCalledOnce();
-    expect(alertService.notifyOfflinePayCircuitOpened).toHaveBeenCalledOnce();
-    expect(circuit.state).toBe('OPEN');
+    expect(alertService.notifyOfflinePaySettlementConsumerFailure).toHaveBeenCalledOnce();
+    expect(alertService.notifyOfflinePaySettlementCircuitOpened).toHaveBeenCalledOnce();
+    expect(circuit.snapshot().open).toBe(true);
   });
 
   it('records blocked execution when circuit is already open', async () => {
     const ledger = { appendAuditLog: vi.fn().mockResolvedValue(undefined) };
     const alertService = {
-      notifyOfflinePayExecutionFailure: vi.fn().mockResolvedValue(undefined),
-      notifyOfflinePayCircuitOpened: vi.fn().mockResolvedValue(undefined),
-      notifyOfflinePayCircuitRecovered: vi.fn().mockResolvedValue(undefined)
+      notifyOfflinePaySettlementConsumerFailure: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitOpened: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementCircuitRecovered: vi.fn().mockResolvedValue(undefined),
+      notifyOfflinePaySettlementDeadLetter: vi.fn().mockResolvedValue(undefined)
     };
     const withdrawService = {
       request: vi.fn(),
@@ -149,9 +249,21 @@ describe('offline pay settlement consumer service', () => {
       approve: vi.fn()
     };
     const circuit = {
-      assertCallable: vi.fn(() => {
-        throw new Error('offline_pay_withdrawal_execution circuit is open');
-      })
+      canExecute: vi.fn(() => false),
+      recordFailure: vi.fn(() => ({
+        opened: false,
+        state: {
+          open: true,
+          consecutiveFailures: 1,
+          cooldownRemainingMs: 60_000
+        }
+      })),
+      recordSuccess: vi.fn(),
+      snapshot: vi.fn(() => ({
+        open: true,
+        consecutiveFailures: 1,
+        cooldownRemainingMs: 60_000
+      }))
     };
     const service = new OfflinePaySettlementConsumerService(
       ledger as any,
@@ -165,14 +277,12 @@ describe('offline pay settlement consumer service', () => {
         ...baseEvent(),
         toAddress: 'TBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
       })
-    ).rejects.toThrow('offline_pay_withdrawal_execution circuit is open');
+    ).rejects.toMatchObject({
+      code: 'OFFLINE_PAY_CONSUMER_CIRCUIT_OPEN'
+    });
 
-    expect(ledger.appendAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'offline_pay.execution.blocked'
-      })
-    );
-    expect(alertService.notifyOfflinePayExecutionFailure).toHaveBeenCalledOnce();
+    expect(ledger.appendAuditLog).not.toHaveBeenCalled();
+    expect(alertService.notifyOfflinePaySettlementConsumerFailure).not.toHaveBeenCalled();
     expect(withdrawService.request).not.toHaveBeenCalled();
   });
 });

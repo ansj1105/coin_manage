@@ -168,4 +168,51 @@ export class OfflinePayService {
       message: result.releaseAction === 'RELEASE' ? 'settlement finalized' : 'settlement adjusted'
     };
   }
+
+  async compensateSettlement(input: {
+    settlementId: string;
+    batchId: string;
+    collateralId: string;
+    proofId: string;
+    userId: string;
+    deviceId: string;
+    assetCode: string;
+    amount: string;
+    releaseAction: 'RELEASE' | 'ADJUST';
+    proofFingerprint: string;
+    compensationReason: string;
+  }) {
+    const amount = parseKoriAmount(Number(input.amount));
+    const result = await this.ledger.compensateOfflinePaySettlement({
+      ...input,
+      amount
+    });
+
+    if (!result.duplicated) {
+      await this.ledger.appendAuditLog({
+        entityType: 'system',
+        entityId: input.settlementId,
+        action: 'offline_pay.settlement.compensated',
+        actorType: 'system',
+        actorId: 'offline_pay',
+        metadata: {
+          batchId: input.batchId,
+          collateralId: input.collateralId,
+          proofId: input.proofId,
+          userId: input.userId,
+          deviceId: input.deviceId,
+          assetCode: input.assetCode,
+          amount: formatKoriAmount(amount),
+          releaseAction: input.releaseAction,
+          proofFingerprint: input.proofFingerprint,
+          compensationReason: input.compensationReason
+        }
+      });
+    }
+
+    return {
+      status: 'OK' as const,
+      message: 'settlement compensated'
+    };
+  }
 }
