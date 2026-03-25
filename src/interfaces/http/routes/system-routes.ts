@@ -76,6 +76,14 @@ const retryExternalSyncSchema = z.object({
   withdrawalIds: z.array(z.string().uuid()).min(1).max(100)
 });
 
+const offlinePayUserReconciliationSchema = z.object({
+  userId: z.coerce.string().trim().min(1),
+  targetLiabilityBalance: z.string().trim().min(1),
+  canonicalBasis: z.string().trim().min(1).max(64).default('FOX_INTERNAL_KORI_BALANCE'),
+  actorId: z.string().trim().min(1).max(64).optional(),
+  note: z.string().trim().max(500).optional()
+});
+
 const externalSyncFailuresQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional()
 });
@@ -855,6 +863,26 @@ export const createSystemRoutes = (
         result,
         reconciliation
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/offline-pay/reconciliation/user-balance', async (req, res, next) => {
+    try {
+      const parsed = offlinePayUserReconciliationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid offline pay reconciliation payload', parsed.error.flatten());
+      }
+      const actorId =
+        parsed.data.actorId ?? (typeof req.header('x-admin-id') === 'string' ? req.header('x-admin-id')! : 'system-ops');
+      res.json(await operationsService.reconcileOfflinePayUserBalance({
+        userId: parsed.data.userId,
+        targetLiabilityBalance: parsed.data.targetLiabilityBalance,
+        canonicalBasis: parsed.data.canonicalBasis,
+        actorId,
+        note: parsed.data.note
+      }));
     } catch (error) {
       next(error);
     }

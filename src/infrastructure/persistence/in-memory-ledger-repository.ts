@@ -21,4 +21,14 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
   async compensateOfflinePaySettlement(): Promise<import('../../ledger/types.js').OfflinePaySettlementFinalizeResult> {
     throw new Error('offline pay compensation is not implemented for in-memory ledger');
   }
+
+  async reconcileOfflinePayUserBalance(): Promise<{
+    userId: string;
+    previousLiabilityBalance: bigint;
+    targetLiabilityBalance: bigint;
+    deltaAmount: bigint;
+    adjusted: boolean;
+  }> {
+    throw new Error('offline pay reconciliation is not implemented for in-memory ledger');
+  }
 }

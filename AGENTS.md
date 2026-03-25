@@ -29,3 +29,11 @@
 
 - When a new runtime env var is introduced, update code readers, compose passthrough lists, and every container role that needs it in the same task.
 - In `coin_manage`, verify env propagation across `app-api`, `app-withdraw-worker`, and `app-ops`.
+
+## Offline Pay Integration Rule
+
+- `offline_pay` 연동 기능은 화면용 더미 상태나 샘플 ledger를 기본 동작에 남기지 않는다.
+- 테스트용 collateral/settlement/topup/release 샘플은 test mode, fixture, or test table seed로만 다룬다.
+- 오프라인 결제는 기본적으로 `internal ledger only`이며 자동 실출금으로 이어지지 않도록 유지한다.
+- 연동 계약이 바뀌면 `coin_front`, `offline_pay`, `coin_manage`, 필요 시 `foxya_coin_service`, `coin_csms`, `coin_publish`까지 영향 범위를 확인한다.
+- 오프라인 정책 때문에 운영/정산 테이블이 바뀌면 DB migration과 운영 조회 API를 함께 갱신한다.

@@ -182,3 +182,24 @@ proof는 이전 상태에 연결되는 체인으로 본다.
 2. `coin_manage`에서 collateral topup/release 운영 조회 API 추가
 3. 관리자 페이지에서 token별 collateral / remaining / pending intent / failed intent 모니터링 추가
 4. settlement / collateral 이벤트 reason code를 앱 큐 상태와 완전히 표준화
+
+## 9. 개발 규칙 추가 메모
+
+### 9.1 하드코딩 금지
+
+오프라인 결제 화면과 연동 로직에서 business 의미가 있는 더미 데이터를 기본값으로 두면 안 된다.
+
+- 기본 동작은 실제 사용자 캐시, 실제 디바이스 정보, 실제 내부원장 스냅샷, 실제 서버 응답만 사용
+- 테스트용 peer/device/amount/ledger 샘플은 `test mode` 또는 fixture에만 한정
+
+### 9.2 연동 서비스 범위
+
+앱과 연동되는 백엔드는 `foxya_coin_service`, `coin_csms`, `coin_publish`, `offline_pay`, `coin_manage`까지 포함해 영향 범위를 판단한다.
+
+- 프런트 요구사항 변경이 backend contract를 바꾸면 관련 서비스와 관리자 화면까지 같이 확인
+- DB 컬럼/상태/집계 구조가 바뀌면 Flyway 또는 해당 migration 체계를 반드시 같이 반영
+
+### 9.3 i18n / 운영 표준화
+
+- 프런트 문구는 i18n 기준으로 관리
+- 앱 상태값, 서버 reason code, 관리자 표기는 가능한 1:1로 표준화

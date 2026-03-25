@@ -959,6 +959,47 @@ export class OperationsService {
     return result;
   }
 
+  async reconcileOfflinePayUserBalance(input: {
+    userId: string;
+    targetLiabilityBalance: string;
+    canonicalBasis: string;
+    actorId: string;
+    note?: string;
+  }) {
+    const result = await this.ledger.reconcileOfflinePayUserBalance({
+      userId: input.userId,
+      targetLiabilityBalance: parseStoredKoriAmount(input.targetLiabilityBalance),
+      canonicalBasis: input.canonicalBasis,
+      actorId: input.actorId,
+      note: input.note
+    });
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: `offline-pay-reconciliation:${input.userId}`,
+      action: 'offline_pay.user_balance.reconciled',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        userId: input.userId,
+        canonicalBasis: input.canonicalBasis,
+        previousLiabilityBalance: formatKoriAmount(result.previousLiabilityBalance),
+        targetLiabilityBalance: formatKoriAmount(result.targetLiabilityBalance),
+        deltaAmount: formatKoriAmount(result.deltaAmount),
+        adjusted: String(result.adjusted),
+        note: input.note ?? ''
+      }
+    });
+
+    return {
+      userId: result.userId,
+      previousLiabilityBalance: formatKoriAmount(result.previousLiabilityBalance),
+      targetLiabilityBalance: formatKoriAmount(result.targetLiabilityBalance),
+      deltaAmount: formatKoriAmount(result.deltaAmount),
+      adjusted: result.adjusted
+    };
+  }
+
   async listFailedWithdrawJobs(limit = 50) {
     return this.withdrawJobQueue.listFailed(limit);
   }
