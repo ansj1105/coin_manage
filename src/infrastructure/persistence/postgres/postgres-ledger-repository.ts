@@ -2374,6 +2374,39 @@ export class PostgresLedgerRepository implements LedgerRepository {
     };
   }
 
+  async listOfflinePayReconciliationUserIds(limit: number): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('ledger_accounts')
+      .select(sql<string>`distinct split_part(ledger_account_code, ':', 2)`.as('user_id'))
+      .where((eb) =>
+        eb.or([
+          eb('ledger_account_code', 'like', 'user:%:available'),
+          eb('ledger_account_code', 'like', 'user:%:offline_pay_pending'),
+          eb('ledger_account_code', 'like', 'user:%:withdraw_pending')
+        ])
+      )
+      .orderBy('user_id')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => row.user_id).filter(Boolean);
+  }
+
+  async getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
+    userId: string;
+    availableBalance: bigint;
+    lockedBalance: bigint;
+    liabilityBalance: bigint;
+  }> {
+    const projected = await this.getProjectedUserBalances(this.db, userId);
+    return {
+      userId,
+      availableBalance: projected.balance,
+      lockedBalance: projected.lockedBalance,
+      liabilityBalance: projected.balance + projected.lockedBalance
+    };
+  }
+
   async reconcileOfflinePayUserBalance(input: {
     userId: string;
     targetLiabilityBalance: bigint;

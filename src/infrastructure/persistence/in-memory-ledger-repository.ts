@@ -22,6 +22,24 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
     throw new Error('offline pay compensation is not implemented for in-memory ledger');
   }
 
+  async listOfflinePayReconciliationUserIds(): Promise<string[]> {
+    return [];
+  }
+
+  async getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
+    userId: string;
+    availableBalance: bigint;
+    lockedBalance: bigint;
+    liabilityBalance: bigint;
+  }> {
+    return {
+      userId,
+      availableBalance: 0n,
+      lockedBalance: 0n,
+      liabilityBalance: 0n
+    };
+  }
+
   async reconcileOfflinePayUserBalance(): Promise<{
     userId: string;
     previousLiabilityBalance: bigint;

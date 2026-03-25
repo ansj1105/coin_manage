@@ -207,6 +207,13 @@ export interface LedgerRepository {
   }): Promise<void>;
   getLedgerSummary(): Promise<LedgerSummary>;
   rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
+  listOfflinePayReconciliationUserIds(limit: number): Promise<string[]>;
+  getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
+    userId: string;
+    availableBalance: bigint;
+    lockedBalance: bigint;
+    liabilityBalance: bigint;
+  }>;
   reconcileOfflinePayUserBalance(input: {
     userId: string;
     targetLiabilityBalance: bigint;

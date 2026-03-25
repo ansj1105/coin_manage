@@ -49,6 +49,10 @@ if (env.singletonWorkersEnabled) {
   if (env.alertMonitor.enabled) {
     deps.externalAlertMonitorWorker.start();
   }
+
+  if (env.offlinePayLedgerReconcileEnabled) {
+    deps.offlinePayLedgerReconciliationWorker.start();
+  }
 }
 
 if (!env.httpEnabled && !env.singletonWorkersEnabled && !env.withdrawQueueWorkerEnabled) {

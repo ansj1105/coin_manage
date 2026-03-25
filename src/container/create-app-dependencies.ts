@@ -11,7 +11,7 @@ import { OfflinePaySettlementConsumerService } from '../application/services/off
 import { SimpleCircuitBreaker } from '../application/services/simple-circuit-breaker.js';
 import { env } from '../config/env.js';
 import { getConfiguredSystemWallets } from '../config/system-wallets.js';
-import { parseKoriAmount } from '../domain/value-objects/money.js';
+import { parseKoriAmount, parseStoredKoriAmount } from '../domain/value-objects/money.js';
 import { DepositService } from '../application/services/deposit-service.js';
 import { DepositMonitorService } from '../application/services/deposit-monitor-service.js';
 import { DepositMonitorWorker } from '../application/services/deposit-monitor-worker.js';
@@ -25,6 +25,8 @@ import { AlertService } from '../application/services/alert-service.js';
 import { AlertWorker } from '../application/services/alert-worker.js';
 import { EventConsumerRunner } from '../application/services/event-consumer-runner.js';
 import { OutboxPublisherWorker } from '../application/services/outbox-publisher-worker.js';
+import { OfflinePayLedgerReconciliationService } from '../application/services/offline-pay-ledger-reconciliation-service.js';
+import { OfflinePayLedgerReconciliationWorker } from '../application/services/offline-pay-ledger-reconciliation-worker.js';
 import { OperationsService } from '../application/services/operations-service.js';
 import { SchedulerService } from '../application/services/scheduler-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
@@ -45,6 +47,7 @@ import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reade
 import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-event-reader.js';
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
+import { HttpFoxyaCanonicalWalletSnapshotClient } from '../infrastructure/integration/foxya-canonical-wallet-snapshot-client.js';
 import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-internal-deposit-client.js';
 import { FoxyaInternalWithdrawalClient } from '../infrastructure/integration/foxya-internal-withdrawal-client.js';
 import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
@@ -217,6 +220,13 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     env.nodeEnv !== 'test' && resolveFoxyaInternalWalletApiUrl() && env.foxyaInternalApiKey
       ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
+  const foxyaCanonicalWalletSnapshotClient =
+    env.nodeEnv !== 'test' && resolveFoxyaInternalWalletApiUrl() && env.offlinePayInternalApiKey
+      ? new HttpFoxyaCanonicalWalletSnapshotClient(resolveFoxyaInternalWalletApiUrl()!, env.offlinePayInternalApiKey)
+      : undefined;
+  if (env.offlinePayLedgerReconcileEnabled && !foxyaCanonicalWalletSnapshotClient) {
+    throw new Error('FOXYA internal wallet snapshot client is required when OFFLINE_PAY_LEDGER_RECONCILE_ENABLED=true');
+  }
   const foxyaWithdrawalSyncClient: ExternalWithdrawalSyncClient | undefined =
     overrides.externalWithdrawalSyncClient ??
     (env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && resolveFoxyaInternalWithdrawalApiKey()
@@ -432,6 +442,22 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawPolicyService,
     withdrawGuardService
   );
+  const offlinePayLedgerReconciliationService = new OfflinePayLedgerReconciliationService(
+    ledger,
+    operationsService,
+    foxyaCanonicalWalletSnapshotClient!,
+    eventPublisher,
+    {
+      currencyCode: env.offlinePayLedgerReconcileCurrencyCode,
+      toleranceAmount: parseStoredKoriAmount(env.offlinePayLedgerReconcileTolerance),
+      maxAdjustmentAmount: parseStoredKoriAmount(env.offlinePayLedgerReconcileMaxAdjustment)
+    }
+  );
+  const offlinePayLedgerReconciliationWorker = new OfflinePayLedgerReconciliationWorker(
+    offlinePayLedgerReconciliationService,
+    env.offlinePayLedgerReconcileIntervalSec * 1000,
+    env.offlinePayLedgerReconcileCycleLimit
+  );
   const sweepBotService = new SweepBotService(
     depositMonitorRepository,
     foxyaClient,
@@ -503,6 +529,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     withdrawDispatchWorker,
     schedulerService,
     operationsService,
-    offlinePayService
+    offlinePayService,
+    offlinePayLedgerReconciliationService,
+    offlinePayLedgerReconciliationWorker
   };
 };

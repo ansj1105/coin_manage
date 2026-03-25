@@ -23,6 +23,8 @@ import { DepositService } from '../application/services/deposit-service.js';
 import { OnchainService } from '../application/services/onchain-service.js';
 import { SchedulerService } from '../application/services/scheduler-service.js';
 import { OperationsService } from '../application/services/operations-service.js';
+import { OfflinePayLedgerReconciliationService } from '../application/services/offline-pay-ledger-reconciliation-service.js';
+import { OfflinePayLedgerReconciliationWorker } from '../application/services/offline-pay-ledger-reconciliation-worker.js';
 import { OfflinePayService } from '../application/services/offline-pay-service.js';
 import { SweepBotService } from '../application/services/sweep-bot-service.js';
 import { SweepBotWorker } from '../application/services/sweep-bot-worker.js';
@@ -74,4 +76,6 @@ export interface AppDependencies {
   schedulerService: SchedulerService;
   operationsService: OperationsService;
   offlinePayService: OfflinePayService;
+  offlinePayLedgerReconciliationService: OfflinePayLedgerReconciliationService;
+  offlinePayLedgerReconciliationWorker: OfflinePayLedgerReconciliationWorker;
 }

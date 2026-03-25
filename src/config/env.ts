@@ -130,6 +130,12 @@ const schema = z.object({
   WITHDRAW_REQUEST_API_KEY: z.string().optional(),
   WITHDRAW_ADMIN_API_KEY: z.string().optional(),
   OFFLINE_PAY_INTERNAL_API_KEY: z.string().optional(),
+  OFFLINE_PAY_LEDGER_RECONCILE_ENABLED: optionalBooleanString,
+  OFFLINE_PAY_LEDGER_RECONCILE_INTERVAL_SEC: z.coerce.number().int().positive().default(120),
+  OFFLINE_PAY_LEDGER_RECONCILE_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(100),
+  OFFLINE_PAY_LEDGER_RECONCILE_CURRENCY_CODE: z.string().trim().min(1).default('KORI'),
+  OFFLINE_PAY_LEDGER_RECONCILE_TOLERANCE: z.string().default('0.000001'),
+  OFFLINE_PAY_LEDGER_RECONCILE_MAX_ADJUSTMENT: z.string().default('1000000'),
   WITHDRAW_SINGLE_LIMIT_KORI: z.coerce.number().positive().default(10000),
   WITHDRAW_DAILY_LIMIT_KORI: z.coerce.number().positive().default(50000),
   SCHEDULER_PENDING_TIMEOUT_SEC: z.coerce.number().int().positive().default(60),
@@ -350,6 +356,15 @@ export const env = Object.freeze({
   withdrawRequestApiKey: parsed.WITHDRAW_REQUEST_API_KEY,
   withdrawAdminApiKey: parsed.WITHDRAW_ADMIN_API_KEY,
   offlinePayInternalApiKey: parsed.OFFLINE_PAY_INTERNAL_API_KEY,
+  offlinePayLedgerReconcileEnabled:
+    parsed.OFFLINE_PAY_LEDGER_RECONCILE_ENABLED !== undefined
+      ? parsed.OFFLINE_PAY_LEDGER_RECONCILE_ENABLED === 'true'
+      : false,
+  offlinePayLedgerReconcileIntervalSec: parsed.OFFLINE_PAY_LEDGER_RECONCILE_INTERVAL_SEC,
+  offlinePayLedgerReconcileCycleLimit: parsed.OFFLINE_PAY_LEDGER_RECONCILE_CYCLE_LIMIT,
+  offlinePayLedgerReconcileCurrencyCode: parsed.OFFLINE_PAY_LEDGER_RECONCILE_CURRENCY_CODE,
+  offlinePayLedgerReconcileTolerance: parsed.OFFLINE_PAY_LEDGER_RECONCILE_TOLERANCE,
+  offlinePayLedgerReconcileMaxAdjustment: parsed.OFFLINE_PAY_LEDGER_RECONCILE_MAX_ADJUSTMENT,
   withdrawSingleLimitKori: parsed.WITHDRAW_SINGLE_LIMIT_KORI,
   withdrawDailyLimitKori: parsed.WITHDRAW_DAILY_LIMIT_KORI,
   schedulerPendingTimeoutSec: parsed.SCHEDULER_PENDING_TIMEOUT_SEC,
