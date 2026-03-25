@@ -79,7 +79,7 @@ const retryExternalSyncSchema = z.object({
 const offlinePayUserReconciliationSchema = z.object({
   userId: z.coerce.string().trim().min(1),
   targetLiabilityBalance: z.string().trim().min(1),
-  canonicalBasis: z.string().trim().min(1).max(64).default('FOX_INTERNAL_KORI_BALANCE'),
+  canonicalBasis: z.string().trim().min(1).max(64).default('FOX_CLIENT_VISIBLE_TOTAL_KORI'),
   actorId: z.string().trim().min(1).max(64).optional(),
   note: z.string().trim().max(500).optional()
 });
