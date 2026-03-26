@@ -27,7 +27,7 @@ const TAG_LENGTH_BYTES = 16;
 export class PostgresFoxyaWalletRepository implements FoxyaWalletRepository {
   constructor(
     private readonly pool: Pool,
-    private readonly encryptionKey: string
+    private readonly encryptionKey?: string
   ) {}
 
   async getWalletSignerByAddress(input: { address: string; currencyId: number }): Promise<FoxyaWalletSigner | undefined> {
@@ -103,6 +103,9 @@ export class PostgresFoxyaWalletRepository implements FoxyaWalletRepository {
   }
 
   private decryptPrivateKey(encryptedValue: string) {
+    if (!this.encryptionKey) {
+      throw new Error('foxya encryption key is required to decrypt wallet signer');
+    }
     const data = Buffer.from(encryptedValue, 'hex');
     if (data.length <= IV_LENGTH_BYTES + TAG_LENGTH_BYTES) {
       throw new Error('foxya encrypted private key format is invalid');

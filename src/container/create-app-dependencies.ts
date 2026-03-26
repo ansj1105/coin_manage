@@ -225,7 +225,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       ? new FoxyaInternalWithdrawalClient(resolveFoxyaInternalWithdrawalApiUrl()!, resolveFoxyaInternalWithdrawalApiKey()!)
       : undefined);
   const foxyaWalletRepository =
-    env.foxyaDb?.encryptionKey && env.foxyaDb.host && env.foxyaDb.name && env.foxyaDb.user
+    env.foxyaDb?.host && env.foxyaDb.name && env.foxyaDb.user
       ? new PostgresFoxyaWalletRepository(
           new Pool({
             host: env.foxyaDb.host,
