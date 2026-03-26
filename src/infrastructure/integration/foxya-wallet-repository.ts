@@ -66,8 +66,8 @@ export class PostgresFoxyaWalletRepository implements FoxyaWalletRepository {
         select
           uw.user_id,
           c.code as currency_code,
-          coalesce(sum(uw.balance), 0)::text as total_balance,
-          coalesce(sum(uw.locked_balance), 0)::text as locked_balance,
+          coalesce(round(sum(uw.balance)::numeric, 6), 0)::text as total_balance,
+          coalesce(round(sum(uw.locked_balance)::numeric, 6), 0)::text as locked_balance,
           count(*)::text as wallet_count
         from user_wallets uw
         join currency c on c.id = uw.currency_id
