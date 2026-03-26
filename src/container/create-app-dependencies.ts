@@ -47,7 +47,6 @@ import { TronWalletReader } from '../infrastructure/blockchain/tron-wallet-reade
 import { TronTrc20EventReader } from '../infrastructure/blockchain/tron-trc20-event-reader.js';
 import { TronWebTrc20Gateway } from '../infrastructure/blockchain/tronweb-trc20-gateway.js';
 import { InMemoryEventPublisher } from '../infrastructure/events/in-memory-event-publisher.js';
-import { HttpFoxyaCanonicalWalletSnapshotClient } from '../infrastructure/integration/foxya-canonical-wallet-snapshot-client.js';
 import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-internal-deposit-client.js';
 import { FoxyaInternalWithdrawalClient } from '../infrastructure/integration/foxya-internal-withdrawal-client.js';
 import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
@@ -220,13 +219,6 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     env.nodeEnv !== 'test' && resolveFoxyaInternalWalletApiUrl() && env.foxyaInternalApiKey
       ? new FoxyaInternalWalletClient(resolveFoxyaInternalWalletApiUrl()!, env.foxyaInternalApiKey)
       : undefined;
-  const foxyaCanonicalWalletSnapshotClient =
-    env.nodeEnv !== 'test' && resolveFoxyaInternalWalletApiUrl() && env.offlinePayInternalApiKey
-      ? new HttpFoxyaCanonicalWalletSnapshotClient(resolveFoxyaInternalWalletApiUrl()!, env.offlinePayInternalApiKey)
-      : undefined;
-  if (env.offlinePayLedgerReconcileEnabled && !foxyaCanonicalWalletSnapshotClient) {
-    throw new Error('FOXYA internal wallet snapshot client is required when OFFLINE_PAY_LEDGER_RECONCILE_ENABLED=true');
-  }
   const foxyaWithdrawalSyncClient: ExternalWithdrawalSyncClient | undefined =
     overrides.externalWithdrawalSyncClient ??
     (env.nodeEnv !== 'test' && resolveFoxyaInternalWithdrawalApiUrl() && resolveFoxyaInternalWithdrawalApiKey()
@@ -246,6 +238,9 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
           env.foxyaDb.encryptionKey
         )
       : undefined;
+  if (env.offlinePayLedgerReconcileEnabled && !foxyaWalletRepository) {
+    throw new Error('FOXYA wallet repository is required when OFFLINE_PAY_LEDGER_RECONCILE_ENABLED=true');
+  }
   const foxyaAlertSourceRepository =
     env.foxyaDb?.host && env.foxyaDb.name && env.foxyaDb.user
       ? new PostgresFoxyaAlertSourceRepository(
@@ -445,7 +440,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
   const offlinePayLedgerReconciliationService = new OfflinePayLedgerReconciliationService(
     ledger,
     operationsService,
-    foxyaCanonicalWalletSnapshotClient!,
+    foxyaWalletRepository!,
     eventPublisher,
     {
       currencyCode: env.offlinePayLedgerReconcileCurrencyCode,

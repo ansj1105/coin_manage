@@ -1,12 +1,24 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 import { Pool } from 'pg';
-import type { FoxyaWalletRepository, FoxyaWalletSigner } from '../../application/ports/foxya-wallet-repository.js';
+import type {
+  FoxyaCanonicalWalletSnapshot,
+  FoxyaWalletRepository,
+  FoxyaWalletSigner
+} from '../../application/ports/foxya-wallet-repository.js';
 
 type FoxyaWalletRow = {
   user_id: string | number;
   currency_id: number;
   address: string;
   private_key: string | null;
+};
+
+type FoxyaCanonicalWalletSnapshotRow = {
+  user_id: string | number;
+  currency_code: string;
+  total_balance: string;
+  locked_balance: string;
+  wallet_count: string | number;
 };
 
 const IV_LENGTH_BYTES = 16;
@@ -45,6 +57,48 @@ export class PostgresFoxyaWalletRepository implements FoxyaWalletRepository {
       currencyId: row.currency_id,
       address: row.address,
       privateKey: this.decryptPrivateKey(row.private_key)
+    };
+  }
+
+  async getCanonicalWalletSnapshot(input: { userId: string; currencyCode: string }): Promise<FoxyaCanonicalWalletSnapshot> {
+    const result = await this.pool.query<FoxyaCanonicalWalletSnapshotRow>(
+      `
+        select
+          uw.user_id,
+          c.code as currency_code,
+          coalesce(sum(uw.balance), 0)::text as total_balance,
+          coalesce(sum(uw.locked_balance), 0)::text as locked_balance,
+          count(*)::text as wallet_count
+        from user_wallets uw
+        join currency c on c.id = uw.currency_id
+        where uw.user_id = $1
+          and upper(c.code) = upper($2)
+          and uw.deleted_at is null
+          and upper(coalesce(uw.status, 'ACTIVE')) = 'ACTIVE'
+        group by uw.user_id, c.code
+      `,
+      [input.userId, input.currencyCode]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      return {
+        userId: input.userId,
+        currencyCode: input.currencyCode.toUpperCase(),
+        totalBalance: '0',
+        lockedBalance: '0',
+        walletCount: 0,
+        canonicalBasis: 'FOX_CLIENT_VISIBLE_TOTAL_KORI'
+      };
+    }
+
+    return {
+      userId: String(row.user_id),
+      currencyCode: row.currency_code,
+      totalBalance: row.total_balance,
+      lockedBalance: row.locked_balance,
+      walletCount: Number(row.wallet_count),
+      canonicalBasis: 'FOX_CLIENT_VISIBLE_TOTAL_KORI'
     };
   }
 

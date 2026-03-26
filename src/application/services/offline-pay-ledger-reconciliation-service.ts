@@ -1,6 +1,6 @@
 import { formatKoriAmount, parseStoredKoriAmount } from '../../domain/value-objects/money.js';
 import type { EventPublisher } from '../ports/event-publisher.js';
-import type { FoxyaCanonicalWalletSnapshotClient } from '../ports/foxya-canonical-wallet-snapshot-client.js';
+import type { FoxyaWalletRepository } from '../ports/foxya-wallet-repository.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import { OperationsService } from './operations-service.js';
 
@@ -14,7 +14,7 @@ export class OfflinePayLedgerReconciliationService {
   constructor(
     private readonly ledger: LedgerRepository,
     private readonly operationsService: OperationsService,
-    private readonly foxyaSnapshotClient: FoxyaCanonicalWalletSnapshotClient,
+    private readonly foxyaWalletRepository: FoxyaWalletRepository,
     private readonly eventPublisher: EventPublisher,
     private readonly options: ReconciliationOptions
   ) {}
@@ -29,7 +29,7 @@ export class OfflinePayLedgerReconciliationService {
     for (const userId of userIds) {
       try {
         checkedCount += 1;
-        const snapshot = await this.foxyaSnapshotClient.getCanonicalWalletSnapshot({
+        const snapshot = await this.foxyaWalletRepository.getCanonicalWalletSnapshot({
           userId,
           currencyCode: this.options.currencyCode
         });
