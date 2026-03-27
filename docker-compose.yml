@@ -104,14 +104,14 @@ x-app-environment: &app-environment
   VIRTUAL_WALLET_ENCRYPTION_KEY: ${VIRTUAL_WALLET_ENCRYPTION_KEY:-}
   VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_SECRET_ID: ${VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_SECRET_ID:-}
   VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_JSON_KEY: ${VIRTUAL_WALLET_ENCRYPTION_KEY_ASM_JSON_KEY:-}
-  DB_HOST: postgres
-  DB_PORT: 5432
+  DB_HOST: ${APP_DB_HOST:-korion-runtime-db}
+  DB_PORT: ${APP_DB_PORT:-5432}
   DB_NAME: ${DB_NAME:-korion}
   DB_USER: ${DB_USER:-korion}
   DB_PASSWORD: ${DB_PASSWORD:-korion}
   DB_SCHEMA: ${DB_SCHEMA:-public}
   REDIS_ENABLED: ${REDIS_ENABLED:-false}
-  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  REDIS_URL: ${APP_REDIS_URL:-redis://korion-runtime-redis:6379}
   REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-korion}
   WITHDRAW_REQUEST_API_KEY: ${WITHDRAW_REQUEST_API_KEY:-}
   WITHDRAW_ADMIN_API_KEY: ${WITHDRAW_ADMIN_API_KEY:-}
@@ -151,7 +151,9 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - default
+      default:
+        aliases:
+          - korion-runtime-db
 
   flyway:
     image: flyway/flyway:10.20.1
@@ -184,7 +186,9 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - default
+      default:
+        aliases:
+          - korion-runtime-redis
 
   app-api:
     build:
