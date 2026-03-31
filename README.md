@@ -196,6 +196,15 @@ docker compose ps
 npm run stack:logs
 ```
 
+DB replication guard:
+```bash
+npm run db:guard
+npm run db:repair-sync-standby
+```
+
+- standby가 실제로 붙지 않은 primary에서 `synchronous_standby_names`가 남아 있으면 commit이 `SyncRep`에 걸려 write path가 멈출 수 있습니다.
+- 이 상태는 `offline_pay` collateral `lock/release` timeout으로 바로 드러나므로, 운영 점검이나 배포 직후 `npm run db:guard`를 확인하는 것을 권장합니다.
+
 중지:
 ```bash
 npm run stack:down

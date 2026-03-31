@@ -144,6 +144,7 @@ TRON_FEE_LIMIT_SUN=100000000
 docker compose up -d --build
 docker compose ps
 docker compose logs -f app
+bash ./scripts/db-sync-standby-guard.sh --check
 ```
 
 ## 운영 체크
@@ -154,6 +155,9 @@ docker compose logs -f app
   - `docker compose logs flyway`
 - 앱 로그 확인
   - `docker compose logs -f app`
+- replication guard 확인
+  - `bash ./scripts/db-sync-standby-guard.sh --check`
+  - standby 없이 `synchronous_standby_names`가 남아 있으면 `bash ./scripts/db-sync-standby-guard.sh --repair`
 
 ## 추가 권장
 

@@ -29,6 +29,8 @@
 
 - When a new runtime env var is introduced, update code readers, compose passthrough lists, and every container role that needs it in the same task.
 - In `coin_manage`, verify env propagation across `app-api`, `app-withdraw-worker`, and `app-ops`.
+- If `offline_pay` collateral calls start timing out, check `pg_stat_replication`, `pg_stat_activity`, and `synchronous_standby_names` on `coin_manage` before assuming an app-level bug.
+- Do not leave `synchronous_standby_names` configured on a primary that has no attached standby. Use `./scripts/db-sync-standby-guard.sh --repair` to clear that state.
 
 ## Offline Pay Integration Rule
 

@@ -14,6 +14,8 @@
     "db:migrate": "docker compose run --rm flyway migrate",
     "db:validate": "docker compose run --rm flyway validate",
     "db:info": "docker compose run --rm flyway info",
+    "db:guard": "bash ./scripts/db-sync-standby-guard.sh --check",
+    "db:repair-sync-standby": "bash ./scripts/db-sync-standby-guard.sh --repair",
     "stack:up": "docker compose up -d --build",
     "stack:down": "docker compose down",
     "stack:logs": "docker compose logs -f app-api app-withdraw-worker app-ops"
