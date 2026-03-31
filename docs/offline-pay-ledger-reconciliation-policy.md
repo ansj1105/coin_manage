@@ -1,9 +1,9 @@
 # Offline Pay Ledger Reconciliation Policy
 
 ## Canonical Basis
-- 사용자 총자산 기준은 `foxya total KORI`다.
+- 사용자 표시 기준 총자산은 `foxya available KORI (offline collateral 제외)`다.
 - 오프라인 담보/락/정산 liability 기준은 `coin_manage ledger`다.
-- 정합성 보정 worker는 `foxya total KORI`를 읽어 `coin_manage liability`를 맞춘다.
+- 정합성 보정 worker는 `foxya available KORI + offline collateral locked KORI`를 읽어 `coin_manage liability`를 맞춘다.
 
 ## Worker Rules
 - worker는 주기 실행한다.
@@ -13,7 +13,7 @@
 - `maxAdjustmentAmount` 초과 차이는 자동 보정하지 않고 audit/event만 남긴다.
 
 ## Adjustment Rules
-- `targetLiabilityBalance = foxya canonical totalBalance`
+- `targetLiabilityBalance = foxya available KORI + offline collateral locked KORI`
 - `deltaAmount = targetLiabilityBalance - current liability`
 - `|delta| <= toleranceAmount`
   - `skipped`
@@ -34,4 +34,4 @@
   - cycle interval
   - tolerance/max adjustment
   - 최근 audit log / reconciliation event
-- 운영 중 기준 불일치는 `foxya total KORI`를 우선 기준으로 본다.
+- 운영 중 기준 불일치는 `foxya available KORI + offline collateral locked KORI`를 우선 기준으로 본다.
