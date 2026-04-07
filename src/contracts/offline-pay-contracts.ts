@@ -85,6 +85,7 @@ export const offlinePaySettlementResponseSchema = z
     accountingSide: z.literal('SENDER'),
     receiverSettlementMode: z.literal('EXTERNAL_HISTORY_SYNC'),
     settlementModel: z.literal('SENDER_LEDGER_PLUS_RECEIVER_HISTORY'),
+    reconciliationTrackingOwner: z.literal('OFFLINE_PAY_SAGA'),
     postAvailableBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
     postLockedBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
     postOfflinePayPendingBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/)

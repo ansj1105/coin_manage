@@ -172,6 +172,8 @@ export class OfflinePayService {
       duplicated: result.duplicated,
       accountingSide: result.accountingSide,
       receiverSettlementMode: result.receiverSettlementMode,
+      settlementModel: result.settlementModel,
+      reconciliationTrackingOwner: result.reconciliationTrackingOwner,
       postAvailableBalance: formatKoriAmount(result.postAvailableBalance),
       postLockedBalance: formatKoriAmount(result.postLockedBalance),
       postOfflinePayPendingBalance: formatKoriAmount(result.postOfflinePayPendingBalance)
@@ -228,6 +230,8 @@ export class OfflinePayService {
       duplicated: result.duplicated,
       accountingSide: result.accountingSide,
       receiverSettlementMode: result.receiverSettlementMode,
+      settlementModel: result.settlementModel,
+      reconciliationTrackingOwner: result.reconciliationTrackingOwner,
       postAvailableBalance: formatKoriAmount(result.postAvailableBalance),
       postLockedBalance: formatKoriAmount(result.postLockedBalance),
       postOfflinePayPendingBalance: formatKoriAmount(result.postOfflinePayPendingBalance)

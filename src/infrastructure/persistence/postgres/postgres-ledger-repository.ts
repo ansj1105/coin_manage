@@ -1140,6 +1140,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           accountingSide: 'SENDER',
           receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
           settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
           postAvailableBalance: projected.balance,
           postLockedBalance: projected.lockedBalance,
           postOfflinePayPendingBalance: offlinePayPendingBalance
@@ -1226,6 +1227,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         accountingSide: 'SENDER',
         receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
         settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         postAvailableBalance: projected.balance,
         postLockedBalance: projected.lockedBalance,
         postOfflinePayPendingBalance: offlinePayPendingBalance
@@ -1269,6 +1271,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           accountingSide: 'SENDER',
           receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
           settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
           postAvailableBalance: projected.balance,
           postLockedBalance: projected.lockedBalance,
           postOfflinePayPendingBalance: offlinePayPendingBalance
@@ -1350,6 +1353,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         accountingSide: 'SENDER',
         receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
         settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         postAvailableBalance: projected.balance,
         postLockedBalance: projected.lockedBalance,
         postOfflinePayPendingBalance: offlinePayPendingBalance

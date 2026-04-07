@@ -82,6 +82,8 @@ describe('offline pay service', () => {
         duplicated: false,
         accountingSide: 'SENDER',
         receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         postAvailableBalance: 10_000000n,
         postLockedBalance: 140_000000n,
         postOfflinePayPendingBalance: 140_000000n
@@ -132,6 +134,8 @@ describe('offline pay service', () => {
       duplicated: false,
       accountingSide: 'SENDER',
       receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
       postAvailableBalance: '10.000000',
       postLockedBalance: '140.000000',
       postOfflinePayPendingBalance: '140.000000'

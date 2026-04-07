@@ -167,6 +167,7 @@ describe('internal offline-pay routes', () => {
       accountingSide: 'SENDER',
       receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
       settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
       postAvailableBalance: '10.000000',
       postLockedBalance: '140.000000',
       postOfflinePayPendingBalance: '140.000000'
@@ -254,6 +255,7 @@ describe('internal offline-pay routes', () => {
       accountingSide: 'SENDER',
       receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
       settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
       postAvailableBalance: '10.000000',
       postLockedBalance: '140.000000',
       postOfflinePayPendingBalance: '140.000000'

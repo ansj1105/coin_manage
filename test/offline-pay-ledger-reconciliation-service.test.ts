@@ -75,6 +75,7 @@ describe('offline pay ledger reconciliation service', () => {
           accountingSide: 'SENDER',
           receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
           settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         }),
       }),
     );
