@@ -64,6 +64,17 @@ describe('offline pay ledger reconciliation service', () => {
         targetLiabilityBalance: '1020.923524',
       }),
     );
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'offline_pay.user_balance.reconciled',
+        actorId: 'offline-pay-ledger-reconcile-worker',
+        metadata: expect.objectContaining({
+          userId: '35',
+          adjusted: 'true',
+          targetLiabilityBalance: '1020.923524',
+        }),
+      }),
+    );
     expect(operationsService.reconcileOfflinePayUserBalance).not.toHaveBeenCalledWith(
       expect.objectContaining({
         userId: '999',

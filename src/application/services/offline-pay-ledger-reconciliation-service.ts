@@ -104,6 +104,22 @@ export class OfflinePayLedgerReconciliationService {
 
         if (result.adjusted) {
           adjustedCount += 1;
+          await this.ledger.appendAuditLog({
+            entityType: 'system',
+            entityId: `offline-pay-reconciliation:${userId}`,
+            action: 'offline_pay.user_balance.reconciled',
+            actorType: 'system',
+            actorId: 'offline-pay-ledger-reconcile-worker',
+            metadata: {
+              userId,
+              canonicalBasis: snapshot.canonicalBasis,
+              previousLiabilityBalance: result.previousLiabilityBalance,
+              targetLiabilityBalance: result.targetLiabilityBalance,
+              deltaAmount: result.deltaAmount,
+              adjusted: 'true',
+              note: `auto reconcile from ${snapshot.canonicalBasis}`
+            }
+          });
           this.eventPublisher.publish('offline_pay.ledger_reconciliation.adjusted', {
             userId,
             canonicalBasis: snapshot.canonicalBasis,
