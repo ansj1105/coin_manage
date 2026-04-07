@@ -11,6 +11,7 @@ STATE_DIR="${STATE_DIR:-${APP_ROOT}/.monitor-state}"
 STATE_FILE="${STATE_DIR}/container-watch.state"
 LOCK_FILE="${STATE_DIR}/container-watch.lock"
 COOLDOWN_SEC="${CONTAINER_MONITOR_COOLDOWN_SEC:-900}"
+COMPOSE_CONFIG_CACHE="${COMPOSE_CONFIG_CACHE:-}"
 
 mkdir -p "${STATE_DIR}"
 exec 9>"${LOCK_FILE}"
@@ -45,6 +46,52 @@ compose_cmd() {
     else
         docker-compose -f "${COMPOSE_FILE}" "$@"
     fi
+}
+
+compose_config() {
+    if [ -z "${COMPOSE_CONFIG_CACHE}" ]; then
+        COMPOSE_CONFIG_CACHE="$(compose_cmd config 2>/dev/null || true)"
+    fi
+    printf '%s\n' "${COMPOSE_CONFIG_CACHE}"
+}
+
+resolve_service_container_name() {
+    local service="${1:-}"
+    compose_config | awk -v svc="${service}" '
+        BEGIN { in_services = 0; in_target = 0 }
+        /^services:/ { in_services = 1; next }
+        in_services && /^[^[:space:]]/ { in_services = 0 }
+        !in_services { next }
+        $0 ~ "^  " svc ":$" { in_target = 1; next }
+        in_target && $0 ~ "^  [^[:space:]][^:]*:$" { in_target = 0 }
+        in_target && match($0, /^    container_name: (.+)$/, arr) {
+            print arr[1]
+            exit
+        }
+    '
+}
+
+resolve_monitored_container_id() {
+    local service="${1:-}"
+    local container_id=""
+    container_id="$(compose_cmd ps -q "${service}" 2>/dev/null | head -n 1)"
+    if [ -n "${container_id}" ]; then
+        printf '%s' "${container_id}"
+        return
+    fi
+
+    local container_name=""
+    container_name="$(resolve_service_container_name "${service}")"
+    if [ -n "${container_name}" ]; then
+        container_id="$(docker ps -aq --filter "name=^${container_name}$" | head -n 1)"
+        if [ -n "${container_id}" ]; then
+            printf '%s' "${container_id}"
+            return
+        fi
+    fi
+
+    container_id="$(docker ps -aq --filter "label=com.docker.compose.service=${service}" | head -n 1)"
+    printf '%s' "${container_id}"
 }
 
 telegram_send() {
@@ -96,7 +143,7 @@ collect_issues() {
 
     for service in ${MONITORED_SERVICES}; do
         local container_id
-        container_id="$(compose_cmd ps -q "${service}" 2>/dev/null | head -n 1)"
+        container_id="$(resolve_monitored_container_id "${service}")"
         local issue
         issue="$(inspect_container_issue "${service}" "${container_id}")"
         if [ -n "${issue}" ]; then
