@@ -3,13 +3,13 @@ import { zodToDomainError } from '../../../core/validation.js';
 import { DomainError } from '../../../domain/errors/domain-error.js';
 import { createRequireWithdrawApiKey } from '../middleware/withdraw-auth.js';
 import {
-  internalAckResponseSchema,
   offlinePayCompensateSettlementRequestSchema,
   offlinePayFinalizeSettlementRequestSchema,
   offlinePayLockRequestSchema,
   offlinePayLockResponseSchema,
   offlinePayReleaseRequestSchema,
-  offlinePayReleaseResponseSchema
+  offlinePayReleaseResponseSchema,
+  offlinePaySettlementResponseSchema
 } from '../../../contracts/offline-pay-contracts.js';
 import { OfflinePayService } from '../../../application/services/offline-pay-service.js';
 
@@ -62,7 +62,7 @@ export const createInternalOfflinePayRoutes = (
         throw new DomainError(400, 'INVALID_REQUEST', 'settlementStatus must be SETTLED or CONFLICT');
       }
       const result = await offlinePayService.finalizeSettlement(parsed.data);
-      res.status(200).json(internalAckResponseSchema.parse(result));
+      res.status(200).json(offlinePaySettlementResponseSchema.parse(result));
     } catch (error) {
       next(error);
     }
@@ -75,7 +75,7 @@ export const createInternalOfflinePayRoutes = (
         throw zodToDomainError(parsed.error);
       }
       const result = await offlinePayService.compensateSettlement(parsed.data);
-      res.status(200).json(internalAckResponseSchema.parse(result));
+      res.status(200).json(offlinePaySettlementResponseSchema.parse(result));
     } catch (error) {
       next(error);
     }

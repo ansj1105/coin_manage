@@ -77,8 +77,14 @@ describe('offline pay service', () => {
       finalizeOfflinePaySettlement: vi.fn().mockResolvedValue({
         settlementId: 'settlement-1',
         status: 'FINALIZED',
+        ledgerOutcome: 'FINALIZED',
         releaseAction: 'RELEASE',
-        duplicated: false
+        duplicated: false,
+        accountingSide: 'SENDER',
+        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+        postAvailableBalance: 10_000000n,
+        postLockedBalance: 140_000000n,
+        postOfflinePayPendingBalance: 140_000000n
       }),
       appendAuditLog: vi.fn().mockResolvedValue(undefined)
     };
@@ -119,7 +125,16 @@ describe('offline pay service', () => {
 
     expect(result).toEqual({
       status: 'OK',
-      message: 'settlement finalized'
+      message: 'settlement finalized',
+      settlementId: 'settlement-1',
+      ledgerOutcome: 'FINALIZED',
+      releaseAction: 'RELEASE',
+      duplicated: false,
+      accountingSide: 'SENDER',
+      receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      postAvailableBalance: '10.000000',
+      postLockedBalance: '140.000000',
+      postOfflinePayPendingBalance: '140.000000'
     });
     expect(ledger.finalizeOfflinePaySettlement).toHaveBeenCalledOnce();
     expect(ledger.finalizeOfflinePaySettlement).toHaveBeenCalledWith(

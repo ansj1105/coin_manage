@@ -159,7 +159,17 @@ describe('internal offline-pay routes', () => {
   it('finalizes settlement through the injected service and returns ack response', async () => {
     const finalizeSettlement = vi.fn().mockResolvedValue({
       status: 'OK',
-      message: 'settlement finalized'
+      message: 'settlement finalized',
+      settlementId: 'settlement-1',
+      ledgerOutcome: 'FINALIZED',
+      releaseAction: 'RELEASE',
+      duplicated: false,
+      accountingSide: 'SENDER',
+      receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      postAvailableBalance: '10.000000',
+      postLockedBalance: '140.000000',
+      postOfflinePayPendingBalance: '140.000000'
     });
 
     const response = await invokeRoute(
@@ -236,7 +246,17 @@ describe('internal offline-pay routes', () => {
     });
     expect(response.jsonBody).toEqual({
       status: 'OK',
-      message: 'settlement finalized'
+      message: 'settlement finalized',
+      settlementId: 'settlement-1',
+      ledgerOutcome: 'FINALIZED',
+      releaseAction: 'RELEASE',
+      duplicated: false,
+      accountingSide: 'SENDER',
+      receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      postAvailableBalance: '10.000000',
+      postLockedBalance: '140.000000',
+      postOfflinePayPendingBalance: '140.000000'
     });
   });
 

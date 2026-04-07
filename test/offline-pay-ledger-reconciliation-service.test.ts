@@ -72,6 +72,9 @@ describe('offline pay ledger reconciliation service', () => {
           userId: '35',
           adjusted: 'true',
           targetLiabilityBalance: '1020.923524',
+          accountingSide: 'SENDER',
+          receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+          settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
         }),
       }),
     );

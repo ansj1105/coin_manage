@@ -117,6 +117,9 @@ export class OfflinePayLedgerReconciliationService {
               targetLiabilityBalance: result.targetLiabilityBalance,
               deltaAmount: result.deltaAmount,
               adjusted: 'true',
+              accountingSide: 'SENDER',
+              receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+              settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
               note: `auto reconcile from ${snapshot.canonicalBasis}`
             }
           });

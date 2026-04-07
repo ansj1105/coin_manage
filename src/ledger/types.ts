@@ -214,6 +214,8 @@ export interface OutboxEventSummary {
   oldestDeadLetteredAt?: string;
 }
 
+export type OfflinePaySettlementModel = 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY';
+
 export interface EventConsumerAttempt {
   attemptId: string;
   eventKey: string;
@@ -288,6 +290,13 @@ export interface OfflinePayReleaseResult {
 export interface OfflinePaySettlementFinalizeResult {
   settlementId: string;
   status: 'FINALIZED';
+  ledgerOutcome: 'FINALIZED' | 'COMPENSATED';
   releaseAction: 'RELEASE' | 'ADJUST';
   duplicated: boolean;
+  accountingSide: 'SENDER';
+  receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC';
+  settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY';
+  postAvailableBalance: bigint;
+  postLockedBalance: bigint;
+  postOfflinePayPendingBalance: bigint;
 }

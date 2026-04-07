@@ -1129,11 +1129,20 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('reference_id', '=', input.settlementId)
         .executeTakeFirst();
       if (existing) {
+        const projected = await this.getProjectedUserBalances(trx, input.userId);
+        const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
         return {
           settlementId: input.settlementId,
           status: 'FINALIZED',
+          ledgerOutcome: 'FINALIZED',
           releaseAction: input.releaseAction,
-          duplicated: true
+          duplicated: true,
+          accountingSide: 'SENDER',
+          receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+          settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          postAvailableBalance: projected.balance,
+          postLockedBalance: projected.lockedBalance,
+          postOfflinePayPendingBalance: offlinePayPendingBalance
         };
       }
 
@@ -1184,6 +1193,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
       });
 
       await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      const projected = await this.getProjectedUserBalances(trx, input.userId);
+      const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
       await this.enqueueOutboxEvent(trx, {
         eventType: 'offline_pay.settlement.finalized',
         aggregateType: 'offline_pay_settlement',
@@ -1209,8 +1220,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
       return {
         settlementId: input.settlementId,
         status: 'FINALIZED',
+        ledgerOutcome: 'FINALIZED',
         releaseAction: input.releaseAction,
-        duplicated: false
+        duplicated: false,
+        accountingSide: 'SENDER',
+        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        postAvailableBalance: projected.balance,
+        postLockedBalance: projected.lockedBalance,
+        postOfflinePayPendingBalance: offlinePayPendingBalance
       };
     });
   }
@@ -1240,11 +1258,20 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('reference_id', '=', input.settlementId)
         .executeTakeFirst();
       if (existing) {
+        const projected = await this.getProjectedUserBalances(trx, input.userId);
+        const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
         return {
           settlementId: input.settlementId,
           status: 'FINALIZED',
+          ledgerOutcome: 'COMPENSATED',
           releaseAction: input.releaseAction,
-          duplicated: true
+          duplicated: true,
+          accountingSide: 'SENDER',
+          receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+          settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          postAvailableBalance: projected.balance,
+          postLockedBalance: projected.lockedBalance,
+          postOfflinePayPendingBalance: offlinePayPendingBalance
         };
       }
 
@@ -1291,6 +1318,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
       });
 
       await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      const projected = await this.getProjectedUserBalances(trx, input.userId);
+      const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
       await this.enqueueOutboxEvent(trx, {
         eventType: 'offline_pay.settlement.compensated',
         aggregateType: 'offline_pay_settlement',
@@ -1315,8 +1344,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
       return {
         settlementId: input.settlementId,
         status: 'FINALIZED',
+        ledgerOutcome: 'COMPENSATED',
         releaseAction: input.releaseAction,
-        duplicated: false
+        duplicated: false,
+        accountingSide: 'SENDER',
+        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        postAvailableBalance: projected.balance,
+        postLockedBalance: projected.lockedBalance,
+        postOfflinePayPendingBalance: offlinePayPendingBalance
       };
     });
   }

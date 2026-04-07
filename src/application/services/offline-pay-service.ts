@@ -165,7 +165,16 @@ export class OfflinePayService {
 
     return {
       status: 'OK' as const,
-      message: result.releaseAction === 'RELEASE' ? 'settlement finalized' : 'settlement adjusted'
+      message: result.releaseAction === 'RELEASE' ? 'settlement finalized' : 'settlement adjusted',
+      settlementId: result.settlementId,
+      ledgerOutcome: result.ledgerOutcome,
+      releaseAction: result.releaseAction,
+      duplicated: result.duplicated,
+      accountingSide: result.accountingSide,
+      receiverSettlementMode: result.receiverSettlementMode,
+      postAvailableBalance: formatKoriAmount(result.postAvailableBalance),
+      postLockedBalance: formatKoriAmount(result.postLockedBalance),
+      postOfflinePayPendingBalance: formatKoriAmount(result.postOfflinePayPendingBalance)
     };
   }
 
@@ -212,7 +221,16 @@ export class OfflinePayService {
 
     return {
       status: 'OK' as const,
-      message: 'settlement compensated'
+      message: 'settlement compensated',
+      settlementId: result.settlementId,
+      ledgerOutcome: result.ledgerOutcome,
+      releaseAction: result.releaseAction,
+      duplicated: result.duplicated,
+      accountingSide: result.accountingSide,
+      receiverSettlementMode: result.receiverSettlementMode,
+      postAvailableBalance: formatKoriAmount(result.postAvailableBalance),
+      postLockedBalance: formatKoriAmount(result.postLockedBalance),
+      postOfflinePayPendingBalance: formatKoriAmount(result.postOfflinePayPendingBalance)
     };
   }
 }
