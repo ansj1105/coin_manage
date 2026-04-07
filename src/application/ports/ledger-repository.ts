@@ -208,6 +208,7 @@ export interface LedgerRepository {
   getLedgerSummary(): Promise<LedgerSummary>;
   rebuildAccountProjections(nowIso?: string): Promise<{ accountCount: number }>;
   listOfflinePayReconciliationUserIds(limit: number): Promise<string[]>;
+  hasOfflinePayLedgerFootprint(userId: string): Promise<boolean>;
   getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
     userId: string;
     availableBalance: bigint;

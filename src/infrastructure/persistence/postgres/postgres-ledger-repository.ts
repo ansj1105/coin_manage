@@ -2392,6 +2392,23 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return rows.map((row) => row.user_id).filter(Boolean);
   }
 
+  async hasOfflinePayLedgerFootprint(userId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('ledger_accounts')
+      .select('ledger_account_code')
+      .where((eb) =>
+        eb.or([
+          eb('ledger_account_code', 'like', `user:${userId}:available`),
+          eb('ledger_account_code', 'like', `user:${userId}:offline_pay_pending`),
+          eb('ledger_account_code', 'like', `user:${userId}:withdraw_pending`)
+        ])
+      )
+      .limit(1)
+      .executeTakeFirst();
+
+    return Boolean(row);
+  }
+
   async getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
     userId: string;
     availableBalance: bigint;

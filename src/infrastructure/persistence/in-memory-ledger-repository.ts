@@ -26,6 +26,10 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
     return [];
   }
 
+  async hasOfflinePayLedgerFootprint(): Promise<boolean> {
+    return false;
+  }
+
   async getOfflinePayUserBalanceSnapshot(userId: string): Promise<{
     userId: string;
     availableBalance: bigint;

@@ -17,4 +17,5 @@ export interface FoxyaCanonicalWalletSnapshot {
 export interface FoxyaWalletRepository {
   getWalletSignerByAddress(input: { address: string; currencyId: number }): Promise<FoxyaWalletSigner | undefined>;
   getCanonicalWalletSnapshot(input: { userId: string; currencyCode: string }): Promise<FoxyaCanonicalWalletSnapshot>;
+  listUserIdsWithPositiveCanonicalBalance(input: { currencyCode: string; limit: number }): Promise<string[]>;
 }

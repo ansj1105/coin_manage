@@ -102,6 +102,27 @@ export class PostgresFoxyaWalletRepository implements FoxyaWalletRepository {
     };
   }
 
+  async listUserIdsWithPositiveCanonicalBalance(input: { currencyCode: string; limit: number }): Promise<string[]> {
+    const result = await this.pool.query<{ user_id: string | number }>(
+      `
+        select
+          uw.user_id
+        from user_wallets uw
+        join currency c on c.id = uw.currency_id
+        where upper(c.code) = upper($1)
+          and uw.deleted_at is null
+          and upper(coalesce(uw.status, 'ACTIVE')) = 'ACTIVE'
+        group by uw.user_id
+        having coalesce(sum(uw.balance), 0) > 0
+        order by uw.user_id
+        limit $2
+      `,
+      [input.currencyCode, input.limit]
+    );
+
+    return result.rows.map((row) => String(row.user_id)).filter(Boolean);
+  }
+
   private decryptPrivateKey(encryptedValue: string) {
     if (!this.encryptionKey) {
       throw new Error('foxya encryption key is required to decrypt wallet signer');

@@ -20,7 +20,31 @@ export class OfflinePayLedgerReconciliationService {
   ) {}
 
   async runCycle(limit: number) {
-    const userIds = await this.ledger.listOfflinePayReconciliationUserIds(limit);
+    const [existingLedgerUserIds, bootstrapCandidates] = await Promise.all([
+      this.ledger.listOfflinePayReconciliationUserIds(limit),
+      this.foxyaWalletRepository.listUserIdsWithPositiveCanonicalBalance({
+        currencyCode: this.options.currencyCode,
+        limit: Math.max(limit * 5, limit)
+      })
+    ]);
+    const existingLedgerUserIdSet = new Set(existingLedgerUserIds);
+    const bootstrapUserIds: string[] = [];
+
+    for (const userId of bootstrapCandidates) {
+      if (existingLedgerUserIdSet.has(userId)) {
+        continue;
+      }
+      const hasFootprint = await this.ledger.hasOfflinePayLedgerFootprint(userId);
+      if (hasFootprint) {
+        continue;
+      }
+      bootstrapUserIds.push(userId);
+      if (bootstrapUserIds.length >= limit) {
+        break;
+      }
+    }
+
+    const userIds = [...bootstrapUserIds, ...existingLedgerUserIds].slice(0, limit);
     let checkedCount = 0;
     let adjustedCount = 0;
     let skippedCount = 0;
