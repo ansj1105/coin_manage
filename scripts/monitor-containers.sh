@@ -11,6 +11,7 @@ STATE_DIR="${STATE_DIR:-${APP_ROOT}/.monitor-state}"
 STATE_FILE="${STATE_DIR}/container-watch.state"
 LOCK_FILE="${STATE_DIR}/container-watch.lock"
 COOLDOWN_SEC="${CONTAINER_MONITOR_COOLDOWN_SEC:-900}"
+STARTING_GRACE_SEC="${CONTAINER_MONITOR_STARTING_GRACE_SEC:-180}"
 COMPOSE_CONFIG_CACHE="${COMPOSE_CONFIG_CACHE:-}"
 
 mkdir -p "${STATE_DIR}"
@@ -124,7 +125,16 @@ inspect_container_issue() {
 
     local status
     status="$(docker inspect -f '{{.State.Status}}' "${container_id}" 2>/dev/null || echo missing)"
+    local created_at
+    created_at="$(docker inspect -f '{{.Created}}' "${container_id}" 2>/dev/null || true)"
+    local age_sec="999999"
+    if [ -n "${created_at}" ]; then
+        age_sec="$(( $(date +%s) - $(date -d "${created_at}" +%s 2>/dev/null || date +%s) ))"
+    fi
     if [ "${status}" != "running" ]; then
+        if { [ "${status}" = "created" ] || [ "${status}" = "restarting" ]; } && [ "${age_sec}" -lt "${STARTING_GRACE_SEC}" ]; then
+            return
+        fi
         echo "${label}=status:${status}"
         return
     fi
@@ -132,9 +142,57 @@ inspect_container_issue() {
     local health
     health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${container_id}" 2>/dev/null || true)"
     if [ -n "${health}" ] && [ "${health}" != "healthy" ]; then
+        if [ "${health}" = "starting" ] && [ "${age_sec}" -lt "${STARTING_GRACE_SEC}" ]; then
+            return
+        fi
         echo "${label}=health:${health}"
         return
     fi
+}
+
+inspect_runtime_invariants() {
+    local issues=()
+    local app_ops_id=""
+    app_ops_id="$(resolve_monitored_container_id "app-ops")"
+    if [ -z "${app_ops_id}" ]; then
+        printf '%s\n' "${issues[@]}" | sed '/^$/d'
+        return
+    fi
+
+    if ! docker exec "${app_ops_id}" node - <<'NODE' >/dev/null 2>&1
+const net = require('net');
+const host = process.env.FOXYA_DB_HOST;
+const port = Number(process.env.FOXYA_DB_PORT || 15432);
+if (!host || !port) process.exit(0);
+const socket = net.connect({ host, port, timeout: 1500 });
+socket.on('connect', () => { socket.end(); process.exit(0); });
+socket.on('timeout', () => { socket.destroy(); process.exit(1); });
+socket.on('error', () => process.exit(1));
+NODE
+    then
+        issues+=("foxya-db-bridge=unreachable")
+    fi
+
+    if ! docker exec "${app_ops_id}" node - <<'NODE' >/dev/null 2>&1
+const raw = process.env.FOXYA_INTERNAL_API_URL;
+if (!raw) process.exit(0);
+const url = new URL(raw);
+const target = `${url.origin}/api/health`;
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 2000);
+fetch(target, { signal: controller.signal }).then((response) => {
+  clearTimeout(timer);
+  process.exit(response.ok ? 0 : 1);
+}).catch(() => {
+  clearTimeout(timer);
+  process.exit(1);
+});
+NODE
+    then
+        issues+=("foxya-api-health=down")
+    fi
+
+    printf '%s\n' "${issues[@]}" | sed '/^$/d'
 }
 
 collect_issues() {
@@ -160,6 +218,10 @@ collect_issues() {
             issues+=("${issue}")
         fi
     done
+
+    while IFS= read -r issue; do
+        [ -n "${issue}" ] && issues+=("${issue}")
+    done < <(inspect_runtime_invariants)
 
     printf '%s\n' "${issues[@]}" | sed '/^$/d' | sort
 }
