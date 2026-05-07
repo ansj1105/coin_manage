@@ -293,6 +293,7 @@ export interface OfflinePaySettlementFinalizeResult {
   ledgerOutcome: 'FINALIZED' | 'COMPENSATED';
   releaseAction: 'RELEASE' | 'ADJUST';
   duplicated: boolean;
+  feeAmount: bigint;
   accountingSide: 'SENDER';
   receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC';
   settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY';

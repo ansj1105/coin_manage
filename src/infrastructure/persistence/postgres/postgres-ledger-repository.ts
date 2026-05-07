@@ -43,6 +43,11 @@ const DAILY_LIMIT_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
   'COMPLETED'
 ];
 
+const OFFLINE_PAY_SETTLEMENT_FEE_BPS_BY_ASSET = new Map<string, bigint>([
+  ['KORI', 40n]
+]);
+const BPS_DENOMINATOR = 10_000n;
+
 type DbExecutor = Kysely<KorionDatabase> | Transaction<KorionDatabase>;
 
 type LedgerPostingInput = {
@@ -1113,6 +1118,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     deviceId: string;
     assetCode: string;
     amount: bigint;
+    feeAmount?: bigint;
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
@@ -1137,6 +1143,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           ledgerOutcome: 'FINALIZED',
           releaseAction: input.releaseAction,
           duplicated: true,
+          feeAmount: input.feeAmount ?? 0n,
           accountingSide: 'SENDER',
           receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
           settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
@@ -1149,12 +1156,45 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
       await this.ensureAccount(trx, input.userId, nowIso);
       await this.lockUsers(trx, [input.userId]);
+      if ((input.feeAmount ?? 0n) < 0n) {
+        throw new DomainError(400, 'INVALID_OFFLINE_PAY_FEE', 'offline pay settlement fee must be non-negative');
+      }
+      const expectedFeeAmount = this.calculateOfflinePaySettlementFee(input.assetCode, input.amount);
+      if (input.releaseAction === 'RELEASE' && input.feeAmount != null && input.feeAmount !== expectedFeeAmount) {
+        throw new DomainError(409, 'OFFLINE_PAY_FEE_MISMATCH', 'offline pay settlement fee mismatch');
+      }
+      const feeAmount = input.releaseAction === 'RELEASE' ? expectedFeeAmount : 0n;
+      const senderDebitAmount = input.amount + feeAmount;
       const pendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
-      if (pendingBalance < input.amount) {
+      if (pendingBalance < senderDebitAmount) {
         throw new DomainError(409, 'INSUFFICIENT_OFFLINE_PAY_PENDING', 'offline pay pending balance underflow');
       }
 
       const amountValue = formatKoriAmount(input.amount);
+      const feeAmountValue = formatKoriAmount(feeAmount);
+      const senderDebitAmountValue = formatKoriAmount(senderDebitAmount);
+      const releasePostings: LedgerPostingInput[] = [
+        {
+          ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+          accountType: 'liability',
+          entrySide: 'debit',
+          amount: senderDebitAmountValue
+        },
+        {
+          ledgerAccountCode: 'system:asset:offline_pay_clearing',
+          accountType: 'asset',
+          entrySide: 'credit',
+          amount: amountValue
+        }
+      ];
+      if (feeAmount > 0n) {
+        releasePostings.push({
+          ledgerAccountCode: 'system:revenue:offline_pay_fee',
+          accountType: 'revenue',
+          entrySide: 'credit',
+          amount: feeAmountValue
+        });
+      }
       await this.appendJournal(trx, {
         journalType: input.releaseAction === 'RELEASE' ? 'offline_pay_settled' : 'offline_pay_released',
         referenceType: 'offline_pay_settlement',
@@ -1163,20 +1203,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         nowIso,
         postings:
           input.releaseAction === 'RELEASE'
-            ? [
-                {
-                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
-                  accountType: 'liability',
-                  entrySide: 'debit',
-                  amount: amountValue
-                },
-                {
-                  ledgerAccountCode: 'system:asset:offline_pay_clearing',
-                  accountType: 'asset',
-                  entrySide: 'credit',
-                  amount: amountValue
-                }
-              ]
+            ? releasePostings
             : [
                 {
                   ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
@@ -1210,6 +1237,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           deviceId: input.deviceId,
           assetCode: input.assetCode,
           amount: amountValue,
+          feeAmount: feeAmountValue,
           settlementStatus: input.settlementStatus,
           releaseAction: input.releaseAction,
           conflictDetected: input.conflictDetected,
@@ -1224,6 +1252,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         ledgerOutcome: 'FINALIZED',
         releaseAction: input.releaseAction,
         duplicated: false,
+        feeAmount,
         accountingSide: 'SENDER',
         receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
         settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
@@ -1268,6 +1297,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           ledgerOutcome: 'COMPENSATED',
           releaseAction: input.releaseAction,
           duplicated: true,
+          feeAmount: 0n,
           accountingSide: 'SENDER',
           receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
           settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
@@ -1350,6 +1380,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
         ledgerOutcome: 'COMPENSATED',
         releaseAction: input.releaseAction,
         duplicated: false,
+        feeAmount: 0n,
         accountingSide: 'SENDER',
         receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
         settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
@@ -2675,6 +2706,22 @@ export class PostgresLedgerRepository implements LedgerRepository {
         }))
       )
       .execute();
+  }
+
+  private calculateOfflinePaySettlementFee(assetCode: string, amount: bigint): bigint {
+    const feeBps = this.getOfflinePaySettlementFeeBps(assetCode);
+    if (feeBps <= 0n || amount <= 0n) {
+      return 0n;
+    }
+    return (amount * feeBps + (BPS_DENOMINATOR / 2n)) / BPS_DENOMINATOR;
+  }
+
+  private getOfflinePaySettlementFeeBps(assetCode: string): bigint {
+    return OFFLINE_PAY_SETTLEMENT_FEE_BPS_BY_ASSET.get(this.normalizeAssetCode(assetCode)) ?? 0n;
+  }
+
+  private normalizeAssetCode(assetCode: string): string {
+    return assetCode.trim().toUpperCase();
   }
 
   private async ensureLedgerAccount(

@@ -257,6 +257,7 @@ export interface LedgerRepository {
     deviceId: string;
     assetCode: string;
     amount: bigint;
+    feeAmount?: bigint;
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;

@@ -99,6 +99,7 @@ export class OfflinePayService {
     deviceId: string;
     assetCode: string;
     amount: string;
+    feeAmount?: string;
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
@@ -132,9 +133,12 @@ export class OfflinePayService {
     }
 
     const amount = parseKoriAmount(Number(input.amount));
+    const feeAmount = input.feeAmount == null ? undefined : parseKoriAmount(Number(input.feeAmount));
+    const { feeAmount: _requestedFeeAmount, ...settlementInput } = input;
     const result = await this.ledger.finalizeOfflinePaySettlement({
-      ...input,
-      amount
+      ...settlementInput,
+      amount,
+      ...(feeAmount == null ? {} : { feeAmount })
     });
 
     if (!result.duplicated) {
@@ -152,6 +156,7 @@ export class OfflinePayService {
           deviceId: input.deviceId,
           assetCode: input.assetCode,
           amount: formatKoriAmount(amount),
+          feeAmount: formatKoriAmount(result.feeAmount),
           settlementStatus: input.settlementStatus,
           releaseAction: input.releaseAction,
           conflictDetected: String(input.conflictDetected),
@@ -170,6 +175,7 @@ export class OfflinePayService {
       ledgerOutcome: result.ledgerOutcome,
       releaseAction: result.releaseAction,
       duplicated: result.duplicated,
+      feeAmount: formatKoriAmount(result.feeAmount),
       accountingSide: result.accountingSide,
       receiverSettlementMode: result.receiverSettlementMode,
       settlementModel: result.settlementModel,
@@ -228,6 +234,7 @@ export class OfflinePayService {
       ledgerOutcome: result.ledgerOutcome,
       releaseAction: result.releaseAction,
       duplicated: result.duplicated,
+      feeAmount: formatKoriAmount(result.feeAmount),
       accountingSide: result.accountingSide,
       receiverSettlementMode: result.receiverSettlementMode,
       settlementModel: result.settlementModel,
