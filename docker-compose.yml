@@ -137,6 +137,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: korion-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-korion}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-korion}
@@ -178,6 +179,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: korion-redis
+    restart: unless-stopped
     ports:
       - '${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_HOST_PORT:-16379}:6379'
     healthcheck:
