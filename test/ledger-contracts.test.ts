@@ -78,6 +78,7 @@ describe('ledger contracts', () => {
       ]
     });
 
+    expect(payload.journalType).toBe('offline_pay_settlement_compensated');
     expect(payload.referenceType).toBe('offline_pay_settlement_compensation');
     expect(verifyLedgerContractSignature(payload)).toBe(true);
   });
