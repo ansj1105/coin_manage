@@ -53,7 +53,7 @@ export const journalEntryContractSchema = z
     issuer: z.string().min(1).max(64),
     signature: z.string().regex(/^[a-f0-9]{64}$/),
     journalType: z.string().min(1).max(64),
-    referenceType: z.string().min(1).max(32),
+    referenceType: z.string().min(1).max(64),
     referenceId: z.string().min(1).max(64),
     currency: z.enum(['KORI', 'TRX']),
     description: z.string().max(500).optional(),

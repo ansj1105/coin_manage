@@ -56,6 +56,32 @@ describe('ledger contracts', () => {
     expect(verifyLedgerContractSignature(payload)).toBe(true);
   });
 
+  it('allows offline pay compensation reference types', () => {
+    const payload = buildJournalEntryContract({
+      journalType: 'offline_pay_settlement_compensated',
+      referenceType: 'offline_pay_settlement_compensation',
+      referenceId: 'stl-1',
+      occurredAt: '2026-03-12T12:00:00.000Z',
+      postings: [
+        {
+          accountCode: 'system:asset:offline_pay_clearing',
+          accountType: 'asset',
+          side: 'debit',
+          amount: '1.000000'
+        },
+        {
+          accountCode: 'user:user-1:offline_pay_pending',
+          accountType: 'liability',
+          side: 'credit',
+          amount: '1.000000'
+        }
+      ]
+    });
+
+    expect(payload.referenceType).toBe('offline_pay_settlement_compensation');
+    expect(verifyLedgerContractSignature(payload)).toBe(true);
+  });
+
   it('builds trx journal entry contract for network fees', () => {
     const payload = buildJournalEntryContract({
       journalType: 'withdraw_network_fee',
