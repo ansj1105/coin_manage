@@ -32,8 +32,9 @@
 - If `offline_pay` collateral calls start timing out, check `pg_stat_replication`, `pg_stat_activity`, and `synchronous_standby_names` on `coin_manage` before assuming an app-level bug.
 - Do not leave `synchronous_standby_names` configured on a primary that has no attached standby. Use `./scripts/db-sync-standby-guard.sh --repair` to clear that state.
 - Production host is `54.83.183.123`, app root is `/var/www/korion`, and the operator key is `C:\work\korion.pem`.
+- Current production `coin_manage` containers are `korion-app-api-1`, `korion-app-ops-1`, `korion-app-signer-1`, `korion-app-withdraw-worker-1`, `korion-postgres`, `korion-redis`, and `ledger-signer`.
 - The production Compose stack uses its own Postgres and Redis. `postgres` and `redis` must keep `restart: unless-stopped`; if they exit, `app-withdraw-worker` can restart-loop and downstream `offline_pay` calls can receive non-JSON error bodies.
-- After a production host reboot or container-down alert, verify `korion-postgres`, `korion-redis`, `app-api`, and `app-withdraw-worker` with `sudo docker compose ps` before retrying settlement sync.
+- After a production host reboot or container-down alert, verify `korion-postgres`, `korion-redis`, `korion-app-api-1`, and `korion-app-withdraw-worker-1` with `sudo docker compose ps` before retrying settlement sync.
 
 ## Offline Pay Integration Rule
 
