@@ -97,6 +97,8 @@ export class OfflinePayService {
     proofId: string;
     userId: string;
     deviceId: string;
+    receiverUserId?: string;
+    receiverDeviceId?: string;
     assetCode: string;
     amount: string;
     feeAmount?: string;
@@ -154,6 +156,8 @@ export class OfflinePayService {
           proofId: input.proofId,
           userId: input.userId,
           deviceId: input.deviceId,
+          ...(input.receiverUserId == null ? {} : { receiverUserId: input.receiverUserId }),
+          ...(input.receiverDeviceId == null ? {} : { receiverDeviceId: input.receiverDeviceId }),
           assetCode: input.assetCode,
           amount: formatKoriAmount(amount),
           feeAmount: formatKoriAmount(result.feeAmount),

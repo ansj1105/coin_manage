@@ -1116,17 +1116,27 @@ export class PostgresLedgerRepository implements LedgerRepository {
     proofFingerprint: string;
     userId: string;
     deviceId: string;
+    receiverUserId?: string;
+    receiverDeviceId?: string;
     assetCode: string;
     amount: bigint;
     feeAmount?: bigint;
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    newStateHash: string;
+    previousHash: string;
+    monotonicCounter: number;
+    nonce: string;
+    signature: string;
     nowIso?: string;
   }): Promise<OfflinePaySettlementFinalizeResult> {
     return this.withTransaction(async (trx) => {
       const nowIso = input.nowIso ?? new Date().toISOString();
       await this.lockKey(trx, `offline-pay-settlement:${input.settlementId}`);
+
+      const receiverUserId = this.resolveOfflinePayReceiverUserId(input.userId, input.receiverUserId);
+      const affectedUserIds = receiverUserId ? [input.userId, receiverUserId] : [input.userId];
 
       const existing = await trx
         .selectFrom('ledger_journals')
@@ -1134,7 +1144,14 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('reference_type', '=', 'offline_pay_settlement')
         .where('reference_id', '=', input.settlementId)
         .executeTakeFirst();
+      await this.ensureAccount(trx, input.userId, nowIso);
+      if (receiverUserId) {
+        await this.ensureAccount(trx, receiverUserId, nowIso);
+      }
+      await this.lockUsers(trx, affectedUserIds);
       if (existing) {
+        await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso);
+        await this.syncUserAccountProjection(trx, affectedUserIds, nowIso);
         const projected = await this.getProjectedUserBalances(trx, input.userId);
         const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
         return {
@@ -1145,8 +1162,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
           duplicated: true,
           feeAmount: input.feeAmount ?? 0n,
           accountingSide: 'SENDER',
-          receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
-          settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          receiverSettlementMode: receiverUserId ? 'LEDGER_AND_EXTERNAL_HISTORY_SYNC' : 'EXTERNAL_HISTORY_SYNC',
+          settlementModel: receiverUserId ? 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY' : 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
           reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
           postAvailableBalance: projected.balance,
           postLockedBalance: projected.lockedBalance,
@@ -1154,8 +1171,6 @@ export class PostgresLedgerRepository implements LedgerRepository {
         };
       }
 
-      await this.ensureAccount(trx, input.userId, nowIso);
-      await this.lockUsers(trx, [input.userId]);
       if ((input.feeAmount ?? 0n) < 0n) {
         throw new DomainError(400, 'INVALID_OFFLINE_PAY_FEE', 'offline pay settlement fee must be non-negative');
       }
@@ -1220,7 +1235,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
               ]
       });
 
-      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso);
+      await this.syncUserAccountProjection(trx, affectedUserIds, nowIso);
       const projected = await this.getProjectedUserBalances(trx, input.userId);
       const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
       await this.enqueueOutboxEvent(trx, {
@@ -1233,6 +1249,13 @@ export class PostgresLedgerRepository implements LedgerRepository {
           collateralId: input.collateralId,
           proofId: input.proofId,
           proofFingerprint: input.proofFingerprint,
+          newStateHash: input.newStateHash,
+          previousHash: input.previousHash,
+          monotonicCounter: input.monotonicCounter,
+          nonce: input.nonce,
+          signature: input.signature,
+          ...(input.receiverUserId == null ? {} : { receiverUserId: input.receiverUserId }),
+          ...(input.receiverDeviceId == null ? {} : { receiverDeviceId: input.receiverDeviceId }),
           userId: input.userId,
           deviceId: input.deviceId,
           assetCode: input.assetCode,
@@ -1254,8 +1277,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         duplicated: false,
         feeAmount,
         accountingSide: 'SENDER',
-        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
-        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        receiverSettlementMode: receiverUserId ? 'LEDGER_AND_EXTERNAL_HISTORY_SYNC' : 'EXTERNAL_HISTORY_SYNC',
+        settlementModel: receiverUserId ? 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY' : 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
         reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         postAvailableBalance: projected.balance,
         postLockedBalance: projected.lockedBalance,
@@ -2582,6 +2605,69 @@ export class PostgresLedgerRepository implements LedgerRepository {
     for (const userId of [...new Set(userIds)].sort()) {
       await this.lockKey(db, `account:${userId}`);
     }
+  }
+
+  private resolveOfflinePayReceiverUserId(senderUserId: string, receiverUserId?: string): string | undefined {
+    const normalized = receiverUserId?.trim();
+    if (!normalized || normalized === senderUserId) {
+      return undefined;
+    }
+    return normalized;
+  }
+
+  private async appendOfflinePayReceiverSettlementIfNeeded(
+    db: DbExecutor,
+    input: {
+      settlementId: string;
+      settlementStatus: string;
+      releaseAction: 'RELEASE' | 'ADJUST';
+      conflictDetected: boolean;
+      amount: bigint;
+    },
+    receiverUserId: string | undefined,
+    nowIso: string
+  ): Promise<void> {
+    if (
+      !receiverUserId
+      || input.settlementStatus !== 'SETTLED'
+      || input.releaseAction !== 'RELEASE'
+      || input.conflictDetected
+    ) {
+      return;
+    }
+
+    const existing = await db
+      .selectFrom('ledger_journals')
+      .select(['reference_id'])
+      .where('reference_type', '=', 'offline_pay_receiver_settlement')
+      .where('reference_id', '=', input.settlementId)
+      .executeTakeFirst();
+    if (existing) {
+      return;
+    }
+
+    const amountValue = formatKoriAmount(input.amount);
+    await this.appendJournal(db, {
+      journalType: 'offline_pay_receiver_settled',
+      referenceType: 'offline_pay_receiver_settlement',
+      referenceId: input.settlementId,
+      description: `RECEIVER SETTLED ${input.settlementStatus}`.trim(),
+      nowIso,
+      postings: [
+        {
+          ledgerAccountCode: 'system:asset:offline_pay_clearing',
+          accountType: 'asset',
+          entrySide: 'debit',
+          amount: amountValue
+        },
+        {
+          ledgerAccountCode: `user:${receiverUserId}:available`,
+          accountType: 'liability',
+          entrySide: 'credit',
+          amount: amountValue
+        }
+      ]
+    });
   }
 
   private async ensureAccount(db: DbExecutor, userId: string, nowIso = new Date().toISOString()): Promise<void> {

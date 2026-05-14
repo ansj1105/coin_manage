@@ -255,12 +255,19 @@ export interface LedgerRepository {
     proofFingerprint: string;
     userId: string;
     deviceId: string;
+    receiverUserId?: string;
+    receiverDeviceId?: string;
     assetCode: string;
     amount: bigint;
     feeAmount?: bigint;
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    newStateHash: string;
+    previousHash: string;
+    monotonicCounter: number;
+    nonce: string;
+    signature: string;
     nowIso?: string;
   }): Promise<OfflinePaySettlementFinalizeResult>;
   compensateOfflinePaySettlement(input: {

@@ -113,7 +113,9 @@ describe('offline pay service', () => {
       proofId: 'proof-1',
       userId: '77',
       deviceId: 'device-1',
-        assetCode: 'KORI',
+      receiverUserId: '39',
+      receiverDeviceId: 'receiver-device-1',
+      assetCode: 'KORI',
       amount: '150.000000',
       feeAmount: '0.600000',
       settlementStatus: 'SETTLED',
@@ -149,6 +151,8 @@ describe('offline pay service', () => {
         settlementId: 'settlement-1',
         proofId: 'proof-1',
         proofFingerprint,
+        receiverUserId: '39',
+        receiverDeviceId: 'receiver-device-1',
         feeAmount: 600000n
       })
     );

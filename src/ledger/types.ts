@@ -295,8 +295,8 @@ export interface OfflinePaySettlementFinalizeResult {
   duplicated: boolean;
   feeAmount: bigint;
   accountingSide: 'SENDER';
-  receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC';
-  settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY';
+  receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC' | 'LEDGER_AND_EXTERNAL_HISTORY_SYNC';
+  settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY' | 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY';
   reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA';
   postAvailableBalance: bigint;
   postLockedBalance: bigint;
