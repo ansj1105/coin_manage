@@ -247,6 +247,14 @@ export interface LedgerRepository {
     referenceId: string;
     nowIso?: string;
   }): Promise<OfflinePayReleaseResult>;
+  upsertOfflinePayDevice(input: {
+    userId: string;
+    deviceId: string;
+    status: 'ACTIVE' | 'REVOKED';
+    keyVersion?: number;
+    lastSeenAt?: string;
+    nowIso?: string;
+  }): Promise<void>;
   finalizeOfflinePaySettlement(input: {
     settlementId: string;
     batchId: string;

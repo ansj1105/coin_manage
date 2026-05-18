@@ -4,6 +4,8 @@ import { DomainError } from '../../../domain/errors/domain-error.js';
 import { createRequireWithdrawApiKey } from '../middleware/withdraw-auth.js';
 import {
   offlinePayCompensateSettlementRequestSchema,
+  offlinePayDeviceUpsertRequestSchema,
+  offlinePayDeviceUpsertResponseSchema,
   offlinePayFinalizeSettlementRequestSchema,
   offlinePayLockRequestSchema,
   offlinePayLockResponseSchema,
@@ -76,6 +78,19 @@ export const createInternalOfflinePayRoutes = (
       }
       const result = await offlinePayService.compensateSettlement(parsed.data);
       res.status(200).json(offlinePaySettlementResponseSchema.parse(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/devices/upsert', async (req, res, next) => {
+    try {
+      const parsed = offlinePayDeviceUpsertRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw zodToDomainError(parsed.error);
+      }
+      const result = await offlinePayService.upsertDevice(parsed.data);
+      res.status(200).json(offlinePayDeviceUpsertResponseSchema.parse(result));
     } catch (error) {
       next(error);
     }

@@ -1135,7 +1135,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
       const nowIso = input.nowIso ?? new Date().toISOString();
       await this.lockKey(trx, `offline-pay-settlement:${input.settlementId}`);
 
-      const receiverUserId = this.resolveOfflinePayReceiverUserId(input.userId, input.receiverUserId);
+      const receiverUserId = await this.resolveOfflinePayReceiverUserId(
+        trx,
+        input.userId,
+        input.receiverUserId,
+        input.receiverDeviceId
+      );
       const affectedUserIds = receiverUserId ? [input.userId, receiverUserId] : [input.userId];
 
       const existing = await trx
@@ -1285,6 +1290,40 @@ export class PostgresLedgerRepository implements LedgerRepository {
         postOfflinePayPendingBalance: offlinePayPendingBalance
       };
     });
+  }
+
+  async upsertOfflinePayDevice(input: {
+    userId: string;
+    deviceId: string;
+    status: 'ACTIVE' | 'REVOKED';
+    keyVersion?: number;
+    lastSeenAt?: string;
+    nowIso?: string;
+  }): Promise<void> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    await this.db
+      .insertInto('offline_pay_devices')
+      .values({
+        device_id: input.deviceId,
+        user_id: input.userId,
+        status: input.status,
+        key_version: input.keyVersion ?? null,
+        last_seen_at: input.lastSeenAt ?? nowIso,
+        synced_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso
+      })
+      .onConflict((oc) => oc
+        .column('device_id')
+        .doUpdateSet({
+          user_id: input.userId,
+          status: input.status,
+          key_version: input.keyVersion ?? null,
+          last_seen_at: input.lastSeenAt ?? nowIso,
+          synced_at: nowIso,
+          updated_at: nowIso
+        }))
+      .execute();
   }
 
   async compensateOfflinePaySettlement(input: {
@@ -2607,12 +2646,39 @@ export class PostgresLedgerRepository implements LedgerRepository {
     }
   }
 
-  private resolveOfflinePayReceiverUserId(senderUserId: string, receiverUserId?: string): string | undefined {
+  private async resolveOfflinePayReceiverUserId(
+    db: DbExecutor,
+    senderUserId: string,
+    receiverUserId?: string,
+    receiverDeviceId?: string
+  ): Promise<string | undefined> {
     const normalized = receiverUserId?.trim();
     if (!normalized || normalized === senderUserId) {
-      return undefined;
+      const mapped = await this.findOfflinePayReceiverUserId(db, senderUserId, receiverDeviceId);
+      return mapped;
     }
     return normalized;
+  }
+
+  private async findOfflinePayReceiverUserId(
+    db: DbExecutor,
+    senderUserId: string,
+    receiverDeviceId?: string
+  ): Promise<string | undefined> {
+    const normalizedDeviceId = receiverDeviceId?.trim();
+    if (!normalizedDeviceId) {
+      return undefined;
+    }
+    const row = await db
+      .selectFrom('offline_pay_devices')
+      .select(['user_id'])
+      .where('device_id', '=', normalizedDeviceId)
+      .where('status', '=', 'ACTIVE')
+      .executeTakeFirst();
+    if (!row?.user_id || row.user_id === senderUserId) {
+      return undefined;
+    }
+    return row.user_id;
   }
 
   private async appendOfflinePayReceiverSettlementIfNeeded(

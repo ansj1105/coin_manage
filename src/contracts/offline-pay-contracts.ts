@@ -77,6 +77,23 @@ export const offlinePayCompensateSettlementRequestSchema = z
   })
   .strict();
 
+export const offlinePayDeviceUpsertRequestSchema = z
+  .object({
+    userId: z.string().min(1).max(64),
+    deviceId: z.string().min(1).max(128),
+    status: z.enum(['ACTIVE', 'REVOKED']),
+    keyVersion: z.number().int().positive().optional(),
+    lastSeenAt: z.string().datetime().optional()
+  })
+  .strict();
+
+export const offlinePayDeviceUpsertResponseSchema = z
+  .object({
+    status: z.literal('OK'),
+    deviceId: z.string().min(1).max(128)
+  })
+  .strict();
+
 export const offlinePaySettlementResponseSchema = z
   .object({
     status: z.literal('OK'),
@@ -102,4 +119,6 @@ export type OfflinePayReleaseRequest = z.infer<typeof offlinePayReleaseRequestSc
 export type OfflinePayReleaseResponse = z.infer<typeof offlinePayReleaseResponseSchema>;
 export type OfflinePayFinalizeSettlementRequest = z.infer<typeof offlinePayFinalizeSettlementRequestSchema>;
 export type OfflinePayCompensateSettlementRequest = z.infer<typeof offlinePayCompensateSettlementRequestSchema>;
+export type OfflinePayDeviceUpsertRequest = z.infer<typeof offlinePayDeviceUpsertRequestSchema>;
+export type OfflinePayDeviceUpsertResponse = z.infer<typeof offlinePayDeviceUpsertResponseSchema>;
 export type OfflinePaySettlementResponse = z.infer<typeof offlinePaySettlementResponseSchema>;

@@ -14,6 +14,7 @@ const invokeRoute = async (
     lockCollateral?: ReturnType<typeof vi.fn>;
     releaseCollateral?: ReturnType<typeof vi.fn>;
     finalizeSettlement?: ReturnType<typeof vi.fn>;
+    upsertDevice?: ReturnType<typeof vi.fn>;
   }
 ) => {
   const router = createInternalOfflinePayRoutes(offlinePayService as any, {
@@ -267,6 +268,44 @@ describe('internal offline-pay routes', () => {
       postAvailableBalance: '10.000000',
       postLockedBalance: '140.000000',
       postOfflinePayPendingBalance: '140.000000'
+    });
+  });
+
+  it('upserts offline pay device snapshot through the injected service', async () => {
+    const upsertDevice = vi.fn().mockResolvedValue({
+      status: 'OK',
+      deviceId: 'device-1'
+    });
+
+    const response = await invokeRoute(
+      {
+        method: 'post',
+        path: '/devices/upsert',
+        headers: {
+          'x-internal-api-key': 'internal-secret'
+        },
+        body: {
+          userId: '39',
+          deviceId: 'device-1',
+          status: 'ACTIVE',
+          keyVersion: 2,
+          lastSeenAt: '2026-05-19T00:00:00.000Z'
+        }
+      },
+      { upsertDevice }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody).toEqual({
+      status: 'OK',
+      deviceId: 'device-1'
+    });
+    expect(upsertDevice).toHaveBeenCalledWith({
+      userId: '39',
+      deviceId: 'device-1',
+      status: 'ACTIVE',
+      keyVersion: 2,
+      lastSeenAt: '2026-05-19T00:00:00.000Z'
     });
   });
 

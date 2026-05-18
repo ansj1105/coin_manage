@@ -90,6 +90,35 @@ export class OfflinePayService {
     };
   }
 
+  async upsertDevice(input: {
+    userId: string;
+    deviceId: string;
+    status: 'ACTIVE' | 'REVOKED';
+    keyVersion?: number;
+    lastSeenAt?: string;
+  }) {
+    await this.ledger.upsertOfflinePayDevice(input);
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: input.deviceId,
+      action: 'offline_pay.device.synced',
+      actorType: 'system',
+      actorId: 'offline_pay',
+      metadata: {
+        userId: input.userId,
+        deviceId: input.deviceId,
+        status: input.status,
+        ...(input.keyVersion == null ? {} : { keyVersion: String(input.keyVersion) }),
+        ...(input.lastSeenAt == null ? {} : { lastSeenAt: input.lastSeenAt })
+      }
+    });
+
+    return {
+      status: 'OK' as const,
+      deviceId: input.deviceId
+    };
+  }
+
   async finalizeSettlement(input: {
     settlementId: string;
     batchId: string;

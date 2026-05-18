@@ -337,6 +337,17 @@ export interface EventConsumerCheckpointsTable {
   last_processed_at: string;
 }
 
+export interface OfflinePayDevicesTable {
+  device_id: string;
+  user_id: string;
+  status: 'ACTIVE' | 'REVOKED';
+  key_version: number | null;
+  last_seen_at: string;
+  synced_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
@@ -364,4 +375,5 @@ export interface KorionDatabase {
   event_consumer_attempts: EventConsumerAttemptsTable;
   event_consumer_dead_letters: EventConsumerDeadLettersTable;
   event_consumer_checkpoints: EventConsumerCheckpointsTable;
+  offline_pay_devices: OfflinePayDevicesTable;
 }

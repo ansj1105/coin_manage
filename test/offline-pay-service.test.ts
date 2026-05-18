@@ -218,4 +218,36 @@ describe('offline pay service', () => {
       })
     );
   });
+
+  it('upserts offline pay device snapshots and writes an audit log', async () => {
+    const ledger = {
+      upsertOfflinePayDevice: vi.fn().mockResolvedValue(undefined),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const service = new OfflinePayService(ledger as any);
+
+    const result = await service.upsertDevice({
+      userId: '39',
+      deviceId: 'device-1',
+      status: 'ACTIVE',
+      keyVersion: 2,
+      lastSeenAt: '2026-05-19T00:00:00.000Z'
+    });
+
+    expect(result).toEqual({
+      status: 'OK',
+      deviceId: 'device-1'
+    });
+    expect(ledger.upsertOfflinePayDevice).toHaveBeenCalledWith({
+      userId: '39',
+      deviceId: 'device-1',
+      status: 'ACTIVE',
+      keyVersion: 2,
+      lastSeenAt: '2026-05-19T00:00:00.000Z'
+    });
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'offline_pay.device.synced',
+      entityId: 'device-1'
+    }));
+  });
 });
