@@ -34,6 +34,16 @@
 
 즉 사용자는 오프라인에서 실제 자산을 직접 움직이는 것이 아니라, 서버가 미리 인정한 담보 범위 내에서 spending proof를 생성한다.
 
+### 2.4 proof 발행 책임은 offline_pay 단일이다
+
+`coin_manage`는 담보와 내부원장의 canonical owner지만, 오프라인 결제 proof의 issuer가 아니다.
+
+- `coin_manage`: collateral lock/release, settlement finalize, 내부원장 journal, outbox/audit 책임
+- `offline_pay`: `issued_offline_proofs` 발행, issuer signature, proof 검증, settlement 판정 책임
+- `coin_front`: proof 소비/캐시/전송 UX 책임
+
+따라서 `coin_manage`에는 proof 발행 API나 proof 서명 키를 두지 않는다. `coin_manage`가 받는 settlement 요청은 이미 `offline_pay`에서 검증된 결과이며, `coin_manage`는 `proofFingerprint`, 멱등성, sender/receiver device snapshot, ledger journal 정합성을 재검증한다.
+
 ## 3. 담보 채우기 / 해제 정책
 
 ### 3.1 담보 채우기

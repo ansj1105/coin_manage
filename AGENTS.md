@@ -41,5 +41,8 @@
 - `offline_pay` 연동 기능은 화면용 더미 상태나 샘플 ledger를 기본 동작에 남기지 않는다.
 - 테스트용 collateral/settlement/topup/release 샘플은 test mode, fixture, or test table seed로만 다룬다.
 - 오프라인 결제는 기본적으로 `internal ledger only`이며 자동 실출금으로 이어지지 않도록 유지한다.
+- `coin_manage`는 offline collateral lock/release와 internal ledger finalization의 canonical owner다. `issued_offline_proofs` 발행/서명/검증 책임은 `korion_offline`에 둔다.
+- `coin_manage`가 settlement finalize를 받을 때는 `proofFingerprint`, idempotency key, sender/receiver device snapshot, ledger journal을 검증/기록하되 proof issuer처럼 동작하지 않는다.
+- 장치 snapshot은 `korion_offline`이 동기화한 active/revoked 상태를 소비한다. frozen/revoked 기기를 active로 되살리는 upsert나 fallback lookup을 만들지 않는다.
 - 연동 계약이 바뀌면 `coin_front`, `offline_pay`, `coin_manage`, 필요 시 `foxya_coin_service`, `coin_csms`, `coin_publish`까지 영향 범위를 확인한다.
 - 오프라인 정책 때문에 운영/정산 테이블이 바뀌면 DB migration과 운영 조회 API를 함께 갱신한다.
