@@ -1184,7 +1184,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         throw new DomainError(409, 'OFFLINE_PAY_FEE_MISMATCH', 'offline pay settlement fee mismatch');
       }
       const feeAmount = input.releaseAction === 'RELEASE' ? expectedFeeAmount : 0n;
-      const senderDebitAmount = input.amount + feeAmount;
+      const senderDebitAmount = input.amount;
+      const receiverCreditAmount = input.amount > feeAmount ? input.amount - feeAmount : 0n;
       const pendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
       if (pendingBalance < senderDebitAmount) {
         throw new DomainError(409, 'INSUFFICIENT_OFFLINE_PAY_PENDING', 'offline pay pending balance underflow');
@@ -1192,6 +1193,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
 
       const amountValue = formatKoriAmount(input.amount);
       const feeAmountValue = formatKoriAmount(feeAmount);
+      const receiverCreditAmountValue = formatKoriAmount(receiverCreditAmount);
       const senderDebitAmountValue = formatKoriAmount(senderDebitAmount);
       const releasePostings: LedgerPostingInput[] = [
         {
@@ -1204,7 +1206,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           ledgerAccountCode: 'system:asset:offline_pay_clearing',
           accountType: 'asset',
           entrySide: 'credit',
-          amount: amountValue
+          amount: receiverCreditAmountValue
         }
       ];
       if (feeAmount > 0n) {
@@ -1240,7 +1242,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
               ]
       });
 
-      await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso);
+      await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso, receiverCreditAmount);
       await this.syncUserAccountProjection(trx, affectedUserIds, nowIso);
       const projected = await this.getProjectedUserBalances(trx, input.userId);
       const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
@@ -2691,7 +2693,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
       amount: bigint;
     },
     receiverUserId: string | undefined,
-    nowIso: string
+    nowIso: string,
+    receiverCreditAmount?: bigint
   ): Promise<void> {
     if (
       !receiverUserId
@@ -2712,7 +2715,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       return;
     }
 
-    const amountValue = formatKoriAmount(input.amount);
+    const amountValue = formatKoriAmount(receiverCreditAmount ?? input.amount);
     await this.appendJournal(db, {
       journalType: 'offline_pay_receiver_settled',
       referenceType: 'offline_pay_receiver_settlement',
