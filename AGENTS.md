@@ -11,6 +11,8 @@
 
 - Any endpoint addition or request/response contract change must update `openapi.yaml` in the same task.
 - If the change affects cross-instance behavior, document which service is the source of truth and how retries or reconciliation work.
+- Do not implement imagined adjacent work. A request to add or fix one endpoint, policy, validator, worker path, or ledger flow is not permission to add unrelated routes, new roles, extra state transitions, alternate fees, dashboard semantics, or public behavior that the user did not explicitly ask for.
+- Preserve existing source-of-truth ownership, state values, accounting semantics, API contracts, and service boundaries unless the user explicitly instructs a change. If a useful adjacent change is noticed, report it as a follow-up instead of implementing it silently.
 
 ## Backend Persistence Rule
 
