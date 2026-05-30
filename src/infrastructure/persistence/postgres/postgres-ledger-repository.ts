@@ -44,7 +44,7 @@ const DAILY_LIMIT_WITHDRAWAL_STATUSES: WithdrawalStatus[] = [
 ];
 
 const OFFLINE_PAY_SETTLEMENT_FEE_BPS_BY_ASSET = new Map<string, bigint>([
-  ['KORI', 40n]
+  ['KORI', 10n]
 ]);
 const BPS_DENOMINATOR = 10_000n;
 
