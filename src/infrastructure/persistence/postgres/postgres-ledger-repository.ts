@@ -2559,6 +2559,10 @@ export class PostgresLedgerRepository implements LedgerRepository {
     };
   }
 
+  async getOfflinePayPendingBalance(userId: string): Promise<bigint> {
+    return this.getProjectedLedgerAccountBalance(this.db, `user:${userId}:offline_pay_pending`);
+  }
+
   async reconcileOfflinePayUserBalance(input: {
     userId: string;
     targetLiabilityBalance: bigint;

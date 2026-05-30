@@ -215,6 +215,7 @@ export interface LedgerRepository {
     lockedBalance: bigint;
     liabilityBalance: bigint;
   }>;
+  getOfflinePayPendingBalance(userId: string): Promise<bigint>;
   reconcileOfflinePayUserBalance(input: {
     userId: string;
     targetLiabilityBalance: bigint;

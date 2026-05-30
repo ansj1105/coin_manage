@@ -1513,6 +1513,36 @@ paths:
                       $ref: '#/components/schemas/WithdrawalApproval'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/internal/offline-pay/users/{userId}/pending-balance:
+    get:
+      summary: Get canonical offline-pay pending balance for reconciliation
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: assetCode
+          required: false
+          schema:
+            type: string
+            default: KORI
+        - in: header
+          name: X-Internal-Api-Key
+          required: false
+          schema:
+            type: string
+          description: Required when internal offline-pay API key protection is enabled.
+      responses:
+        '200':
+          description: Canonical offline-pay pending balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfflinePayPendingBalanceResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/internal/withdrawals/coin-manage/{withdrawalId}/state:
     get:
       summary: Poll canonical withdrawal state for foxya reconciliation
@@ -1863,6 +1893,20 @@ components:
         amount:
           type: number
           minimum: 0
+    OfflinePayPendingBalanceResponse:
+      type: object
+      required: [status, userId, assetCode, offlinePayPendingBalance]
+      properties:
+        status:
+          type: string
+          enum: [OK]
+        userId:
+          type: string
+        assetCode:
+          type: string
+        offlinePayPendingBalance:
+          type: string
+          pattern: '^-?[0-9]+\.[0-9]{6}$'
     WithdrawRequest:
       type: object
       required: [amount, toAddress]

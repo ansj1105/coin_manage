@@ -48,6 +48,10 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
     };
   }
 
+  async getOfflinePayPendingBalance(): Promise<bigint> {
+    return 0n;
+  }
+
   async reconcileOfflinePayUserBalance(): Promise<{
     userId: string;
     previousLiabilityBalance: bigint;

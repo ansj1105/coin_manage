@@ -9,6 +9,7 @@ import {
   offlinePayFinalizeSettlementRequestSchema,
   offlinePayLockRequestSchema,
   offlinePayLockResponseSchema,
+  offlinePayPendingBalanceResponseSchema,
   offlinePayReleaseRequestSchema,
   offlinePayReleaseResponseSchema,
   offlinePaySettlementResponseSchema
@@ -27,6 +28,21 @@ export const createInternalOfflinePayRoutes = (
   );
 
   router.use(requireInternalApiKey);
+
+  router.get('/users/:userId/pending-balance', async (req, res, next) => {
+    try {
+      const assetCode = typeof req.query.assetCode === 'string' && req.query.assetCode.trim()
+        ? req.query.assetCode.trim()
+        : 'KORI';
+      const result = await offlinePayService.getPendingBalance({
+        userId: req.params.userId,
+        assetCode
+      });
+      res.status(200).json(offlinePayPendingBalanceResponseSchema.parse(result));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.post('/collateral/lock', async (req, res, next) => {
     try {

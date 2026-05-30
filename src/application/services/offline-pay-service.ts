@@ -219,6 +219,19 @@ export class OfflinePayService {
     };
   }
 
+  async getPendingBalance(input: {
+    userId: string;
+    assetCode: string;
+  }) {
+    const offlinePayPendingBalance = await this.ledger.getOfflinePayPendingBalance(input.userId);
+    return {
+      status: 'OK' as const,
+      userId: input.userId,
+      assetCode: input.assetCode.trim().toUpperCase(),
+      offlinePayPendingBalance: formatKoriAmount(offlinePayPendingBalance)
+    };
+  }
+
   async compensateSettlement(input: {
     settlementId: string;
     batchId: string;
