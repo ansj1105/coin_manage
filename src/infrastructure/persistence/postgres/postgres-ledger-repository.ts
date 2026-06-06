@@ -1184,24 +1184,18 @@ export class PostgresLedgerRepository implements LedgerRepository {
         throw new DomainError(409, 'OFFLINE_PAY_FEE_MISMATCH', 'offline pay settlement fee mismatch');
       }
       const feeAmount = input.releaseAction === 'RELEASE' ? expectedFeeAmount : 0n;
-      const senderDebitAmount = input.amount;
       const receiverCreditAmount = input.amount > feeAmount ? input.amount - feeAmount : 0n;
       const pendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
-      if (pendingBalance < senderDebitAmount) {
+      if (pendingBalance < input.amount) {
         throw new DomainError(409, 'INSUFFICIENT_OFFLINE_PAY_PENDING', 'offline pay pending balance underflow');
       }
 
       const amountValue = formatKoriAmount(input.amount);
       const feeAmountValue = formatKoriAmount(feeAmount);
       const receiverCreditAmountValue = formatKoriAmount(receiverCreditAmount);
-      const senderDebitAmountValue = formatKoriAmount(senderDebitAmount);
+      // Settlement records the offline transaction outcome, but collateral principal stays in offline_pay_pending
+      // until an explicit collateral release. Do not debit user:*:offline_pay_pending here.
       const releasePostings: LedgerPostingInput[] = [
-        {
-          ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
-          accountType: 'liability',
-          entrySide: 'debit',
-          amount: senderDebitAmountValue
-        },
         {
           ledgerAccountCode: 'system:asset:offline_pay_clearing',
           accountType: 'asset',
@@ -1389,12 +1383,6 @@ export class PostgresLedgerRepository implements LedgerRepository {
                   ledgerAccountCode: 'system:asset:offline_pay_clearing',
                   accountType: 'asset',
                   entrySide: 'debit',
-                  amount: amountValue
-                },
-                {
-                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
-                  accountType: 'liability',
-                  entrySide: 'credit',
                   amount: amountValue
                 }
               ]
