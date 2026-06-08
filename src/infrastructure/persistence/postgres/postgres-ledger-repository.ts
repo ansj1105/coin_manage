@@ -1390,6 +1390,12 @@ export class PostgresLedgerRepository implements LedgerRepository {
                   accountType: 'asset',
                   entrySide: 'debit',
                   amount: amountValue
+                },
+                {
+                  ledgerAccountCode: `user:${input.userId}:offline_pay_pending`,
+                  accountType: 'liability',
+                  entrySide: 'credit',
+                  amount: amountValue
                 }
               ]
             : [
