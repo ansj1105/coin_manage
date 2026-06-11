@@ -61,4 +61,14 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
   }> {
     throw new Error('offline pay reconciliation is not implemented for in-memory ledger');
   }
+
+  async reconcileOfflinePayPendingBalance(): Promise<{
+    userId: string;
+    previousPendingBalance: bigint;
+    targetPendingBalance: bigint;
+    deltaAmount: bigint;
+    adjusted: boolean;
+  }> {
+    throw new Error('offline pay pending reconciliation is not implemented for in-memory ledger');
+  }
 }

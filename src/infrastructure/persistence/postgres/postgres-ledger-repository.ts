@@ -2638,6 +2638,81 @@ export class PostgresLedgerRepository implements LedgerRepository {
     });
   }
 
+  async reconcileOfflinePayPendingBalance(input: {
+    userId: string;
+    targetPendingBalance: bigint;
+    canonicalBasis: string;
+    actorId: string;
+    note?: string;
+    nowIso?: string;
+  }): Promise<{
+    userId: string;
+    previousPendingBalance: bigint;
+    targetPendingBalance: bigint;
+    deltaAmount: bigint;
+    adjusted: boolean;
+  }> {
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    return this.withTransaction(async (trx) => {
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.getAccountForUpdate(trx, input.userId);
+
+      const pendingAccountCode = `user:${input.userId}:offline_pay_pending`;
+      const previousPendingBalance = await this.getProjectedLedgerAccountBalance(trx, pendingAccountCode);
+      const deltaAmount = input.targetPendingBalance - previousPendingBalance;
+
+      if (deltaAmount !== 0n) {
+        const absoluteDelta = deltaAmount < 0n ? deltaAmount * -1n : deltaAmount;
+        await this.appendJournal(trx, {
+          journalType: 'offline_pay_pending_reconciled',
+          referenceType: 'offline_pay_pending_reconciliation',
+          referenceId: `${input.userId}:${nowIso}`,
+          description: `offline pay pending reconciliation ${input.userId} ${input.canonicalBasis}`.trim(),
+          nowIso,
+          postings: deltaAmount > 0n
+            ? [
+                {
+                  ledgerAccountCode: 'system:asset:offline_pay_reconciliation',
+                  accountType: 'asset',
+                  entrySide: 'debit',
+                  amount: formatKoriAmount(absoluteDelta)
+                },
+                {
+                  ledgerAccountCode: pendingAccountCode,
+                  accountType: 'liability',
+                  entrySide: 'credit',
+                  amount: formatKoriAmount(absoluteDelta)
+                }
+              ]
+            : [
+                {
+                  ledgerAccountCode: pendingAccountCode,
+                  accountType: 'liability',
+                  entrySide: 'debit',
+                  amount: formatKoriAmount(absoluteDelta)
+                },
+                {
+                  ledgerAccountCode: 'system:asset:offline_pay_reconciliation',
+                  accountType: 'asset',
+                  entrySide: 'credit',
+                  amount: formatKoriAmount(absoluteDelta)
+                }
+              ]
+        });
+
+        await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+      }
+
+      return {
+        userId: input.userId,
+        previousPendingBalance,
+        targetPendingBalance: input.targetPendingBalance,
+        deltaAmount,
+        adjusted: deltaAmount !== 0n
+      };
+    });
+  }
+
   private async withTransaction<T>(work: (trx: Transaction<KorionDatabase>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => work(trx));
   }

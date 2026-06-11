@@ -84,6 +84,14 @@ const offlinePayUserReconciliationSchema = z.object({
   note: z.string().trim().max(500).optional()
 });
 
+const offlinePayPendingReconciliationSchema = z.object({
+  userId: z.coerce.string().trim().min(1),
+  targetPendingBalance: z.string().trim().regex(/^-?[0-9]+\.[0-9]{6}$/),
+  canonicalBasis: z.string().trim().min(1).max(64).default('OFFLINE_PAY_COLLATERAL_LOCKS_REMAINING'),
+  actorId: z.string().trim().min(1).max(64).optional(),
+  note: z.string().trim().max(500).optional()
+});
+
 const externalSyncFailuresQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional()
 });
@@ -879,6 +887,26 @@ export const createSystemRoutes = (
       res.json(await operationsService.reconcileOfflinePayUserBalance({
         userId: parsed.data.userId,
         targetLiabilityBalance: parsed.data.targetLiabilityBalance,
+        canonicalBasis: parsed.data.canonicalBasis,
+        actorId,
+        note: parsed.data.note
+      }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/offline-pay/reconciliation/pending-balance', async (req, res, next) => {
+    try {
+      const parsed = offlinePayPendingReconciliationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        throw new DomainError(400, 'INVALID_REQUEST', 'invalid offline pay pending reconciliation payload', parsed.error.flatten());
+      }
+      const actorId =
+        parsed.data.actorId ?? (typeof req.header('x-admin-id') === 'string' ? req.header('x-admin-id')! : 'system-ops');
+      res.json(await operationsService.reconcileOfflinePayPendingBalance({
+        userId: parsed.data.userId,
+        targetPendingBalance: parsed.data.targetPendingBalance,
         canonicalBasis: parsed.data.canonicalBasis,
         actorId,
         note: parsed.data.note

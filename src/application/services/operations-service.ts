@@ -1000,6 +1000,47 @@ export class OperationsService {
     };
   }
 
+  async reconcileOfflinePayPendingBalance(input: {
+    userId: string;
+    targetPendingBalance: string;
+    canonicalBasis: string;
+    actorId: string;
+    note?: string;
+  }) {
+    const result = await this.ledger.reconcileOfflinePayPendingBalance({
+      userId: input.userId,
+      targetPendingBalance: parseStoredKoriAmount(input.targetPendingBalance),
+      canonicalBasis: input.canonicalBasis,
+      actorId: input.actorId,
+      note: input.note
+    });
+
+    await this.ledger.appendAuditLog({
+      entityType: 'system',
+      entityId: `offline-pay-pending-reconciliation:${input.userId}`,
+      action: 'offline_pay.pending_balance.reconciled',
+      actorType: 'admin',
+      actorId: input.actorId,
+      metadata: {
+        userId: input.userId,
+        canonicalBasis: input.canonicalBasis,
+        previousPendingBalance: formatKoriAmount(result.previousPendingBalance),
+        targetPendingBalance: formatKoriAmount(result.targetPendingBalance),
+        deltaAmount: formatKoriAmount(result.deltaAmount),
+        adjusted: String(result.adjusted),
+        note: input.note ?? ''
+      }
+    });
+
+    return {
+      userId: result.userId,
+      previousPendingBalance: formatKoriAmount(result.previousPendingBalance),
+      targetPendingBalance: formatKoriAmount(result.targetPendingBalance),
+      deltaAmount: formatKoriAmount(result.deltaAmount),
+      adjusted: result.adjusted
+    };
+  }
+
   async listFailedWithdrawJobs(limit = 50) {
     return this.withdrawJobQueue.listFailed(limit);
   }

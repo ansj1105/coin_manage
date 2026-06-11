@@ -796,6 +796,58 @@ paths:
                 $ref: '#/components/schemas/ReconciliationReport'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /api/system/offline-pay/reconciliation/pending-balance:
+    post:
+      summary: Reconcile a user's offline-pay pending balance to a canonical collateral-lock amount
+      security:
+        - WithdrawAdminApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, targetPendingBalance]
+              properties:
+                userId:
+                  type: string
+                  minLength: 1
+                targetPendingBalance:
+                  type: string
+                  pattern: '^-?[0-9]+\.[0-9]{6}$'
+                canonicalBasis:
+                  type: string
+                  default: OFFLINE_PAY_COLLATERAL_LOCKS_REMAINING
+                actorId:
+                  type: string
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Offline-pay pending reconciliation result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, previousPendingBalance, targetPendingBalance, deltaAmount, adjusted]
+                properties:
+                  userId:
+                    type: string
+                  previousPendingBalance:
+                    type: string
+                    pattern: '^-?[0-9]+\.[0-9]{6}$'
+                  targetPendingBalance:
+                    type: string
+                    pattern: '^-?[0-9]+\.[0-9]{6}$'
+                  deltaAmount:
+                    type: string
+                    pattern: '^-?[0-9]+\.[0-9]{6}$'
+                  adjusted:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /api/system/network-fees:
     get:
       summary: List recorded on-chain network fee receipts for withdrawals and sweeps

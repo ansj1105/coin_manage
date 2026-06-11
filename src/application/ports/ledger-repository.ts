@@ -230,6 +230,20 @@ export interface LedgerRepository {
     deltaAmount: bigint;
     adjusted: boolean;
   }>;
+  reconcileOfflinePayPendingBalance(input: {
+    userId: string;
+    targetPendingBalance: bigint;
+    canonicalBasis: string;
+    actorId: string;
+    note?: string;
+    nowIso?: string;
+  }): Promise<{
+    userId: string;
+    previousPendingBalance: bigint;
+    targetPendingBalance: bigint;
+    deltaAmount: bigint;
+    adjusted: boolean;
+  }>;
   lockOfflinePayCollateral(input: {
     userId: string;
     amount: bigint;
