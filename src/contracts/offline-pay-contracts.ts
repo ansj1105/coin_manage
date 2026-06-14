@@ -118,6 +118,8 @@ export const offlinePayPendingBalanceResponseSchema = z
     status: z.literal('OK'),
     userId: z.string().min(1).max(64),
     assetCode: z.string().min(1).max(32),
+    availableBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
+    lockedBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
     offlinePayPendingBalance: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/)
   })
   .strict();

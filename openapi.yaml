@@ -1947,7 +1947,7 @@ components:
           minimum: 0
     OfflinePayPendingBalanceResponse:
       type: object
-      required: [status, userId, assetCode, offlinePayPendingBalance]
+      required: [status, userId, assetCode, availableBalance, lockedBalance, offlinePayPendingBalance]
       properties:
         status:
           type: string
@@ -1956,6 +1956,12 @@ components:
           type: string
         assetCode:
           type: string
+        availableBalance:
+          type: string
+          pattern: '^-?[0-9]+\.[0-9]{6}$'
+        lockedBalance:
+          type: string
+          pattern: '^-?[0-9]+\.[0-9]{6}$'
         offlinePayPendingBalance:
           type: string
           pattern: '^-?[0-9]+\.[0-9]{6}$'

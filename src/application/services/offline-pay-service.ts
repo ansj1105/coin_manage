@@ -223,11 +223,16 @@ export class OfflinePayService {
     userId: string;
     assetCode: string;
   }) {
-    const offlinePayPendingBalance = await this.ledger.getOfflinePayPendingBalance(input.userId);
+    const [balanceSnapshot, offlinePayPendingBalance] = await Promise.all([
+      this.ledger.getOfflinePayUserBalanceSnapshot(input.userId),
+      this.ledger.getOfflinePayPendingBalance(input.userId)
+    ]);
     return {
       status: 'OK' as const,
       userId: input.userId,
       assetCode: input.assetCode.trim().toUpperCase(),
+      availableBalance: formatKoriAmount(balanceSnapshot.availableBalance),
+      lockedBalance: formatKoriAmount(balanceSnapshot.lockedBalance),
       offlinePayPendingBalance: formatKoriAmount(offlinePayPendingBalance)
     };
   }

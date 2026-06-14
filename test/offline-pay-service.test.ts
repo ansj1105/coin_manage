@@ -3,6 +3,31 @@ import { OfflinePayService } from '../src/application/services/offline-pay-servi
 import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
 
 describe('offline pay service', () => {
+  it('returns the ledger available balance with the offline-pay pending balance snapshot', async () => {
+    const ledger = {
+      getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
+        userId: '1761',
+        availableBalance: 3_296700n,
+        lockedBalance: 2_000000n,
+        liabilityBalance: 5_296700n
+      }),
+      getOfflinePayPendingBalance: vi.fn().mockResolvedValue(2_000000n)
+    };
+    const service = new OfflinePayService(ledger as any);
+
+    await expect(service.getPendingBalance({
+      userId: '1761',
+      assetCode: 'KORI'
+    })).resolves.toEqual({
+      status: 'OK',
+      userId: '1761',
+      assetCode: 'KORI',
+      availableBalance: '3.296700',
+      lockedBalance: '2.000000',
+      offlinePayPendingBalance: '2.000000'
+    });
+  });
+
   it('releases collateral through ledger and returns release metadata', async () => {
     const ledger = {
       releaseOfflinePayCollateral: vi.fn().mockResolvedValue({
