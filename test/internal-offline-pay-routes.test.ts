@@ -229,6 +229,7 @@ describe('internal offline-pay routes', () => {
       deviceId: 'device-1',
       receiverUserId: '39',
       receiverDeviceId: 'receiver-device-1',
+      receiverWalletSettlementRequested: false,
       assetCode: 'KORI',
       amount: '150.000000',
       feeAmount: '0.600000',

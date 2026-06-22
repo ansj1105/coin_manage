@@ -1118,6 +1118,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     deviceId: string;
     receiverUserId?: string;
     receiverDeviceId?: string;
+    receiverWalletSettlementRequested?: boolean;
     assetCode: string;
     amount: bigint;
     feeAmount?: bigint;
@@ -1141,7 +1142,16 @@ export class PostgresLedgerRepository implements LedgerRepository {
         input.receiverUserId,
         input.receiverDeviceId
       );
-      const affectedUserIds = receiverUserId ? [input.userId, receiverUserId] : [input.userId];
+      const receiverWalletSettlementRequested = input.receiverWalletSettlementRequested === true;
+      const receiverSettlementMode = receiverUserId && receiverWalletSettlementRequested
+        ? 'LEDGER_AND_EXTERNAL_HISTORY_SYNC'
+        : 'EXTERNAL_HISTORY_SYNC';
+      const settlementModel = receiverUserId && receiverWalletSettlementRequested
+        ? 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY'
+        : 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY';
+      const affectedUserIds = receiverUserId && receiverWalletSettlementRequested
+        ? [input.userId, receiverUserId]
+        : [input.userId];
 
       const existing = await trx
         .selectFrom('ledger_journals')
@@ -1150,12 +1160,18 @@ export class PostgresLedgerRepository implements LedgerRepository {
         .where('reference_id', '=', input.settlementId)
         .executeTakeFirst();
       await this.ensureAccount(trx, input.userId, nowIso);
-      if (receiverUserId) {
+      if (receiverUserId && receiverWalletSettlementRequested) {
         await this.ensureAccount(trx, receiverUserId, nowIso);
       }
       await this.lockUsers(trx, affectedUserIds);
       if (existing) {
-        await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso);
+        if (receiverWalletSettlementRequested) {
+          const feeAmount = input.releaseAction === 'RELEASE'
+            ? this.calculateOfflinePaySettlementFee(input.assetCode, input.amount)
+            : 0n;
+          const receiverCreditAmount = input.amount > feeAmount ? input.amount - feeAmount : 0n;
+          await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso, receiverCreditAmount);
+        }
         await this.syncUserAccountProjection(trx, affectedUserIds, nowIso);
         const projected = await this.getProjectedUserBalances(trx, input.userId);
         const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
@@ -1167,8 +1183,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
           duplicated: true,
           feeAmount: input.feeAmount ?? 0n,
           accountingSide: 'SENDER',
-          receiverSettlementMode: receiverUserId ? 'LEDGER_AND_EXTERNAL_HISTORY_SYNC' : 'EXTERNAL_HISTORY_SYNC',
-          settlementModel: receiverUserId ? 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY' : 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+          receiverSettlementMode,
+          settlementModel,
           reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
           postAvailableBalance: projected.balance,
           postLockedBalance: projected.lockedBalance,
@@ -1242,7 +1258,9 @@ export class PostgresLedgerRepository implements LedgerRepository {
               ]
       });
 
-      await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso, receiverCreditAmount);
+      if (receiverWalletSettlementRequested) {
+        await this.appendOfflinePayReceiverSettlementIfNeeded(trx, input, receiverUserId, nowIso, receiverCreditAmount);
+      }
       await this.syncUserAccountProjection(trx, affectedUserIds, nowIso);
       const projected = await this.getProjectedUserBalances(trx, input.userId);
       const offlinePayPendingBalance = await this.getProjectedLedgerAccountBalance(trx, `user:${input.userId}:offline_pay_pending`);
@@ -1263,6 +1281,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           signature: input.signature,
           ...(input.receiverUserId == null ? {} : { receiverUserId: input.receiverUserId }),
           ...(input.receiverDeviceId == null ? {} : { receiverDeviceId: input.receiverDeviceId }),
+          receiverWalletSettlementRequested,
           userId: input.userId,
           deviceId: input.deviceId,
           assetCode: input.assetCode,
@@ -1284,8 +1303,8 @@ export class PostgresLedgerRepository implements LedgerRepository {
         duplicated: false,
         feeAmount,
         accountingSide: 'SENDER',
-        receiverSettlementMode: receiverUserId ? 'LEDGER_AND_EXTERNAL_HISTORY_SYNC' : 'EXTERNAL_HISTORY_SYNC',
-        settlementModel: receiverUserId ? 'SENDER_LEDGER_PLUS_RECEIVER_LEDGER_AND_HISTORY' : 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        receiverSettlementMode,
+        settlementModel,
         reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
         postAvailableBalance: projected.balance,
         postLockedBalance: projected.lockedBalance,

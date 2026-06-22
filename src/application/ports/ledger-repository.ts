@@ -280,6 +280,7 @@ export interface LedgerRepository {
     deviceId: string;
     receiverUserId?: string;
     receiverDeviceId?: string;
+    receiverWalletSettlementRequested?: boolean;
     assetCode: string;
     amount: bigint;
     feeAmount?: bigint;

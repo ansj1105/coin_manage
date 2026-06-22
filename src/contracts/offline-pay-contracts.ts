@@ -46,6 +46,7 @@ export const offlinePayFinalizeSettlementRequestSchema = z
     deviceId: z.string().min(1).max(128),
     receiverUserId: z.string().min(1).max(64).optional(),
     receiverDeviceId: z.string().min(1).max(128).optional(),
+    receiverWalletSettlementRequested: z.boolean().optional().default(false),
     assetCode: z.string().min(1).max(32),
     amount: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/),
     feeAmount: z.string().regex(/^-?[0-9]+\.[0-9]{6}$/).optional(),
