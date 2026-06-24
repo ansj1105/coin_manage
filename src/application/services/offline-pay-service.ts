@@ -1,10 +1,20 @@
-import { formatKoriAmount, parseKoriAmount } from '../../domain/value-objects/money.js';
+import { formatKoriAmount, parseKoriAmount, parseStoredKoriAmount } from '../../domain/value-objects/money.js';
 import { DomainError } from '../../core/domain-error.js';
 import type { LedgerRepository } from '../ports/ledger-repository.js';
 import { computeOfflinePayProofFingerprint } from './offline-pay-proof-fingerprint.js';
 
+type OfflinePayWalletSnapshotSource = {
+  getCanonicalWalletSnapshot(input: { userId: string; currencyCode: string }): Promise<{
+    totalBalance: string;
+    canonicalBasis: string;
+  }>;
+};
+
 export class OfflinePayService {
-  constructor(private readonly ledger: LedgerRepository) {}
+  constructor(
+    private readonly ledger: LedgerRepository,
+    private readonly walletSnapshotSource?: OfflinePayWalletSnapshotSource
+  ) {}
 
   async lockCollateral(input: {
     userId: string;
@@ -15,6 +25,11 @@ export class OfflinePayService {
     policyVersion: number;
   }) {
     const amount = parseKoriAmount(Number(input.amount));
+    await this.reconcileUserBalanceBeforeCollateralLock({
+      userId: input.userId,
+      assetCode: input.assetCode,
+      requiredAmount: amount
+    });
     const result = await this.ledger.lockOfflinePayCollateral({
       userId: input.userId,
       deviceId: input.deviceId,
@@ -46,6 +61,58 @@ export class OfflinePayService {
       lockId: result.lockId,
       status: result.status
     };
+  }
+
+  private async reconcileUserBalanceBeforeCollateralLock(input: {
+    userId: string;
+    assetCode: string;
+    requiredAmount: bigint;
+  }) {
+    if (!this.walletSnapshotSource) {
+      return;
+    }
+
+    const current = await this.ledger.getOfflinePayUserBalanceSnapshot(input.userId);
+    if (current.availableBalance >= input.requiredAmount) {
+      return;
+    }
+
+    const snapshot = await this.walletSnapshotSource.getCanonicalWalletSnapshot({
+      userId: input.userId,
+      currencyCode: input.assetCode
+    });
+    const targetLiabilityBalance = parseStoredKoriAmount(snapshot.totalBalance);
+    if (targetLiabilityBalance <= current.liabilityBalance) {
+      return;
+    }
+
+    const result = await this.ledger.reconcileOfflinePayUserBalance({
+      userId: input.userId,
+      targetLiabilityBalance,
+      canonicalBasis: snapshot.canonicalBasis,
+      actorId: 'offline-pay-lock',
+      note: 'lazy reconcile before offline pay collateral lock'
+    });
+
+    if (result.adjusted) {
+      await this.ledger.appendAuditLog({
+        entityType: 'system',
+        entityId: `offline-pay-reconciliation:${input.userId}`,
+        action: 'offline_pay.user_balance.reconciled',
+        actorType: 'system',
+        actorId: 'offline-pay-lock',
+        metadata: {
+          userId: input.userId,
+          assetCode: input.assetCode,
+          canonicalBasis: snapshot.canonicalBasis,
+          previousLiabilityBalance: formatKoriAmount(result.previousLiabilityBalance),
+          targetLiabilityBalance: formatKoriAmount(result.targetLiabilityBalance),
+          deltaAmount: formatKoriAmount(result.deltaAmount),
+          adjusted: 'true',
+          note: 'lazy reconcile before offline pay collateral lock'
+        }
+      });
+    }
   }
 
   async releaseCollateral(input: {

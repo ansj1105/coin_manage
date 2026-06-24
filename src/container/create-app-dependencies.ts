@@ -318,7 +318,7 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     foxyaWalletSyncClient
   );
   const walletService = new WalletService(ledger, eventPublisher);
-  const offlinePayService = new OfflinePayService(ledger);
+  const offlinePayService = new OfflinePayService(ledger, foxyaWalletRepository);
   const withdrawPolicyService = new WithdrawPolicyService(withdrawPolicyRepository);
   const withdrawGuardService = WithdrawGuardService.withPolicyRepository(tronGateway, withdrawPolicyRepository);
   const withdrawNetworkPolicyService = new WithdrawNetworkPolicyService(foxyaUserFlagRepository);

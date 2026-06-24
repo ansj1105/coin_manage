@@ -3,6 +3,102 @@ import { OfflinePayService } from '../src/application/services/offline-pay-servi
 import { computeOfflinePayProofFingerprint } from '../src/application/services/offline-pay-proof-fingerprint.js';
 
 describe('offline pay service', () => {
+  it('reconciles stale foxya balance before locking offline pay collateral', async () => {
+    const ledger = {
+      getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
+        userId: '1762',
+        availableBalance: 0n,
+        lockedBalance: 0n,
+        liabilityBalance: 0n
+      }),
+      reconcileOfflinePayUserBalance: vi.fn().mockResolvedValue({
+        userId: '1762',
+        previousLiabilityBalance: 0n,
+        targetLiabilityBalance: 300_000000n,
+        deltaAmount: 300_000000n,
+        adjusted: true
+      }),
+      lockOfflinePayCollateral: vi.fn().mockResolvedValue({
+        lockId: 'topup:device-1:1',
+        status: 'LOCKED',
+        duplicated: false
+      }),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const walletSnapshotSource = {
+      getCanonicalWalletSnapshot: vi.fn().mockResolvedValue({
+        totalBalance: '300.000000',
+        canonicalBasis: 'FOX_CLIENT_VISIBLE_TOTAL_KORI'
+      })
+    };
+    const service = new OfflinePayService(ledger as any, walletSnapshotSource);
+
+    await expect(service.lockCollateral({
+      userId: '1762',
+      deviceId: 'device-1',
+      assetCode: 'KORI',
+      amount: '1.000000',
+      referenceId: 'topup:device-1:1',
+      policyVersion: 1
+    })).resolves.toEqual({
+      lockId: 'topup:device-1:1',
+      status: 'LOCKED'
+    });
+
+    expect(walletSnapshotSource.getCanonicalWalletSnapshot).toHaveBeenCalledWith({
+      userId: '1762',
+      currencyCode: 'KORI'
+    });
+    expect(ledger.reconcileOfflinePayUserBalance).toHaveBeenCalledWith(expect.objectContaining({
+      userId: '1762',
+      targetLiabilityBalance: 300_000000n,
+      actorId: 'offline-pay-lock'
+    }));
+    expect(ledger.lockOfflinePayCollateral).toHaveBeenCalledWith(expect.objectContaining({
+      userId: '1762',
+      amount: 1_000000n
+    }));
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'offline_pay.user_balance.reconciled',
+      actorId: 'offline-pay-lock'
+    }));
+  });
+
+  it('does not reconcile before collateral lock when ledger available balance is sufficient', async () => {
+    const ledger = {
+      getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
+        userId: '1761',
+        availableBalance: 300_000000n,
+        lockedBalance: 7_000000n,
+        liabilityBalance: 307_000000n
+      }),
+      reconcileOfflinePayUserBalance: vi.fn(),
+      lockOfflinePayCollateral: vi.fn().mockResolvedValue({
+        lockId: 'topup:device-1:2',
+        status: 'LOCKED',
+        duplicated: false
+      }),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const walletSnapshotSource = {
+      getCanonicalWalletSnapshot: vi.fn()
+    };
+    const service = new OfflinePayService(ledger as any, walletSnapshotSource);
+
+    await service.lockCollateral({
+      userId: '1761',
+      deviceId: 'device-1',
+      assetCode: 'KORI',
+      amount: '1.000000',
+      referenceId: 'topup:device-1:2',
+      policyVersion: 1
+    });
+
+    expect(walletSnapshotSource.getCanonicalWalletSnapshot).not.toHaveBeenCalled();
+    expect(ledger.reconcileOfflinePayUserBalance).not.toHaveBeenCalled();
+    expect(ledger.lockOfflinePayCollateral).toHaveBeenCalledOnce();
+  });
+
   it('returns the ledger available balance with the offline-pay pending balance snapshot', async () => {
     const ledger = {
       getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
