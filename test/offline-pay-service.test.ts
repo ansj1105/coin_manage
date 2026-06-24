@@ -340,6 +340,69 @@ describe('offline pay service', () => {
     );
   });
 
+  it('allows zero settlement fee for adjusted offline pay settlements', async () => {
+    const ledger = {
+      finalizeOfflinePaySettlement: vi.fn().mockResolvedValue({
+        settlementId: 'settlement-adjust',
+        status: 'FINALIZED',
+        ledgerOutcome: 'FINALIZED',
+        releaseAction: 'ADJUST',
+        duplicated: false,
+        feeAmount: 0n,
+        accountingSide: 'SENDER',
+        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+        reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
+        postAvailableBalance: 10_000000n,
+        postLockedBalance: 140_000000n,
+        postOfflinePayPendingBalance: 140_000000n
+      }),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const service = new OfflinePayService(ledger as any);
+
+    const proofFingerprint = computeOfflinePayProofFingerprint({
+      settlementId: 'settlement-adjust',
+      batchId: 'batch-1',
+      collateralId: 'collateral-1',
+      proofId: 'proof-1',
+      deviceId: 'device-1',
+      newStateHash: 'hash-1',
+      previousHash: 'prev-1',
+      monotonicCounter: 1,
+      nonce: 'nonce-1',
+      signature: 'signature-1'
+    });
+
+    await service.finalizeSettlement({
+      settlementId: 'settlement-adjust',
+      batchId: 'batch-1',
+      collateralId: 'collateral-1',
+      proofId: 'proof-1',
+      userId: '77',
+      deviceId: 'device-1',
+      assetCode: 'KORI',
+      amount: '150.000000',
+      feeAmount: '0.000000',
+      settlementStatus: 'FAILED',
+      releaseAction: 'ADJUST',
+      conflictDetected: false,
+      proofFingerprint,
+      newStateHash: 'hash-1',
+      previousHash: 'prev-1',
+      monotonicCounter: 1,
+      nonce: 'nonce-1',
+      signature: 'signature-1'
+    });
+
+    expect(ledger.finalizeOfflinePaySettlement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementId: 'settlement-adjust',
+        feeAmount: 0n
+      })
+    );
+  });
+
   it('upserts offline pay device snapshots and writes an audit log', async () => {
     const ledger = {
       upsertOfflinePayDevice: vi.fn().mockResolvedValue(undefined),

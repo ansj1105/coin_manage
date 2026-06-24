@@ -10,6 +10,17 @@ type OfflinePayWalletSnapshotSource = {
   }>;
 };
 
+const parseOfflinePayFeeAmount = (feeAmount?: string): bigint | undefined => {
+  if (feeAmount == null) {
+    return undefined;
+  }
+  const parsed = parseStoredKoriAmount(feeAmount);
+  if (parsed < 0n) {
+    throw new DomainError(400, 'VALIDATION_ERROR', 'feeAmount must be a non-negative number');
+  }
+  return parsed;
+};
+
 export class OfflinePayService {
   constructor(
     private readonly ledger: LedgerRepository,
@@ -232,7 +243,7 @@ export class OfflinePayService {
     }
 
     const amount = parseKoriAmount(Number(input.amount));
-    const feeAmount = input.feeAmount == null ? undefined : parseKoriAmount(Number(input.feeAmount));
+    const feeAmount = parseOfflinePayFeeAmount(input.feeAmount);
     const { feeAmount: _requestedFeeAmount, ...settlementInput } = input;
     const result = await this.ledger.finalizeOfflinePaySettlement({
       ...settlementInput,
