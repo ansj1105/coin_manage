@@ -99,6 +99,10 @@ describe('DepositMonitorService', () => {
     expect(foxyaClient.registerDeposit).toHaveBeenCalledOnce();
     expect(foxyaClient.completeDeposit).toHaveBeenCalledOnce();
     expect(ledger.applyDeposit).toHaveBeenCalledOnce();
+    expect(ledger.applyDeposit).toHaveBeenCalledWith(expect.objectContaining({
+      toAddress: 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa',
+      walletAddress: 'TSM7ocJQHigW9jhk5yFQKrUmBAXz2FFapa'
+    }));
     expect(ledger.completeDeposit).toHaveBeenCalledOnce();
     expect(status.counts.completed).toBe(1);
     expect(status.recentEvents[0]?.amountDecimal).toBe('1.5');

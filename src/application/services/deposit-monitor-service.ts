@@ -326,6 +326,8 @@ export class DepositMonitorService {
       userId: event.userId,
       amount: parseKoriAmount(Number(event.amountDecimal)),
       txHash: event.txHash,
+      toAddress: event.toAddress,
+      walletAddress: event.toAddress,
       blockNumber: event.blockNumber
     });
 
