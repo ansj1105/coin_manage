@@ -53,6 +53,7 @@ export const offlinePayFinalizeSettlementRequestSchema = z
     settlementStatus: z.string().min(1).max(32),
     releaseAction: z.enum(['RELEASE', 'ADJUST']),
     conflictDetected: z.boolean(),
+    financiallyHonored: z.boolean().optional().default(false),
     proofFingerprint: z.string().length(64),
     newStateHash: z.string().min(1).max(256),
     previousHash: z.string().min(1).max(256),

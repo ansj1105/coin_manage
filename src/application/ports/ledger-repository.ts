@@ -287,6 +287,7 @@ export interface LedgerRepository {
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    financiallyHonored?: boolean;
     newStateHash: string;
     previousHash: string;
     monotonicCounter: number;

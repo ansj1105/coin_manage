@@ -213,6 +213,7 @@ export class OfflinePayService {
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    financiallyHonored?: boolean;
     proofFingerprint: string;
     newStateHash: string;
     previousHash: string;
@@ -273,6 +274,7 @@ export class OfflinePayService {
           settlementStatus: input.settlementStatus,
           releaseAction: input.releaseAction,
           conflictDetected: String(input.conflictDetected),
+          financiallyHonored: String(input.financiallyHonored === true),
           proofFingerprint: input.proofFingerprint,
           newStateHash: input.newStateHash,
           previousHash: input.previousHash,

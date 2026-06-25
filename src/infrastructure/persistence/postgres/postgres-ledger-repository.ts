@@ -1125,6 +1125,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
     settlementStatus: string;
     releaseAction: 'RELEASE' | 'ADJUST';
     conflictDetected: boolean;
+    financiallyHonored?: boolean;
     newStateHash: string;
     previousHash: string;
     monotonicCounter: number;
@@ -1290,6 +1291,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
           settlementStatus: input.settlementStatus,
           releaseAction: input.releaseAction,
           conflictDetected: input.conflictDetected,
+          financiallyHonored: input.financiallyHonored === true,
           occurredAt: nowIso
         },
         occurredAt: nowIso
@@ -2788,6 +2790,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
       settlementStatus: string;
       releaseAction: 'RELEASE' | 'ADJUST';
       conflictDetected: boolean;
+      financiallyHonored?: boolean;
       amount: bigint;
     },
     receiverUserId: string | undefined,
@@ -2796,7 +2799,7 @@ export class PostgresLedgerRepository implements LedgerRepository {
   ): Promise<void> {
     if (
       !receiverUserId
-      || input.settlementStatus !== 'SETTLED'
+      || (input.settlementStatus !== 'SETTLED' && input.financiallyHonored !== true)
       || input.releaseAction !== 'RELEASE'
       || input.conflictDetected
     ) {

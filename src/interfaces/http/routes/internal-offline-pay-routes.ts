@@ -76,8 +76,22 @@ export const createInternalOfflinePayRoutes = (
       if (!parsed.success) {
         throw zodToDomainError(parsed.error);
       }
-      if (parsed.data.settlementStatus !== 'SETTLED' && parsed.data.settlementStatus !== 'CONFLICT') {
-        throw new DomainError(400, 'INVALID_REQUEST', 'settlementStatus must be SETTLED or CONFLICT');
+      const financiallyHonored = parsed.data.financiallyHonored === true;
+      const financiallyHonoredRejected =
+        financiallyHonored
+        && parsed.data.releaseAction === 'RELEASE'
+        && !parsed.data.conflictDetected
+        && (parsed.data.settlementStatus === 'REJECTED' || parsed.data.settlementStatus === 'FAILED');
+      if (
+        parsed.data.settlementStatus !== 'SETTLED'
+        && parsed.data.settlementStatus !== 'CONFLICT'
+        && !financiallyHonoredRejected
+      ) {
+        throw new DomainError(
+          400,
+          'INVALID_REQUEST',
+          'settlementStatus must be SETTLED/CONFLICT or financially honored REJECTED/FAILED'
+        );
       }
       const result = await offlinePayService.finalizeSettlement(parsed.data);
       res.status(200).json(offlinePaySettlementResponseSchema.parse(result));

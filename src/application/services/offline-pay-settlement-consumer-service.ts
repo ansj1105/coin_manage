@@ -18,6 +18,7 @@ export interface OfflinePaySettlementFinalizedEvent {
   settlementStatus: string;
   releaseAction: 'RELEASE' | 'ADJUST';
   conflictDetected: boolean;
+  financiallyHonored?: boolean;
   newStateHash: string;
   previousHash: string;
   monotonicCounter: number;
@@ -69,7 +70,8 @@ export class OfflinePaySettlementConsumerService {
       );
     }
 
-    if (input.settlementStatus !== 'SETTLED' || input.releaseAction !== 'RELEASE' || input.conflictDetected) {
+    const dispatchableSettlement = input.settlementStatus === 'SETTLED' || input.financiallyHonored === true;
+    if (!dispatchableSettlement || input.releaseAction !== 'RELEASE' || input.conflictDetected) {
       await this.appendAudit(input, 'offline_pay.execution.skipped', {
         reason: 'non_dispatchable_settlement'
       });

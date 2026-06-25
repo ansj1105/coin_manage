@@ -236,6 +236,7 @@ describe('internal offline-pay routes', () => {
       settlementStatus: 'SETTLED',
       releaseAction: 'RELEASE',
       conflictDetected: false,
+      financiallyHonored: false,
       proofFingerprint: computeOfflinePayProofFingerprint({
         settlementId: 'settlement-1',
         batchId: 'batch-1',
@@ -270,6 +271,77 @@ describe('internal offline-pay routes', () => {
       postLockedBalance: '140.000000',
       postOfflinePayPendingBalance: '140.000000'
     });
+  });
+
+  it('allows financially honored rejected local-verified pending settlements', async () => {
+    const finalizeSettlement = vi.fn().mockResolvedValue({
+      status: 'OK',
+      message: 'settlement finalized',
+      settlementId: 'settlement-local-verified',
+      ledgerOutcome: 'FINALIZED',
+      releaseAction: 'RELEASE',
+      duplicated: false,
+      feeAmount: '0.006000',
+      accountingSide: 'SENDER',
+      receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
+      postAvailableBalance: '10.000000',
+      postLockedBalance: '139.000000',
+      postOfflinePayPendingBalance: '139.000000'
+    });
+
+    const response = await invokeRoute(
+      {
+        method: 'post',
+        path: '/settlements/finalize',
+        headers: {
+          'x-internal-api-key': 'internal-secret'
+        },
+        body: {
+          settlementId: 'settlement-local-verified',
+          batchId: 'batch-1',
+          collateralId: 'collateral-1',
+          proofId: 'proof-1',
+          userId: '77',
+          deviceId: 'device-1',
+          assetCode: 'KORI',
+          amount: '1.000000',
+          feeAmount: '0.006000',
+          settlementStatus: 'REJECTED',
+          releaseAction: 'RELEASE',
+          conflictDetected: false,
+          financiallyHonored: true,
+          proofFingerprint: computeOfflinePayProofFingerprint({
+            settlementId: 'settlement-local-verified',
+            batchId: 'batch-1',
+            collateralId: 'collateral-1',
+            proofId: 'proof-1',
+            deviceId: 'device-1',
+            newStateHash: 'hash-1',
+            previousHash: 'prev-1',
+            monotonicCounter: 1,
+            nonce: 'nonce-1',
+            signature: 'signature-1'
+          }),
+          newStateHash: 'hash-1',
+          previousHash: 'prev-1',
+          monotonicCounter: 1,
+          nonce: 'nonce-1',
+          signature: 'signature-1'
+        }
+      },
+      { finalizeSettlement }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(finalizeSettlement).toHaveBeenCalledWith(expect.objectContaining({
+      settlementId: 'settlement-local-verified',
+      settlementStatus: 'REJECTED',
+      releaseAction: 'RELEASE',
+      conflictDetected: false,
+      financiallyHonored: true
+    }));
   });
 
   it('upserts offline pay device snapshot through the injected service', async () => {
