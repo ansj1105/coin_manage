@@ -44,6 +44,7 @@ export class OfflinePayLedgerReconciliationService {
       }
     }
 
+    const bootstrapUserIdSet = new Set(bootstrapUserIds);
     const userIds = [...bootstrapUserIds, ...existingLedgerUserIds].slice(0, limit);
     let checkedCount = 0;
     let adjustedCount = 0;
@@ -64,6 +65,32 @@ export class OfflinePayLedgerReconciliationService {
 
         if (absoluteDelta <= this.options.toleranceAmount) {
           skippedCount += 1;
+          continue;
+        }
+
+        if (deltaAmount > 0n && !bootstrapUserIdSet.has(userId)) {
+          skippedCount += 1;
+          await this.ledger.appendAuditLog({
+            entityType: 'system',
+            entityId: `offline-pay-reconciliation:${userId}`,
+            action: 'offline_pay.user_balance.reconcile.skipped',
+            actorType: 'system',
+            actorId: 'offline-pay-ledger-reconcile-worker',
+            metadata: {
+              userId,
+              reason: 'positive_delta_existing_offline_pay_ledger',
+              canonicalBasis: snapshot.canonicalBasis,
+              currentLiabilityBalance: formatKoriAmount(current.liabilityBalance),
+              targetLiabilityBalance: snapshot.totalBalance,
+              deltaAmount: formatKoriAmount(deltaAmount)
+            }
+          });
+          this.eventPublisher.publish('offline_pay.ledger_reconciliation.skipped', {
+            userId,
+            reason: 'positive_delta_existing_offline_pay_ledger',
+            canonicalBasis: snapshot.canonicalBasis,
+            deltaAmount: formatKoriAmount(deltaAmount)
+          });
           continue;
         }
 

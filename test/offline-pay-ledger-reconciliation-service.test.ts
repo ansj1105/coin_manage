@@ -85,4 +85,78 @@ describe('offline pay ledger reconciliation service', () => {
       }),
     );
   });
+
+  it('does not credit available balance for positive deltas on existing offline-pay ledger users', async () => {
+    const ledger = {
+      listOfflinePayReconciliationUserIds: vi.fn(async () => ['1761']),
+      hasOfflinePayLedgerFootprint: vi.fn(async () => true),
+      getOfflinePayUserBalanceSnapshot: vi.fn(async (userId: string) => ({
+        userId,
+        availableBalance: 80_000000n,
+        lockedBalance: 10_000000n,
+        liabilityBalance: 90_000000n,
+      })),
+      appendAuditLog: vi.fn(async () => undefined),
+    } as const;
+
+    const operationsService = {
+      reconcileOfflinePayUserBalance: vi.fn(),
+    } as const;
+
+    const foxyaWalletRepository = {
+      listUserIdsWithPositiveCanonicalBalance: vi.fn(async () => []),
+      getCanonicalWalletSnapshot: vi.fn(async ({ userId }: { userId: string }) => ({
+        userId,
+        currencyCode: 'KORI',
+        totalBalance: '100.000000',
+        lockedBalance: '0.000000',
+        walletCount: 1,
+        canonicalBasis: 'FOX_CLIENT_VISIBLE_AVAILABLE_KORI_EXCLUDING_OFFLINE_COLLATERAL',
+      })),
+    } as const;
+
+    const eventPublisher = {
+      publish: vi.fn(),
+    } as const;
+
+    const service = new OfflinePayLedgerReconciliationService(
+      ledger as never,
+      operationsService as never,
+      foxyaWalletRepository as never,
+      eventPublisher as never,
+      {
+        currencyCode: 'KORI',
+        toleranceAmount: 0n,
+        maxAdjustmentAmount: 10_000_000_000n,
+      },
+    );
+
+    const result = await service.runCycle(10);
+
+    expect(result.checkedCount).toBe(1);
+    expect(result.adjustedCount).toBe(0);
+    expect(result.skippedCount).toBe(1);
+    expect(operationsService.reconcileOfflinePayUserBalance).not.toHaveBeenCalled();
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'offline_pay.user_balance.reconcile.skipped',
+        actorId: 'offline-pay-ledger-reconcile-worker',
+        metadata: expect.objectContaining({
+          userId: '1761',
+          reason: 'positive_delta_existing_offline_pay_ledger',
+          currentLiabilityBalance: '90.000000',
+          targetLiabilityBalance: '100.000000',
+          deltaAmount: '10.000000',
+        }),
+      }),
+    );
+    expect(eventPublisher.publish).toHaveBeenCalledWith(
+      'offline_pay.ledger_reconciliation.skipped',
+      expect.objectContaining({
+        userId: '1761',
+        reason: 'positive_delta_existing_offline_pay_ledger',
+        deltaAmount: '10.000000',
+      }),
+    );
+  });
 });
