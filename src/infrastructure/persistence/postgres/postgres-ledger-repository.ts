@@ -2549,7 +2549,11 @@ export class PostgresLedgerRepository implements LedgerRepository {
   }
 
   async hasOfflinePayLedgerFootprint(userId: string): Promise<boolean> {
-    const row = await this.db
+    return this.hasOfflinePayLedgerFootprintIn(this.db, userId);
+  }
+
+  private async hasOfflinePayLedgerFootprintIn(db: DbExecutor, userId: string): Promise<boolean> {
+    const row = await db
       .selectFrom('ledger_accounts')
       .select('ledger_account_code')
       .where((eb) =>
@@ -2608,6 +2612,16 @@ export class PostgresLedgerRepository implements LedgerRepository {
       const deltaAmount = input.targetLiabilityBalance - previousLiabilityBalance;
 
       if (deltaAmount !== 0n) {
+        if (deltaAmount > 0n && await this.hasOfflinePayLedgerFootprintIn(trx, input.userId)) {
+          return {
+            userId: input.userId,
+            previousLiabilityBalance,
+            targetLiabilityBalance: input.targetLiabilityBalance,
+            deltaAmount,
+            adjusted: false
+          };
+        }
+
         const absoluteDelta = deltaAmount < 0n ? deltaAmount * -1n : deltaAmount;
         await this.appendJournal(trx, {
           journalType: 'offline_pay_wallet_reconciled',

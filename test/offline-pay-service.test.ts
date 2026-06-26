@@ -18,6 +18,7 @@ describe('offline pay service', () => {
         deltaAmount: 300_000000n,
         adjusted: true
       }),
+      hasOfflinePayLedgerFootprint: vi.fn().mockResolvedValue(false),
       lockOfflinePayCollateral: vi.fn().mockResolvedValue({
         lockId: 'topup:device-1:1',
         status: 'LOCKED',
@@ -61,6 +62,51 @@ describe('offline pay service', () => {
     expect(ledger.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: 'offline_pay.user_balance.reconciled',
       actorId: 'offline-pay-lock'
+    }));
+  });
+
+  it('does not credit available through lazy reconciliation for existing offline-pay ledger users', async () => {
+    const ledger = {
+      getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
+        userId: '1761',
+        availableBalance: 0n,
+        lockedBalance: 85_000000n,
+        liabilityBalance: 85_000000n
+      }),
+      hasOfflinePayLedgerFootprint: vi.fn().mockResolvedValue(true),
+      reconcileOfflinePayUserBalance: vi.fn(),
+      lockOfflinePayCollateral: vi.fn().mockRejectedValue(new Error('insufficient available')),
+      appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    };
+    const walletSnapshotSource = {
+      getCanonicalWalletSnapshot: vi.fn().mockResolvedValue({
+        totalBalance: '100.000000',
+        canonicalBasis: 'FOX_CLIENT_VISIBLE_TOTAL_KORI'
+      })
+    };
+    const service = new OfflinePayService(ledger as any, walletSnapshotSource);
+
+    await expect(service.lockCollateral({
+      userId: '1761',
+      deviceId: 'device-1',
+      assetCode: 'KORI',
+      amount: '1.000000',
+      referenceId: 'topup:device-1:existing',
+      policyVersion: 1
+    })).rejects.toThrow('insufficient available');
+
+    expect(ledger.reconcileOfflinePayUserBalance).not.toHaveBeenCalled();
+    expect(ledger.lockOfflinePayCollateral).toHaveBeenCalledOnce();
+    expect(ledger.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'offline_pay.user_balance.reconcile.skipped',
+      actorId: 'offline-pay-lock',
+      metadata: expect.objectContaining({
+        userId: '1761',
+        currentLiabilityBalance: '85.000000',
+        targetLiabilityBalance: '100.000000',
+        deltaAmount: '15.000000',
+        reason: 'positive_delta_existing_offline_pay_ledger'
+      })
     }));
   });
 

@@ -97,6 +97,27 @@ export class OfflinePayService {
       return;
     }
 
+    if (await this.ledger.hasOfflinePayLedgerFootprint(input.userId)) {
+      await this.ledger.appendAuditLog({
+        entityType: 'system',
+        entityId: `offline-pay-reconciliation:${input.userId}`,
+        action: 'offline_pay.user_balance.reconcile.skipped',
+        actorType: 'system',
+        actorId: 'offline-pay-lock',
+        metadata: {
+          userId: input.userId,
+          assetCode: input.assetCode,
+          canonicalBasis: snapshot.canonicalBasis,
+          currentLiabilityBalance: formatKoriAmount(current.liabilityBalance),
+          targetLiabilityBalance: formatKoriAmount(targetLiabilityBalance),
+          deltaAmount: formatKoriAmount(targetLiabilityBalance - current.liabilityBalance),
+          reason: 'positive_delta_existing_offline_pay_ledger',
+          note: 'lazy reconcile before offline pay collateral lock skipped'
+        }
+      });
+      return;
+    }
+
     const result = await this.ledger.reconcileOfflinePayUserBalance({
       userId: input.userId,
       targetLiabilityBalance,
