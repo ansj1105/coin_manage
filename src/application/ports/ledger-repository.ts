@@ -214,6 +214,7 @@ export interface LedgerRepository {
     availableBalance: bigint;
     lockedBalance: bigint;
     liabilityBalance: bigint;
+    hasLedgerFootprint: boolean;
   }>;
   getOfflinePayPendingBalance(userId: string): Promise<bigint>;
   reconcileOfflinePayUserBalance(input: {

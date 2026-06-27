@@ -336,7 +336,8 @@ export class OfflinePayService {
       assetCode: input.assetCode.trim().toUpperCase(),
       availableBalance: formatKoriAmount(balanceSnapshot.availableBalance),
       lockedBalance: formatKoriAmount(balanceSnapshot.lockedBalance),
-      offlinePayPendingBalance: formatKoriAmount(offlinePayPendingBalance)
+      offlinePayPendingBalance: formatKoriAmount(offlinePayPendingBalance),
+      hasLedgerFootprint: balanceSnapshot.hasLedgerFootprint
     };
   }
 

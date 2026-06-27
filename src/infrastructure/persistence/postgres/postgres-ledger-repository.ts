@@ -2574,13 +2574,15 @@ export class PostgresLedgerRepository implements LedgerRepository {
     availableBalance: bigint;
     lockedBalance: bigint;
     liabilityBalance: bigint;
+    hasLedgerFootprint: boolean;
   }> {
     const projected = await this.getProjectedUserBalances(this.db, userId);
     return {
       userId,
       availableBalance: projected.balance,
       lockedBalance: projected.lockedBalance,
-      liabilityBalance: projected.balance + projected.lockedBalance
+      liabilityBalance: projected.balance + projected.lockedBalance,
+      hasLedgerFootprint: projected.hasPostings
     };
   }
 

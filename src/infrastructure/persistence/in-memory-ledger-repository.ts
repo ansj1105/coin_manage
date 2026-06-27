@@ -39,12 +39,14 @@ export class InMemoryLedgerRepository extends InMemoryLedger implements LedgerRe
     availableBalance: bigint;
     lockedBalance: bigint;
     liabilityBalance: bigint;
+    hasLedgerFootprint: boolean;
   }> {
     return {
       userId,
       availableBalance: 0n,
       lockedBalance: 0n,
-      liabilityBalance: 0n
+      liabilityBalance: 0n,
+      hasLedgerFootprint: false
     };
   }
 
