@@ -170,6 +170,53 @@ describe('offline pay service', () => {
     });
   });
 
+  it('ignores history sync compensation without touching ledger balances', async () => {
+    const ledger = {
+      getOfflinePayUserBalanceSnapshot: vi.fn().mockResolvedValue({
+        userId: '1',
+        availableBalance: 197_343487n,
+        lockedBalance: 4_000000n,
+        liabilityBalance: 201_343487n
+      }),
+      getOfflinePayPendingBalance: vi.fn().mockResolvedValue(4_000000n),
+      compensateOfflinePaySettlement: vi.fn(),
+      appendAuditLog: vi.fn()
+    };
+    const service = new OfflinePayService(ledger as any);
+
+    await expect(service.compensateSettlement({
+      settlementId: 'settlement-history-fail',
+      batchId: 'batch-1',
+      collateralId: 'collateral-1',
+      proofId: 'proof-1',
+      userId: '1',
+      deviceId: 'device-1',
+      assetCode: 'KORI',
+      amount: '4.000000',
+      releaseAction: 'ADJUST',
+      proofFingerprint: 'f'.repeat(64),
+      compensationReason: 'HISTORY_SYNC_FAIL'
+    })).resolves.toEqual({
+      status: 'OK',
+      message: 'history sync compensation ignored',
+      settlementId: 'settlement-history-fail',
+      ledgerOutcome: 'COMPENSATED',
+      releaseAction: 'ADJUST',
+      duplicated: true,
+      feeAmount: '0.000000',
+      accountingSide: 'SENDER',
+      receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC',
+      settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY',
+      reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA',
+      postAvailableBalance: '197.343487',
+      postLockedBalance: '4.000000',
+      postOfflinePayPendingBalance: '4.000000'
+    });
+
+    expect(ledger.compensateOfflinePaySettlement).not.toHaveBeenCalled();
+    expect(ledger.appendAuditLog).not.toHaveBeenCalled();
+  });
+
   it('releases collateral through ledger and returns release metadata', async () => {
     const ledger = {
       releaseOfflinePayCollateral: vi.fn().mockResolvedValue({

@@ -21,6 +21,14 @@ const parseOfflinePayFeeAmount = (feeAmount?: string): bigint | undefined => {
   return parsed;
 };
 
+const HISTORY_ONLY_COMPENSATION_REASONS = new Set([
+  'HISTORY_SYNC_FAIL',
+  'HISTORY_CIRCUIT_OPEN'
+]);
+
+const isHistoryOnlyCompensationReason = (reason: string): boolean =>
+  HISTORY_ONLY_COMPENSATION_REASONS.has(reason.trim().toUpperCase());
+
 export class OfflinePayService {
   constructor(
     private readonly ledger: LedgerRepository,
@@ -355,6 +363,28 @@ export class OfflinePayService {
     compensationReason: string;
   }) {
     const amount = parseKoriAmount(Number(input.amount));
+    if (isHistoryOnlyCompensationReason(input.compensationReason)) {
+      const [balanceSnapshot, offlinePayPendingBalance] = await Promise.all([
+        this.ledger.getOfflinePayUserBalanceSnapshot(input.userId),
+        this.ledger.getOfflinePayPendingBalance(input.userId)
+      ]);
+      return {
+        status: 'OK' as const,
+        message: 'history sync compensation ignored',
+        settlementId: input.settlementId,
+        ledgerOutcome: 'COMPENSATED' as const,
+        releaseAction: input.releaseAction,
+        duplicated: true,
+        feeAmount: formatKoriAmount(0n),
+        accountingSide: 'SENDER' as const,
+        receiverSettlementMode: 'EXTERNAL_HISTORY_SYNC' as const,
+        settlementModel: 'SENDER_LEDGER_PLUS_RECEIVER_HISTORY' as const,
+        reconciliationTrackingOwner: 'OFFLINE_PAY_SAGA' as const,
+        postAvailableBalance: formatKoriAmount(balanceSnapshot.availableBalance),
+        postLockedBalance: formatKoriAmount(balanceSnapshot.lockedBalance),
+        postOfflinePayPendingBalance: formatKoriAmount(offlinePayPendingBalance)
+      };
+    }
     const result = await this.ledger.compensateOfflinePaySettlement({
       ...input,
       amount
