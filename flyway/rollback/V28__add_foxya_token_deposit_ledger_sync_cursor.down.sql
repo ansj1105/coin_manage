@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS foxya_token_deposit_ledger_sync_cursors;

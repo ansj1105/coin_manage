@@ -53,6 +53,10 @@ if (env.singletonWorkersEnabled) {
   if (env.offlinePayLedgerReconcileEnabled) {
     deps.offlinePayLedgerReconciliationWorker.start();
   }
+
+  if (env.foxyaTokenDepositLedgerSyncEnabled) {
+    deps.foxyaTokenDepositLedgerSyncWorker.start();
+  }
 }
 
 if (!env.httpEnabled && !env.singletonWorkersEnabled && !env.withdrawQueueWorkerEnabled) {

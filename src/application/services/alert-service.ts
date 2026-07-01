@@ -384,6 +384,14 @@ export class AlertService {
     });
   }
 
+  async notifyFoxyaTokenDepositLedgerSyncFailure(message: string) {
+    await this.send({
+      title: '[KORION] Foxya Token Deposit Ledger Sync Failed',
+      body: message,
+      dedupeKey: `foxya-token-deposit-ledger-sync:${message}`
+    });
+  }
+
   async notifyHealthCheckUnhealthy(input: {
     targetName: string;
     targetUrl: string;

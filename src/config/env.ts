@@ -107,6 +107,10 @@ const schema = z.object({
   FOXYA_DB_USER: z.string().optional(),
   FOXYA_DB_PASSWORD: z.string().optional(),
   FOXYA_ENCRYPTION_KEY: z.string().optional(),
+  FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_ENABLED: optionalBooleanString,
+  FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_INTERVAL_SEC: z.coerce.number().int().positive().default(300),
+  FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(100),
+  FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CURRENCY_CODE: z.string().trim().min(1).default('KORI'),
   VIRTUAL_WALLET_ENCRYPTION_KEY: z.string().optional(),
   LEDGER_SYSTEM_ID: z.string().min(1).default('korion'),
   LEDGER_SHARED_HMAC_SECRET: z.string().optional(),
@@ -321,6 +325,13 @@ export const env = Object.freeze({
           encryptionKey: parsed.FOXYA_ENCRYPTION_KEY
         }
       : undefined,
+  foxyaTokenDepositLedgerSyncEnabled:
+    parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_ENABLED !== undefined
+      ? parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_ENABLED === 'true'
+      : Boolean(parsed.FOXYA_DB_HOST && parsed.FOXYA_DB_NAME && parsed.FOXYA_DB_USER),
+  foxyaTokenDepositLedgerSyncIntervalSec: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_INTERVAL_SEC,
+  foxyaTokenDepositLedgerSyncCycleLimit: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CYCLE_LIMIT,
+  foxyaTokenDepositLedgerSyncCurrencyCode: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CURRENCY_CODE,
   virtualWalletEncryptionKey: parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ?? 'dev-only-secret-change-me',
   ledgerIdentity: {
     systemId: parsed.LEDGER_SYSTEM_ID,
