@@ -111,6 +111,13 @@ const schema = z.object({
   FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_INTERVAL_SEC: z.coerce.number().int().positive().default(300),
   FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(100),
   FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CURRENCY_CODE: z.string().trim().min(1).default('KORI'),
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_ENABLED: optionalBooleanString,
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_INTERVAL_SEC: z.coerce.number().int().positive().default(600),
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_CYCLE_LIMIT: z.coerce.number().int().positive().max(500).default(500),
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_CURRENCY_CODE: z.string().trim().min(1).default('KORI'),
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_SOURCES: optionalString,
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_INITIAL_DELAY_SEC: z.coerce.number().int().nonnegative().default(60),
+  FOXYA_BALANCE_CREDIT_LEDGER_SYNC_SOURCE_GAP_SEC: z.coerce.number().int().nonnegative().default(60),
   VIRTUAL_WALLET_ENCRYPTION_KEY: z.string().optional(),
   LEDGER_SYSTEM_ID: z.string().min(1).default('korion'),
   LEDGER_SHARED_HMAC_SECRET: z.string().optional(),
@@ -162,6 +169,14 @@ const schema = z.object({
 const parsed = schema.parse(process.env);
 
 const foxyaAlertTables = ['internal_transfers', 'external_transfers', 'token_deposits', 'payment_deposits', 'swaps', 'exchanges'] as const;
+const foxyaBalanceCreditLedgerSyncSources = [
+  'mining_history',
+  'airdrop_transfer',
+  'payment_deposit',
+  'swap_to_kori',
+  'exchange_to_kori',
+  'referral_reward'
+] as const;
 
 const parseAlertMonitorTables = (value?: string) => {
   const configured = (value ?? foxyaAlertTables.join(','))
@@ -195,6 +210,17 @@ const parseHealthTargets = (value?: string) => {
         }
       ];
     });
+};
+
+const parseFoxyaBalanceCreditLedgerSyncSources = (value?: string) => {
+  const configured = (value ?? foxyaBalanceCreditLedgerSyncSources.join(','))
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return configured.filter((item): item is (typeof foxyaBalanceCreditLedgerSyncSources)[number] =>
+    (foxyaBalanceCreditLedgerSyncSources as readonly string[]).includes(item)
+  );
 };
 
 if (parsed.NODE_ENV === 'production') {
@@ -332,6 +358,18 @@ export const env = Object.freeze({
   foxyaTokenDepositLedgerSyncIntervalSec: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_INTERVAL_SEC,
   foxyaTokenDepositLedgerSyncCycleLimit: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CYCLE_LIMIT,
   foxyaTokenDepositLedgerSyncCurrencyCode: parsed.FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_CURRENCY_CODE,
+  foxyaBalanceCreditLedgerSyncEnabled:
+    parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_ENABLED !== undefined
+      ? parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_ENABLED === 'true'
+      : Boolean(parsed.FOXYA_DB_HOST && parsed.FOXYA_DB_NAME && parsed.FOXYA_DB_USER),
+  foxyaBalanceCreditLedgerSyncIntervalSec: parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_INTERVAL_SEC,
+  foxyaBalanceCreditLedgerSyncCycleLimit: parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_CYCLE_LIMIT,
+  foxyaBalanceCreditLedgerSyncCurrencyCode: parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_CURRENCY_CODE,
+  foxyaBalanceCreditLedgerSyncSources: parseFoxyaBalanceCreditLedgerSyncSources(
+    parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_SOURCES
+  ),
+  foxyaBalanceCreditLedgerSyncInitialDelaySec: parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_INITIAL_DELAY_SEC,
+  foxyaBalanceCreditLedgerSyncSourceGapSec: parsed.FOXYA_BALANCE_CREDIT_LEDGER_SYNC_SOURCE_GAP_SEC,
   virtualWalletEncryptionKey: parsed.VIRTUAL_WALLET_ENCRYPTION_KEY ?? 'dev-only-secret-change-me',
   ledgerIdentity: {
     systemId: parsed.LEDGER_SYSTEM_ID,

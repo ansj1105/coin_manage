@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS foxya_balance_credit_ledger_sync_cursors;

@@ -1,6 +1,8 @@
 import type { ExternalWithdrawalSyncClient } from '../application/ports/external-withdrawal-sync-client.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
+import { FoxyaBalanceCreditLedgerSyncService } from '../application/services/foxya-balance-credit-ledger-sync-service.js';
+import { FoxyaBalanceCreditLedgerSyncWorker } from '../application/services/foxya-balance-credit-ledger-sync-worker.js';
 import { FoxyaTokenDepositLedgerSyncService } from '../application/services/foxya-token-deposit-ledger-sync-service.js';
 import { FoxyaTokenDepositLedgerSyncWorker } from '../application/services/foxya-token-deposit-ledger-sync-worker.js';
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
@@ -53,6 +55,7 @@ import { FoxyaInternalDepositClient } from '../infrastructure/integration/foxya-
 import { FoxyaInternalWithdrawalClient } from '../infrastructure/integration/foxya-internal-withdrawal-client.js';
 import { FoxyaInternalWalletClient } from '../infrastructure/integration/foxya-internal-wallet-client.js';
 import { PostgresFoxyaAlertSourceRepository } from '../infrastructure/integration/foxya-alert-source-repository.js';
+import { PostgresFoxyaBalanceCreditLedgerSyncSourceRepository } from '../infrastructure/integration/foxya-balance-credit-ledger-sync-source-repository.js';
 import { PostgresFoxyaTokenDepositLedgerSyncSourceRepository } from '../infrastructure/integration/foxya-token-deposit-ledger-sync-source-repository.js';
 import { InMemoryFoxyaUserFlagRepository, PostgresFoxyaUserFlagRepository } from '../infrastructure/integration/foxya-user-flag-repository.js';
 import { PostgresFoxyaWalletRepository } from '../infrastructure/integration/foxya-wallet-repository.js';
@@ -60,6 +63,7 @@ import { TelegramAlertNotifier } from '../infrastructure/notifications/telegram-
 import { InMemoryAlertMonitorStateRepository } from '../infrastructure/persistence/in-memory-alert-monitor-state-repository.js';
 import { InMemoryDepositMonitorRepository } from '../infrastructure/persistence/in-memory-deposit-monitor-repository.js';
 import { InMemoryFoxyaTokenDepositLedgerSyncCursorRepository } from '../infrastructure/persistence/in-memory-foxya-token-deposit-ledger-sync-cursor-repository.js';
+import { InMemoryFoxyaBalanceCreditLedgerSyncCursorRepository } from '../infrastructure/persistence/in-memory-foxya-balance-credit-ledger-sync-cursor-repository.js';
 import { InMemoryLedgerRepository } from '../infrastructure/persistence/in-memory-ledger-repository.js';
 import { InMemoryMonitoringRepository } from '../infrastructure/persistence/in-memory-monitoring-repository.js';
 import { InMemoryWithdrawPolicyRepository } from '../infrastructure/persistence/in-memory-withdraw-policy-repository.js';
@@ -68,6 +72,7 @@ import { InMemoryWithdrawJobQueue } from '../infrastructure/queue/in-memory-with
 import { PostgresAlertMonitorStateRepository } from '../infrastructure/persistence/postgres/postgres-alert-monitor-state-repository.js';
 import { PostgresDepositMonitorRepository } from '../infrastructure/persistence/postgres/postgres-deposit-monitor-repository.js';
 import { PostgresFoxyaTokenDepositLedgerSyncCursorRepository } from '../infrastructure/persistence/postgres/postgres-foxya-token-deposit-ledger-sync-cursor-repository.js';
+import { PostgresFoxyaBalanceCreditLedgerSyncCursorRepository } from '../infrastructure/persistence/postgres/postgres-foxya-balance-credit-ledger-sync-cursor-repository.js';
 import { PostgresMonitoringRepository } from '../infrastructure/persistence/postgres/postgres-monitoring-repository.js';
 import { PostgresLedgerRepository } from '../infrastructure/persistence/postgres/postgres-ledger-repository.js';
 import { PostgresWithdrawPolicyRepository } from '../infrastructure/persistence/postgres/postgres-withdraw-policy-repository.js';
@@ -107,7 +112,8 @@ const createPersistence = () => {
       monitoringRepository: new PostgresMonitoringRepository(db),
       depositMonitorRepository: new PostgresDepositMonitorRepository(db),
       alertMonitorStateRepository: new PostgresAlertMonitorStateRepository(db),
-      foxyaTokenDepositLedgerSyncCursorRepository: new PostgresFoxyaTokenDepositLedgerSyncCursorRepository(db)
+      foxyaTokenDepositLedgerSyncCursorRepository: new PostgresFoxyaTokenDepositLedgerSyncCursorRepository(db),
+      foxyaBalanceCreditLedgerSyncCursorRepository: new PostgresFoxyaBalanceCreditLedgerSyncCursorRepository(db)
     };
   }
 
@@ -119,7 +125,8 @@ const createPersistence = () => {
     monitoringRepository: new InMemoryMonitoringRepository(),
     depositMonitorRepository: new InMemoryDepositMonitorRepository(),
     alertMonitorStateRepository: new InMemoryAlertMonitorStateRepository(),
-    foxyaTokenDepositLedgerSyncCursorRepository: new InMemoryFoxyaTokenDepositLedgerSyncCursorRepository()
+    foxyaTokenDepositLedgerSyncCursorRepository: new InMemoryFoxyaTokenDepositLedgerSyncCursorRepository(),
+    foxyaBalanceCreditLedgerSyncCursorRepository: new InMemoryFoxyaBalanceCreditLedgerSyncCursorRepository()
   };
 };
 
@@ -192,7 +199,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     monitoringRepository,
     depositMonitorRepository,
     alertMonitorStateRepository,
-    foxyaTokenDepositLedgerSyncCursorRepository
+    foxyaTokenDepositLedgerSyncCursorRepository,
+    foxyaBalanceCreditLedgerSyncCursorRepository
   } = createPersistence();
   const eventConsumerRunner = new EventConsumerRunner(ledger);
   const tronGateway = overrides.tronGateway ?? createTronGateway();
@@ -277,6 +285,22 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
       : undefined;
   if (env.foxyaTokenDepositLedgerSyncEnabled && !foxyaTokenDepositLedgerSyncSourceRepository) {
     throw new Error('FOXYA DB repository is required when FOXYA_TOKEN_DEPOSIT_LEDGER_SYNC_ENABLED=true');
+  }
+  const foxyaBalanceCreditLedgerSyncSourceRepository =
+    env.foxyaDb?.host && env.foxyaDb.name && env.foxyaDb.user
+      ? new PostgresFoxyaBalanceCreditLedgerSyncSourceRepository(
+          new Pool({
+            host: env.foxyaDb.host,
+            port: env.foxyaDb.port,
+            database: env.foxyaDb.name,
+            user: env.foxyaDb.user,
+            password: env.foxyaDb.password,
+            max: 5
+          })
+        )
+      : undefined;
+  if (env.foxyaBalanceCreditLedgerSyncEnabled && !foxyaBalanceCreditLedgerSyncSourceRepository) {
+    throw new Error('FOXYA DB repository is required when FOXYA_BALANCE_CREDIT_LEDGER_SYNC_ENABLED=true');
   }
   const foxyaUserFlagRepository: FoxyaUserFlagRepository =
     overrides.foxyaUserFlagRepository ??
@@ -524,6 +548,23 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     env.foxyaTokenDepositLedgerSyncIntervalSec * 1000,
     env.foxyaTokenDepositLedgerSyncCycleLimit
   );
+  const foxyaBalanceCreditLedgerSyncService = new FoxyaBalanceCreditLedgerSyncService(
+    foxyaBalanceCreditLedgerSyncSourceRepository ?? { listCompletedCredits: async () => [] },
+    foxyaBalanceCreditLedgerSyncCursorRepository,
+    ledger,
+    {
+      currencyCode: env.foxyaBalanceCreditLedgerSyncCurrencyCode
+    }
+  );
+  const foxyaBalanceCreditLedgerSyncWorker = new FoxyaBalanceCreditLedgerSyncWorker(
+    foxyaBalanceCreditLedgerSyncService,
+    alertService,
+    env.foxyaBalanceCreditLedgerSyncIntervalSec * 1000,
+    env.foxyaBalanceCreditLedgerSyncCycleLimit,
+    env.foxyaBalanceCreditLedgerSyncSources,
+    env.foxyaBalanceCreditLedgerSyncInitialDelaySec * 1000,
+    env.foxyaBalanceCreditLedgerSyncSourceGapSec * 1000
+  );
 
   return {
     ledger,
@@ -543,6 +584,8 @@ export const createAppDependencies = (overrides: AppDependencyOverrides = {}): A
     externalAlertMonitorWorker,
     foxyaTokenDepositLedgerSyncService,
     foxyaTokenDepositLedgerSyncWorker,
+    foxyaBalanceCreditLedgerSyncService,
+    foxyaBalanceCreditLedgerSyncWorker,
     systemMonitoringService,
     onchainService,
     depositMonitorService,

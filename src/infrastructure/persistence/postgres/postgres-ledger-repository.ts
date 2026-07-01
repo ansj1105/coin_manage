@@ -301,6 +301,91 @@ export class PostgresLedgerRepository implements LedgerRepository {
     return this.mapDeposit(row);
   }
 
+  async applyExternalCredit(input: {
+    userId: string;
+    amount: bigint;
+    currencyCode: string;
+    journalType: string;
+    referenceType: string;
+    referenceId: string;
+    description?: string;
+    nowIso?: string;
+  }) {
+    if (input.amount <= 0n) {
+      throw new DomainError(400, 'VALIDATION_ERROR', 'external credit amount must be positive');
+    }
+
+    const currencyCode = input.currencyCode.trim().toUpperCase();
+    if (currencyCode !== 'KORI') {
+      throw new DomainError(400, 'UNSUPPORTED_CURRENCY', 'external credit ledger sync only supports KORI');
+    }
+
+    return this.withTransaction(async (trx) => {
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      const amountValue = formatKoriAmount(input.amount);
+
+      await this.lockKey(trx, `external-credit:${input.referenceType}:${input.referenceId}`);
+
+      const existing = await trx
+        .selectFrom('ledger_journals')
+        .select(['created_at'])
+        .where('reference_type', '=', input.referenceType)
+        .where('reference_id', '=', input.referenceId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          creditId: input.referenceId,
+          userId: input.userId,
+          amount: input.amount,
+          currencyCode,
+          journalType: input.journalType,
+          referenceType: input.referenceType,
+          referenceId: input.referenceId,
+          duplicated: true,
+          createdAt: existing.created_at
+        };
+      }
+
+      await this.ensureAccount(trx, input.userId, nowIso);
+      await this.lockUsers(trx, [input.userId]);
+      await this.appendJournal(trx, {
+        journalType: input.journalType,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
+        currencyCode,
+        description: input.description,
+        nowIso,
+        postings: [
+          {
+            ledgerAccountCode: 'system:equity:foxya_balance_credit_sync',
+            accountType: 'equity',
+            entrySide: 'debit',
+            amount: amountValue
+          },
+          {
+            ledgerAccountCode: `user:${input.userId}:available`,
+            accountType: 'liability',
+            entrySide: 'credit',
+            amount: amountValue
+          }
+        ]
+      });
+      await this.syncUserAccountProjection(trx, [input.userId], nowIso);
+
+      return {
+        creditId: input.referenceId,
+        userId: input.userId,
+        amount: input.amount,
+        currencyCode,
+        journalType: input.journalType,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
+        duplicated: false,
+        createdAt: nowIso
+      };
+    });
+  }
+
   async transfer(input: {
     fromUserId: string;
     toUserId: string;

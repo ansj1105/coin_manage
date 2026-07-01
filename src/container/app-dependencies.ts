@@ -15,6 +15,8 @@ import type { WithdrawJobQueue } from '../application/ports/withdraw-job-queue.j
 import { AccountReconciliationService } from '../application/services/account-reconciliation-service.js';
 import { ExternalAlertMonitorService } from '../application/services/external-alert-monitor-service.js';
 import { ExternalAlertMonitorWorker } from '../application/services/external-alert-monitor-worker.js';
+import { FoxyaBalanceCreditLedgerSyncService } from '../application/services/foxya-balance-credit-ledger-sync-service.js';
+import { FoxyaBalanceCreditLedgerSyncWorker } from '../application/services/foxya-balance-credit-ledger-sync-worker.js';
 import { FoxyaTokenDepositLedgerSyncService } from '../application/services/foxya-token-deposit-ledger-sync-service.js';
 import { FoxyaTokenDepositLedgerSyncWorker } from '../application/services/foxya-token-deposit-ledger-sync-worker.js';
 import { MonitoringWorker } from '../application/services/monitoring-worker.js';
@@ -57,6 +59,8 @@ export interface AppDependencies {
   externalAlertMonitorWorker: ExternalAlertMonitorWorker;
   foxyaTokenDepositLedgerSyncService: FoxyaTokenDepositLedgerSyncService;
   foxyaTokenDepositLedgerSyncWorker: FoxyaTokenDepositLedgerSyncWorker;
+  foxyaBalanceCreditLedgerSyncService: FoxyaBalanceCreditLedgerSyncService;
+  foxyaBalanceCreditLedgerSyncWorker: FoxyaBalanceCreditLedgerSyncWorker;
   systemMonitoringService: SystemMonitoringService;
   tronGateway: TronGateway;
   onchainService: OnchainService;

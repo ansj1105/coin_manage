@@ -43,6 +43,18 @@ export interface Deposit {
   createdAt: string;
 }
 
+export interface ExternalCreditApplyResult {
+  creditId: string;
+  userId: string;
+  amount: bigint;
+  currencyCode: string;
+  journalType: string;
+  referenceType: string;
+  referenceId: string;
+  duplicated: boolean;
+  createdAt: string;
+}
+
 export type WithdrawalStatus =
   | 'LEDGER_RESERVED'
   | 'PENDING_ADMIN'

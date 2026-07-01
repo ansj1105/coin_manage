@@ -355,6 +355,15 @@ export interface FoxyaTokenDepositLedgerSyncCursorsTable {
   updated_at: string;
 }
 
+export interface FoxyaBalanceCreditLedgerSyncCursorsTable {
+  cursor_key: string;
+  source_name: string;
+  currency_code: string;
+  last_occurred_at: string;
+  last_foxya_id: string;
+  updated_at: string;
+}
+
 export interface KorionDatabase {
   accounts: AccountsTable;
   wallet_address_bindings: WalletAddressBindingsTable;
@@ -384,4 +393,5 @@ export interface KorionDatabase {
   event_consumer_checkpoints: EventConsumerCheckpointsTable;
   offline_pay_devices: OfflinePayDevicesTable;
   foxya_token_deposit_ledger_sync_cursors: FoxyaTokenDepositLedgerSyncCursorsTable;
+  foxya_balance_credit_ledger_sync_cursors: FoxyaBalanceCreditLedgerSyncCursorsTable;
 }

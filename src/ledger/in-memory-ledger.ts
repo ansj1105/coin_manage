@@ -11,6 +11,7 @@ import type {
   EventConsumerAttempt,
   EventConsumerCheckpoint,
   EventConsumerDeadLetter,
+  ExternalCreditApplyResult,
   LedgerSummary,
   LedgerTransaction,
   NetworkFeeDailySnapshot,
@@ -54,6 +55,7 @@ export class InMemoryLedger {
   private readonly userIdByWalletAddress = new Map<string, string>();
   private readonly transactions = new Map<string, LedgerTransaction>();
   private readonly depositsByTxHash = new Map<string, Deposit>();
+  private readonly externalCreditsByReference = new Map<string, ExternalCreditApplyResult>();
   private readonly withdrawals = new Map<string, Withdrawal>();
   private readonly withdrawalByIdempotencyKey = new Map<string, string>();
   private readonly transferByIdempotencyKey = new Map<string, TransferIdempotencyRecord>();
@@ -238,6 +240,48 @@ export class InMemoryLedger {
       }
       deposit.status = 'COMPLETED';
       return { ...deposit };
+    });
+  }
+
+  async applyExternalCredit(input: {
+    userId: string;
+    amount: bigint;
+    currencyCode: string;
+    journalType: string;
+    referenceType: string;
+    referenceId: string;
+    description?: string;
+    nowIso?: string;
+  }): Promise<ExternalCreditApplyResult> {
+    if (input.amount <= 0n) {
+      throw new DomainError(400, 'VALIDATION_ERROR', 'external credit amount must be positive');
+    }
+
+    return this.withLock(() => {
+      const referenceKey = `${input.referenceType}:${input.referenceId}`;
+      const existing = this.externalCreditsByReference.get(referenceKey);
+      if (existing) {
+        return { ...existing, duplicated: true };
+      }
+
+      const nowIso = input.nowIso ?? new Date().toISOString();
+      const account = this.getMutableAccount(input.userId, nowIso);
+      account.balance += input.amount;
+      account.updatedAt = nowIso;
+
+      const credit: ExternalCreditApplyResult = {
+        creditId: input.referenceId,
+        userId: input.userId,
+        amount: input.amount,
+        currencyCode: input.currencyCode.trim().toUpperCase(),
+        journalType: input.journalType,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
+        duplicated: false,
+        createdAt: nowIso
+      };
+      this.externalCreditsByReference.set(referenceKey, credit);
+      return { ...credit };
     });
   }
 

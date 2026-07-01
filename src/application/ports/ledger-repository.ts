@@ -7,6 +7,7 @@ import type {
   EventConsumerAttempt,
   EventConsumerCheckpoint,
   EventConsumerDeadLetter,
+  ExternalCreditApplyResult,
   LedgerSummary,
   LedgerTransaction,
   NetworkFeeReceipt,
@@ -42,6 +43,16 @@ export interface LedgerRepository {
     nowIso?: string;
   }): Promise<DepositApplyResult>;
   completeDeposit(depositId: string, nowIso?: string): Promise<DepositApplyResult['deposit']>;
+  applyExternalCredit(input: {
+    userId: string;
+    amount: bigint;
+    currencyCode: string;
+    journalType: string;
+    referenceType: string;
+    referenceId: string;
+    description?: string;
+    nowIso?: string;
+  }): Promise<ExternalCreditApplyResult>;
   transfer(input: {
     fromUserId: string;
     toUserId: string;

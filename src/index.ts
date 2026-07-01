@@ -57,6 +57,10 @@ if (env.singletonWorkersEnabled) {
   if (env.foxyaTokenDepositLedgerSyncEnabled) {
     deps.foxyaTokenDepositLedgerSyncWorker.start();
   }
+
+  if (env.foxyaBalanceCreditLedgerSyncEnabled) {
+    deps.foxyaBalanceCreditLedgerSyncWorker.start();
+  }
 }
 
 if (!env.httpEnabled && !env.singletonWorkersEnabled && !env.withdrawQueueWorkerEnabled) {
